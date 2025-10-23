@@ -1,0 +1,42 @@
+[package]
+name = "avenue_model"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "avenue_model"
+# Build both a cdylib (for Python) and an rlib (for Rust tests)
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Opt-in to run heavy/printing benchmarks in tests
+benchmarks = []
+# Python bindings (default for maturin, disabled for pure Rust tests)
+python = ["pyo3", "pyo3-polars"]
+default = ["python"]
+
+[dependencies]
+ordered-float = "2.0"
+pyo3 = { version = "0.24.2", features = ["extension-module", "abi3-py312"], optional = true }
+pyo3-polars = { version = "0.21.0", optional = true }
+# Streamlined Polars - only what we actually use
+polars = { version = "0.48.1", default-features = false, features = [
+    "lazy",          # Lazy evaluation for query optimization
+    "fmt",           # Display formatting
+    "json",          # LightGBM JSON parsing
+    "dtype-struct",  # Needed for LightGBM trees
+] }
+rayon = "1.7"
+serde_json = "1.0"
+itertools = "0.12"
+chrono = { version = "0.4.39", features = ["serde"] }
+serde = "1.0.217"
+base64 = "0.22.1"
+ring = "0.17.8"
+
+[build-dependencies]
+pyo3-build-config = { version = "0.24.2", optional = true }
+
+[dev-dependencies]
+rand = "0.8"
+approx = "0.5"
