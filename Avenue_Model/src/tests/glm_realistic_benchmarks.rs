@@ -99,7 +99,7 @@ mod realistic_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), options).unwrap();
+        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), None, options).unwrap();
         let fit_time = start.elapsed();
 
         let pred_start = Instant::now();
@@ -126,7 +126,7 @@ mod realistic_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), options).unwrap();
+        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), None, options).unwrap();
         let fit_time = start.elapsed();
 
         let pred_start = Instant::now();
@@ -153,7 +153,7 @@ mod realistic_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), options).unwrap();
+        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), None, options).unwrap();
         let fit_time = start.elapsed();
 
         let pred_start = Instant::now();
@@ -180,7 +180,7 @@ mod realistic_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), options).unwrap();
+        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), None, options).unwrap();
         let fit_time = start.elapsed();
 
         let pred_start = Instant::now();
@@ -207,7 +207,7 @@ mod realistic_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), options).unwrap();
+        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), None, options).unwrap();
         let fit_time = start.elapsed();
 
         let pred_start = Instant::now();
@@ -234,7 +234,7 @@ mod realistic_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), options).unwrap();
+        let fitted = fit_glm(&model, &df, "claims", Some("exposure"), None, options).unwrap();
         let fit_time = start.elapsed();
 
         let pred_start = Instant::now();
@@ -268,7 +268,7 @@ mod realistic_benchmarks {
             };
 
             let start = Instant::now();
-            let fitted = fit_glm(&model, &df, "claims", Some("exposure"), options).unwrap();
+            let fitted = fit_glm(&model, &df, "claims", Some("exposure"), None, options).unwrap();
             let fit_time = start.elapsed();
 
             let pred_start = Instant::now();

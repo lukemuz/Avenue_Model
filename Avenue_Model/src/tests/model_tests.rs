@@ -2054,3 +2054,160 @@ fn test_comparison_of_models() {
     assert_eq!(standard_preds, analysis_preds, "Standard and analysis models should produce the same predictions");
     assert_eq!(standard_preds, consolidated_preds, "Standard and consolidated models should produce the same predictions");
 }
+
+#[test]
+fn test_offset_table_metadata() {
+    initialize_test_license();
+
+    // Create a regular table
+    let regular_table = RatingTable::new(
+        DataFrame::new(vec![
+            Series::new("Age".into(), vec![20.0, 30.0, 40.0]).into(),
+            Series::new("Rating_Factor".into(), vec![1.0, 1.2, 1.5]).into(),
+        ]).unwrap(),
+        None
+    );
+
+    // Verify it's not marked as offset by default
+    assert!(!regular_table.metadata.is_offset, "Regular table should not be marked as offset");
+    assert!(regular_table.metadata.is_updatable, "Regular table should be updatable");
+
+    // Create an offset table using as_offset()
+    let offset_table = regular_table.clone().as_offset();
+
+    // Verify offset metadata is set correctly
+    assert!(offset_table.metadata.is_offset, "Offset table should be marked as offset");
+    assert!(!offset_table.metadata.is_updatable, "Offset table should not be updatable");
+}
+
+#[test]
+fn test_offset_row_metadata() {
+    initialize_test_license();
+
+    // Create a table
+    let mut table = RatingTable::new(
+        DataFrame::new(vec![
+            Series::new("Age".into(), vec![20.0, 30.0, 40.0, 50.0]).into(),
+            Series::new("Rating_Factor".into(), vec![1.0, 1.2, 1.5, 1.8]).into(),
+        ]).unwrap(),
+        None
+    );
+
+    // Initially, no rows should be marked as offset
+    assert!(!table.is_row_offset(0), "Row 0 should not be offset initially");
+    assert!(!table.is_row_offset(1), "Row 1 should not be offset initially");
+    assert!(!table.is_row_offset(2), "Row 2 should not be offset initially");
+
+    // Mark row 1 as offset
+    table.set_row_offset(1, true);
+    assert!(!table.is_row_offset(0), "Row 0 should still not be offset");
+    assert!(table.is_row_offset(1), "Row 1 should be marked as offset");
+    assert!(!table.is_row_offset(2), "Row 2 should still not be offset");
+
+    // Mark row 2 as offset
+    table.set_row_offset(2, true);
+    assert!(table.is_row_offset(1), "Row 1 should still be offset");
+    assert!(table.is_row_offset(2), "Row 2 should now be offset");
+
+    // Unmark row 1
+    table.set_row_offset(1, false);
+    assert!(!table.is_row_offset(1), "Row 1 should no longer be offset");
+    assert!(table.is_row_offset(2), "Row 2 should still be offset");
+
+    // Test out of bounds - should return false
+    assert!(!table.is_row_offset(100), "Out of bounds row should return false");
+}
+
+#[test]
+fn test_add_offset_table_to_model() {
+    initialize_test_license();
+
+    // Create a regular table
+    let regular_table = RatingTable::new(
+        DataFrame::new(vec![
+            Series::new("Age".into(), vec![20.0, 30.0, 40.0]).into(),
+            Series::new("Rating_Factor".into(), vec![1.0, 1.2, 1.5]).into(),
+        ]).unwrap(),
+        None
+    );
+
+    // Create an offset table (e.g., a fixed base rate table)
+    let offset_table = RatingTable::new(
+        DataFrame::new(vec![
+            Series::new("Region".into(), vec![1i32, 2, 3]).into(),
+            Series::new("Rating_Factor".into(), vec![0.9, 1.0, 1.1]).into(),
+        ]).unwrap(),
+        None
+    );
+
+    // Create a model and add both tables
+    let mut model = RatingModel::new(vec![regular_table], LinkFunction::Identity);
+
+    // Add offset table
+    model.add_offset_table(offset_table);
+
+    // Verify we have 2 tables
+    assert_eq!(model.tables.len(), 2, "Model should have 2 tables");
+
+    // Verify the first table is updatable (regular)
+    assert!(model.tables[0].metadata.is_updatable, "First table should be updatable");
+    assert!(!model.tables[0].metadata.is_offset, "First table should not be offset");
+
+    // Verify the second table is an offset table
+    assert!(!model.tables[1].metadata.is_updatable, "Second table should not be updatable");
+    assert!(model.tables[1].metadata.is_offset, "Second table should be marked as offset");
+}
+
+#[test]
+fn test_offset_table_predictions() {
+    initialize_test_license();
+
+    // Create a mean table (offset - won't be updated by GLM)
+    let mean_table = RatingTable::new(
+        DataFrame::new(vec![
+            Series::new("Rating_Factor".into(), vec![100.0]).into(),
+        ]).unwrap(),
+        None
+    ).as_offset();
+
+    // Create a regular updatable table (with infinity row to handle all values)
+    let age_table = RatingTable::new(
+        DataFrame::new(vec![
+            Series::new("Age".into(), vec![20.0, 30.0, 40.0, f64::INFINITY]).into(),
+            Series::new("Rating_Factor".into(), vec![0.9, 1.0, 1.1, 1.1]).into(),
+        ]).unwrap(),
+        None
+    );
+
+    // Create model with both tables
+    let model = RatingModel::new(vec![mean_table, age_table], LinkFunction::Identity);
+
+    // Create test data
+    let test_data = DataFrame::new(vec![
+        Series::new("Age".into(), vec![25.0, 35.0, 45.0]).into(),
+    ]).unwrap();
+
+    // Get predictions
+    let predictions = model.predict(&test_data).unwrap();
+    let pred_values: Vec<f64> = predictions.f64().unwrap()
+        .into_iter()
+        .map(|x| x.unwrap())
+        .collect();
+
+    println!("Predictions with offset table:");
+    println!("Age 25: {}", pred_values[0]);
+    println!("Age 35: {}", pred_values[1]);
+    println!("Age 45: {}", pred_values[2]);
+
+    // Each prediction should be: base (100.0) + age factor
+    // RatingTable uses <= for lookups, finding the first threshold >= input value
+    // Age 25: first threshold >= 25 is 30.0, factor = 1.0 -> 100 + 1.0 = 101.0
+    // Age 35: first threshold >= 35 is 40.0, factor = 1.1 -> 100 + 1.1 = 101.1
+    // Age 45: first threshold >= 45 is inf, factor = 1.1 -> 100 + 1.1 = 101.1
+    assert!((pred_values[0] - 101.0).abs() < 1e-10,
+        "Prediction for age 25 should be 101.0, got {}", pred_values[0]);
+    assert!((pred_values[1] - 101.1).abs() < 1e-10,
+        "Prediction for age 35 should be 101.1, got {}", pred_values[1]);
+    assert!((pred_values[2] - 101.1).abs() < 1e-10,
+        "Prediction for age 45 should be 101.1, got {}", pred_values[2]);
+}

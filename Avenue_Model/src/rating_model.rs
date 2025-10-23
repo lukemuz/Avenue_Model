@@ -12,6 +12,40 @@ use itertools::Itertools;
 
 
 use crate::license_handler::validate_current_license;
+
+// Begin Metadata Structures
+/// Metadata for a RatingTable
+#[derive(Debug, Clone)]
+pub struct TableMetadata {
+    pub name: String,
+    pub is_offset: bool,      // Table is fixed, not updated by GLM
+    pub is_updatable: bool,   // Can GLM update this table's factors?
+}
+
+impl Default for TableMetadata {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            is_offset: false,
+            is_updatable: true,
+        }
+    }
+}
+
+/// Metadata for individual rows within a RatingTable
+#[derive(Debug, Clone)]
+pub struct RowMetadata {
+    pub is_offset: bool,  // Row is locked, not updated by GLM
+}
+
+impl Default for RowMetadata {
+    fn default() -> Self {
+        Self {
+            is_offset: false,
+        }
+    }
+}
+
 // Begin RatingTable implementation
 #[derive(Debug, Clone)]
 enum FeatureType {
@@ -105,6 +139,9 @@ pub struct RatingTable {
     // Cache column metadata
     numeric_columns: HashMap<String, usize>,    // column name -> index
     categorical_columns: HashMap<String, usize>, // column name -> index
+    // NEW: Metadata for table and row-level behavior
+    pub metadata: TableMetadata,
+    pub row_metadata: Option<Vec<RowMetadata>>,
 }
 
 impl RatingTable {
@@ -134,10 +171,12 @@ impl RatingTable {
             }
         }
 
-        Self { 
+        Self {
             data:data.clone(),
             numeric_columns,
             categorical_columns,
+            metadata: TableMetadata::default(),
+            row_metadata: None,  // Lazy initialization - only create if needed
         }
     }
     
@@ -370,12 +409,51 @@ impl RatingTable {
     }
 
     pub fn one_way_analysis_table(
-        &self, 
+        &self,
         df: &DataFrame,  // ⭐ REFERENCE
         target_column: &str,
         weight_column: Option<&str>
     ) -> Result<DataFrame, PolarsError> {
         crate::analysis::one_way_analysis_table(self, df, target_column, weight_column)  // ⭐ NO CLONE
+    }
+
+    // NEW: Offset-related methods
+
+    /// Mark this entire table as an offset (fixed, not updated by GLM)
+    pub fn as_offset(mut self) -> Self {
+        self.metadata.is_offset = true;
+        self.metadata.is_updatable = false;
+        self
+    }
+
+    /// Set a specific row as offset (locked, not updated by GLM)
+    pub fn set_row_offset(&mut self, row_idx: usize, is_offset: bool) {
+        // Lazy initialization of row metadata
+        if self.row_metadata.is_none() {
+            self.row_metadata = Some(vec![
+                RowMetadata::default();
+                self.data.height()
+            ]);
+        }
+
+        if row_idx < self.data.height() {
+            self.row_metadata.as_mut().unwrap()[row_idx].is_offset = is_offset;
+        }
+    }
+
+    /// Check if a specific row is marked as offset
+    pub fn is_row_offset(&self, row_idx: usize) -> bool {
+        self.row_metadata
+            .as_ref()
+            .and_then(|meta| meta.get(row_idx))
+            .map(|m| m.is_offset)
+            .unwrap_or(false)
+    }
+
+    /// Set the table name for better diagnostics
+    pub fn with_name(mut self, name: &str) -> Self {
+        self.metadata.name = name.to_string();
+        self
     }
 }
 
@@ -662,6 +740,13 @@ impl RatingModel {
 
     pub fn one_way_analysis(&self, df: &DataFrame, target_column: &str, weight_column: Option<&str>) -> Result<Vec<DataFrame>, PolarsError> {
         crate::analysis::one_way_analysis(self, df, target_column, weight_column)  // ⭐ NO CLONE
+    }
+
+    // NEW: Offset-related methods
+
+    /// Add an offset table to the model (will be used in predictions but not updated by GLM)
+    pub fn add_offset_table(&mut self, table: RatingTable) {
+        self.tables.push(table.as_offset());
     }
 }
 

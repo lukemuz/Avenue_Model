@@ -32,6 +32,7 @@ impl Default for GLMOptions {
 /// * `df` - Training data
 /// * `target_col` - Name of the target column
 /// * `weight_col` - Optional name of the weight column
+/// * `offset_col` - Optional name of the offset column (added to linear predictor)
 /// * `options` - GLM fitting options
 ///
 /// # Returns
@@ -41,10 +42,11 @@ pub fn fit_glm(
     df: &DataFrame,
     target_col: &str,
     weight_col: Option<&str>,
+    offset_col: Option<&str>,
     options: GLMOptions,
 ) -> Result<RatingModel, PolarsError> {
     // Validate inputs
-    validate_inputs(model, df, target_col, weight_col)?;
+    validate_inputs(model, df, target_col, weight_col, offset_col)?;
 
     // Initialize loss function from required objective
     let mut loss_fn = LossFunction::from_objective(&options.objective);
@@ -62,6 +64,17 @@ pub fn fit_glm(
             weights_owned = ChunkedArray::from_vec("weights".into(), vec![1.0; df.height()]);
             &weights_owned
         }
+    };
+
+    // NEW: Extract offset column if provided
+    let offset: Vec<f64> = if let Some(col) = offset_col {
+        df.column(col)?
+            .f64()?
+            .into_iter()
+            .map(|v| v.unwrap_or(0.0))
+            .collect()
+    } else {
+        vec![0.0; df.height()]
     };
 
     // Clone the model to create our working copy
@@ -83,6 +96,11 @@ pub fn fit_glm(
 
         // Iterate over each table (skip the mean table at index 0)
         for table_idx in 1..working_model.tables.len() {
+            // NEW: Skip offset tables (they are fixed, not updated)
+            if working_model.tables[table_idx].metadata.is_offset {
+                continue;
+            }
+
             let change = update_table_factors_precomputed(
                 &mut working_model,
                 table_idx,
@@ -90,6 +108,7 @@ pub fn fit_glm(
                 &precomputed_matches,  // Pass all matches for prediction
                 &target,
                 &weights,
+                &offset,  // NEW: Pass offset
                 &loss_fn,
                 &options,
             )?;
@@ -122,16 +141,24 @@ fn update_table_factors_precomputed(
     all_matches: &[Vec<Option<usize>>],
     target: &ChunkedArray<Float64Type>,
     weights: &ChunkedArray<Float64Type>,
+    offset: &[f64],
     loss_fn: &LossFunction,
     options: &GLMOptions,
 ) -> Result<f64, PolarsError> {
     // 1. Compute predictions WITHOUT this table using precomputed matches
     let partial_preds = predict_without_table_precomputed(model, table_idx, all_matches)?;
 
-    // 2. Compute working residuals (depends on link function)
-    let working_residuals = loss_fn.compute_working_residuals(target, &partial_preds)?;
+    // 2. NEW: Add offset to partial predictions
+    let offset_adjusted_preds: Vec<f64> = partial_preds
+        .iter()
+        .zip(offset.iter())
+        .map(|(p, o)| p + o)
+        .collect();
 
-    // 3. Aggregate by matched row to compute optimal factors (matches already precomputed!)
+    // 3. Compute working residuals (depends on link function)
+    let working_residuals = loss_fn.compute_working_residuals(target, &offset_adjusted_preds)?;
+
+    // 4. Aggregate by matched row to compute optimal factors (matches already precomputed!)
     let new_factors = compute_optimal_factors(
         table_matches,
         &working_residuals,
@@ -139,7 +166,7 @@ fn update_table_factors_precomputed(
         &model.tables[table_idx],
     )?;
 
-    // 4. Update the table and compute max change
+    // 5. Update the table and compute max change
     let max_change = update_table_with_factors(&mut model.tables[table_idx], new_factors)?;
 
     Ok(max_change)
@@ -219,16 +246,25 @@ fn update_table_with_factors(
     let mut max_change: f64 = 0.0;
     let n_rows = table.data.height();
 
-    // Compute max change
+    // Create final factors, respecting row-level offsets
+    let mut final_factors = new_factors.clone();
+
+    // Compute max change and preserve offset rows
     for row_idx in 0..n_rows {
+        // NEW: Skip offset rows (keep their original values)
+        if table.is_row_offset(row_idx) {
+            final_factors[row_idx] = table.get_rating_factor(row_idx);
+            continue;
+        }
+
         let old_factor = table.get_rating_factor(row_idx);
-        let new_factor = new_factors[row_idx];
+        let new_factor = final_factors[row_idx];
         let change = (new_factor - old_factor).abs();
         max_change = max_change.max(change);
     }
 
     // Update the Rating_Factor column and recreate RatingTable to update metadata
-    let new_factor_series = Series::new("Rating_Factor".into(), new_factors);
+    let new_factor_series = Series::new("Rating_Factor".into(), final_factors);
 
     // Clone existing data and update Rating_Factor column
     let mut updated_data = table.data.clone();
@@ -246,6 +282,7 @@ fn validate_inputs(
     df: &DataFrame,
     target_col: &str,
     weight_col: Option<&str>,
+    offset_col: Option<&str>,
 ) -> Result<(), PolarsError> {
     // Check target column exists
     if df.column(target_col).is_err() {
@@ -259,6 +296,15 @@ fn validate_inputs(
         if df.column(wcol).is_err() {
             return Err(PolarsError::ColumnNotFound(
                 format!("Weight column '{}' not found", wcol).into()
+            ));
+        }
+    }
+
+    // NEW: Check offset column exists if specified
+    if let Some(ocol) = offset_col {
+        if df.column(ocol).is_err() {
+            return Err(PolarsError::ColumnNotFound(
+                format!("Offset column '{}' not found", ocol).into()
             ));
         }
     }

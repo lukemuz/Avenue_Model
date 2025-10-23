@@ -58,7 +58,7 @@ mod glm_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", None, options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", None, None, options).unwrap();
         let duration = start.elapsed();
 
         benchmark_report("Small Dataset - Gaussian (1k rows, 4 bins)", duration, n, 50);
@@ -115,7 +115,7 @@ mod glm_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", Some("exposure"), options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", Some("exposure"), None, options).unwrap();
         let duration = start.elapsed();
 
         benchmark_report("Medium Dataset - Poisson (10k rows, 11 bins)", duration, n, 50);
@@ -168,7 +168,7 @@ mod glm_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", None, options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", None, None, options).unwrap();
         let duration = start.elapsed();
 
         benchmark_report("Large Dataset - Gamma (100k rows, 21 bins)", duration, n, 30);
@@ -235,7 +235,7 @@ mod glm_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", None, options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", None, None, options).unwrap();
         let duration = start.elapsed();
 
         benchmark_report("Multi-Table Model (50k rows, 3 features, 15 bins)", duration, n, 50);
@@ -290,7 +290,7 @@ mod glm_benchmarks {
         };
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", None, options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", None, None, options).unwrap();
         let duration = start.elapsed();
 
         benchmark_report("Logistic Regression (20k rows, 11 bins)", duration, n, 50);
@@ -356,7 +356,7 @@ mod glm_benchmarks {
             };
 
             let start = Instant::now();
-            let _ = fit_glm(&model, &train_df, "y", None, options).unwrap();
+            let _ = fit_glm(&model, &train_df, "y", None, None, options).unwrap();
             let duration = start.elapsed();
 
             println!("\n{:12} | Fit: {:7.2} ms | Per iter: {:6.2} ms | Per row/iter: {:5.2} µs",

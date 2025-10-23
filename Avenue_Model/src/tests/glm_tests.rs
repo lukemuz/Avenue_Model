@@ -48,7 +48,7 @@ mod glm_tests {
             tweedie_power: 1.5,
         };
 
-        let fitted_model = fit_glm(&model, &train_df, "y", None, options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", None, None, options).unwrap();
 
         // Make predictions
         let predictions = fitted_model.predict(&train_df).unwrap();
@@ -106,7 +106,7 @@ mod glm_tests {
             tweedie_power: 1.5,
         };
 
-        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), None, options).unwrap();
 
         // Basic check
         assert!(fitted_model.tables.len() == 2);

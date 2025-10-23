@@ -238,7 +238,7 @@ fn fit_glm(
     let df: DataFrame = df.0;
     let glm_options = options.map(|o| o.inner).unwrap_or_default();
 
-    glm::fit_glm(&model.inner, &df, target_col, weight_col, glm_options)
+    glm::fit_glm(&model.inner, &df, target_col, weight_col, None, glm_options)  // None for offset_col for now
         .map(|fitted_model| PyRatingModel { inner: fitted_model })
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
             format!("GLM fitting failed: {}", e)

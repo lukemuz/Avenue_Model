@@ -53,7 +53,7 @@ mod distribution_tests {
         };
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", Some("exposure"), options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", Some("exposure"), None, options).unwrap();
         let duration = start.elapsed();
 
         println!("\n=== POISSON GLM ===");
@@ -97,7 +97,7 @@ mod distribution_tests {
         };
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), None, options).unwrap();
         let duration = start.elapsed();
 
         println!("\n=== GAMMA GLM ===");
@@ -140,7 +140,7 @@ mod distribution_tests {
         };
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), None, options).unwrap();
         let duration = start.elapsed();
 
         println!("\n=== TWEEDIE GLM (p=1.5) ===");
@@ -183,7 +183,7 @@ mod distribution_tests {
         };
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), None, options).unwrap();
         let duration = start.elapsed();
 
         println!("\n=== LOGISTIC REGRESSION ===");
@@ -255,7 +255,7 @@ mod distribution_tests {
         println!("Number of bins: {}", x_bins.len());
 
         let start = Instant::now();
-        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), options).unwrap();
+        let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), None, options).unwrap();
         let duration = start.elapsed();
 
         println!("Total fitting time: {:?}", duration);
