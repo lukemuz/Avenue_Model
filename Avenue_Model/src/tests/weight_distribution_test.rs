@@ -1,6 +1,5 @@
 use crate::rating_model::{RatingTable, FeatureValue};
 use crate::analysis::one_way_analysis_table;
-use crate::tests::testing_utils::initialize_test_license;
 use polars::prelude::*;
 use std::collections::HashMap;
 
@@ -10,7 +9,6 @@ mod weight_distribution_tests {
 
     #[test]
     fn test_numeric_feature_weight_distribution() {
-        initialize_test_license();
         
         // Create test data matching the user's scenario
         let test_data = DataFrame::new(vec![
@@ -83,7 +81,6 @@ mod weight_distribution_tests {
     
     #[test]
     fn test_find_row_match_individual_cases() {
-        initialize_test_license();
         
         // Test the specific cases from the user's data
         let rating_table_data = DataFrame::new(vec![

@@ -1,5 +1,4 @@
 // Core modules (always available)
-pub mod license_handler;
 pub mod rating_model;
 pub mod table_estimator;
 pub mod analysis;
@@ -18,17 +17,9 @@ use pyo3_polars::PyDataFrame;
 #[cfg(feature = "python")]
 use pyo3::types::PyDict;
 #[cfg(feature = "python")]
-use license_handler::internal_initialize_license;
-#[cfg(feature = "python")]
 use rating_model::RatingModel;
 #[cfg(feature = "python")]
 use table_estimator::estimate_number_of_tables;
-
-#[cfg(feature = "python")]
-#[pyfunction]
-fn initialize_license(license_key: &str) -> PyResult<bool> {
-    Ok(internal_initialize_license(license_key))
-}
 
 #[cfg(feature = "python")]
 #[pyclass(name = "RatingModel")]
@@ -250,7 +241,6 @@ fn fit_glm(
 fn avenue_model(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRatingModel>()?;
     m.add_class::<PyGLMOptions>()?;
-    m.add_function(wrap_pyfunction!(initialize_license, m)?)?;
     m.add_function(wrap_pyfunction!(estimate_num_tables, m)?)?;
     m.add_function(wrap_pyfunction!(fit_glm, m)?)?;
     Ok(())

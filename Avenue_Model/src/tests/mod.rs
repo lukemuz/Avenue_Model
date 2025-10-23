@@ -8,9 +8,8 @@ mod glm_realistic_benchmarks;
 pub mod testing_utils;
 
 use crate::{
-    license_handler::internal_initialize_license,
-    rating_model::{process_lgbm_trees, 
-        RatingTable, 
+    rating_model::{process_lgbm_trees,
+        RatingTable,
         RatingModel,
         FeatureValue,
         LinkFunction,
@@ -20,7 +19,6 @@ use crate::{
         combine_all_tables,
         },
     table_estimator::estimate_number_of_tables,
-    tests::testing_utils::initialize_test_license
 };
 use polars::prelude::*;
 use polars::frame::DataFrame;

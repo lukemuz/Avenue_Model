@@ -2,7 +2,6 @@ use polars::error::PolarsError;
 use std::collections::HashSet;
 use serde_json::Value;
 
-use crate::license_handler::validate_current_license;
 
 fn find_feature_sets(model_json: &str) -> Result<HashSet<Vec<String>>, PolarsError> {
     let model: Value = serde_json::from_str(model_json)
@@ -160,10 +159,6 @@ fn collect_feature_sets(
 }
 
 pub fn estimate_number_of_tables(model_json: &str) -> Result<usize, PolarsError> {
-    //check license
-    if !validate_current_license() {
-        panic!("License not valid");
-    }
 
     // Add validation for empty or malformed JSON
     if model_json.trim().is_empty() {

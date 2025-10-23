@@ -87,7 +87,6 @@ mod realistic_benchmarks {
 
     #[test]
     fn bench_realistic_1k() {
-        // License check skipped for pure Rust benchmarks
         let (df, model) = create_realistic_dataset(1_000);
 
         let options = GLMOptions {
@@ -114,7 +113,6 @@ mod realistic_benchmarks {
 
     #[test]
     fn bench_realistic_5k() {
-        // License check skipped for pure Rust benchmarks
         let (df, model) = create_realistic_dataset(5_000);
 
         let options = GLMOptions {
@@ -141,7 +139,6 @@ mod realistic_benchmarks {
 
     #[test]
     fn bench_realistic_10k() {
-        // License check skipped for pure Rust benchmarks
         let (df, model) = create_realistic_dataset(10_000);
 
         let options = GLMOptions {
@@ -168,7 +165,6 @@ mod realistic_benchmarks {
 
     #[test]
     fn bench_realistic_50k() {
-        // License check skipped for pure Rust benchmarks
         let (df, model) = create_realistic_dataset(50_000);
 
         let options = GLMOptions {
@@ -195,7 +191,6 @@ mod realistic_benchmarks {
 
     #[test]
     fn bench_realistic_100k() {
-        // License check skipped for pure Rust benchmarks
         let (df, model) = create_realistic_dataset(100_000);
 
         let options = GLMOptions {
@@ -222,7 +217,6 @@ mod realistic_benchmarks {
 
     #[test]
     fn bench_realistic_1m() {
-        // License check skipped for pure Rust benchmarks
         let (df, model) = create_realistic_dataset(1_000_000);
 
         let options = GLMOptions {
@@ -249,7 +243,6 @@ mod realistic_benchmarks {
 
     #[test]
     fn bench_all_sizes_summary() {
-        // License check skipped for pure Rust benchmarks
 
         println!("\n{}", "=".repeat(80));
         println!("REALISTIC PERFORMANCE BENCHMARKS - Multi-feature Insurance Model");

@@ -2,7 +2,6 @@
 mod glm_benchmarks {
     use crate::rating_model::RatingModel;
     use crate::glm::{fit_glm, GLMOptions};
-    use crate::tests::testing_utils::initialize_test_license;
     use polars::prelude::*;
     use std::time::Instant;
 
@@ -23,7 +22,6 @@ mod glm_benchmarks {
     #[test]
     #[ignore] // Run with: cargo test --test glm_benchmarks -- --ignored --nocapture
     fn benchmark_small_dataset_gaussian() {
-        initialize_test_license();
 
         let n = 1000;
         let x_values: Vec<f64> = (0..n).map(|i| (i % 100) as f64).collect();
@@ -76,7 +74,6 @@ mod glm_benchmarks {
     #[test]
     #[ignore]
     fn benchmark_medium_dataset_poisson() {
-        initialize_test_license();
 
         let n = 10_000;
         let x_values: Vec<f64> = (0..n).map(|i| (i % 100) as f64).collect();
@@ -131,7 +128,6 @@ mod glm_benchmarks {
     #[test]
     #[ignore]
     fn benchmark_large_dataset_gamma() {
-        initialize_test_license();
 
         let n = 100_000;
         let x_values: Vec<f64> = (0..n).map(|i| (i % 200) as f64).collect();
@@ -184,7 +180,6 @@ mod glm_benchmarks {
     #[test]
     #[ignore]
     fn benchmark_multitable_model() {
-        initialize_test_license();
 
         let n = 50_000;
         let x1_values: Vec<f64> = (0..n).map(|i| (i % 50) as f64).collect();
@@ -251,7 +246,6 @@ mod glm_benchmarks {
     #[test]
     #[ignore]
     fn benchmark_logistic_regression() {
-        initialize_test_license();
 
         let n = 20_000;
         let x_values: Vec<f64> = (0..n).map(|i| (i as f64 / 100.0)).collect();
@@ -306,7 +300,6 @@ mod glm_benchmarks {
     #[test]
     #[ignore]
     fn benchmark_comparison_all_distributions() {
-        initialize_test_license();
 
         let n = 10_000;
         let x_values: Vec<f64> = (0..n).map(|i| (i % 100) as f64).collect();

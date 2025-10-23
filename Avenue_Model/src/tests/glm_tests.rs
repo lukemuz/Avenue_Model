@@ -2,13 +2,11 @@
 mod glm_tests {
     use crate::rating_model::{RatingModel, LinkFunction};
     use crate::glm::{fit_glm, GLMOptions};
-    use crate::tests::testing_utils::initialize_test_license;
     use polars::prelude::*;
     use std::time::Instant;
 
     #[test]
     fn test_glm_fit_gaussian() {
-        initialize_test_license();
 
         // Create simple training data: y = 2.0 + 1.5*x
         let x_values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
@@ -67,7 +65,6 @@ mod glm_tests {
 
     #[test]
     fn test_glm_fit_with_weights() {
-        initialize_test_license();
 
         // Create simple training data with weights
         let x_values = vec![1.0, 2.0, 3.0, 4.0, 5.0];

@@ -9,10 +9,6 @@ use std::sync::Mutex;
 use polars::error::PolarsError;
 use itertools::Itertools;
 
-
-
-use crate::license_handler::validate_current_license;
-
 // Begin Metadata Structures
 /// Metadata for a RatingTable
 #[derive(Debug, Clone)]
@@ -147,12 +143,6 @@ pub struct RatingTable {
 impl RatingTable {
     pub fn new(data: DataFrame, _existing_row_number_col: Option<&str>) -> Self {
         // Remove row_number handling from constructor since we'll generate it on demand
-        // Skip license check in test/benchmark mode
-        #[cfg(not(test))]
-        if !validate_current_license() {
-            panic!("License not valid");
-        }
-        
         let mut numeric_columns = HashMap::new();
         let mut categorical_columns = HashMap::new();
         
@@ -466,10 +456,6 @@ pub struct RatingModel {
 impl RatingModel {
     // Private Constructor for internal use
     pub fn new(tables: Vec<RatingTable>, link_function: LinkFunction) -> Self {
-        //check license
-        if !validate_current_license() {
-            panic!("License not valid");
-        }
         Self { 
             tables,
             link_function,
@@ -486,10 +472,6 @@ impl RatingModel {
 
     //Constructor method from lgbm json
     pub fn from_lgbm_json(model_json: &str, consolidation_level: &str) -> Result<Self, PolarsError> {
-        //check license
-        if !validate_current_license() {
-            panic!("License not valid");
-        }
         let tables = process_lgbm_trees(model_json).map_err(|e| PolarsError::ComputeError(format!("Error processing trees: {}", e).into()))?;
         let link_function = Self::get_link_from_model_json(model_json).map_err(|e| PolarsError::ComputeError(format!("Error getting link function: {}", e).into()))?;
         
@@ -510,10 +492,6 @@ impl RatingModel {
         feature_columns: Option<Vec<String>>,
         existing_row_number_col: Option<&str>
     ) -> Result<Self, PolarsError> {
-        //check license
-        if !validate_current_license() {
-            panic!("License not valid");
-        }
 
         let link_function = LinkFunction::from_objective(link_function);
         
@@ -540,10 +518,6 @@ impl RatingModel {
     }
 
     pub fn model_tables(&self) -> Vec<DataFrame> {
-        //check license
-        if !validate_current_license() {
-            panic!("License not valid");
-        }
         self.tables.iter().map(|t| t.data.clone()).collect()
     }
 
@@ -625,10 +599,6 @@ impl RatingModel {
             }
         }
 
-        //check license
-        if !validate_current_license() {
-            panic!("License not valid");
-        }
         let n_rows = df.height();
         let n_tables = self.tables.len();
         

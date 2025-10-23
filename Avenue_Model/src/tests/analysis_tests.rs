@@ -1,6 +1,5 @@
 use crate::rating_model::{RatingTable, RatingModel, LinkFunction, FeatureValue};
 use crate::analysis::{one_way_analysis_table, one_way_analysis};
-use crate::tests::testing_utils::initialize_test_license;
 use polars::prelude::*;
 use std::time::Instant;
 use std::collections::HashMap;
@@ -30,7 +29,6 @@ mod analysis_tests {
 
     #[test]
     fn test_one_way_analysis_single_table() {
-        initialize_test_license();
         
         let test_data = create_test_data();
         let rating_table = create_test_rating_table_a();
@@ -60,7 +58,6 @@ mod analysis_tests {
 
     #[test]
     fn test_one_way_analysis_multiple_tables() {
-        initialize_test_license();
         
         let test_data = create_test_data();
         let table_1 = create_test_rating_table_a();
@@ -90,7 +87,6 @@ mod analysis_tests {
 
     #[test]
     fn test_one_way_analysis_without_weights() {
-        initialize_test_license();
         
         let test_data = create_test_data();
         let rating_table = create_test_rating_table_a();
@@ -121,7 +117,6 @@ mod analysis_tests {
     /// New test: baseline-only table (no feature columns) should not require join predicates
     #[test]
     fn test_one_way_analysis_baseline_only_table() {
-        initialize_test_license();
 
         // Input data: only target and weight columns
         let input_df = DataFrame::new(vec![
@@ -196,7 +191,6 @@ mod analysis_tests {
     #[cfg(feature = "benchmarks")]
     #[test]
     fn benchmark_original_vs_v2() {
-        initialize_test_license();
         let sizes = vec![1_000, 10_000, 100_000, 1_000_000];
 
         println!("\n🏁 Benchmark: original one_way_analysis_table vs v2");
@@ -241,7 +235,6 @@ mod analysis_tests {
     #[cfg(feature = "benchmarks")]
     #[test]
     fn benchmark_optimized_analysis() {
-        initialize_test_license();
         
         let num_rows = 100_000; // Large dataset
         let iterations = 3;
@@ -294,7 +287,6 @@ mod analysis_tests {
         target_column: &str,
         weight_column: Option<&str>
     ) -> Result<DataFrame, PolarsError> {
-        use crate::license_handler::validate_current_license;
         
         // Validate DataFrame columns
         let required_features: HashMap<String, DataType> = table.get_feature_info();
@@ -321,10 +313,6 @@ mod analysis_tests {
             }
         }
         
-        // Check license
-        if !validate_current_license() {
-            panic!("License not valid");
-        }
 
         // Check if target column exists
         if !df.get_column_names().iter().any(|c| c.as_str() == target_column) {
@@ -432,7 +420,6 @@ mod analysis_tests {
 
     #[test]
     fn test_join_where_vs_original() {
-        initialize_test_license();
         
         println!("\n🧪 Testing join_where() vs Original Implementation");
         
@@ -554,7 +541,6 @@ mod analysis_tests {
     /// Test specifically for categorical features with -999 wildcard behavior
     #[test]
     fn test_categorical_features_with_wildcard() {
-        initialize_test_license();
         
         println!("\n🧪 Testing categorical features with -999 wildcard");
         
@@ -625,7 +611,6 @@ mod analysis_tests {
     /// Test mixed categorical and numeric features
     #[test]
     fn test_mixed_categorical_numeric_features() {
-        initialize_test_license();
         
         println!("\n🧪 Testing mixed categorical and numeric features");
         
@@ -669,7 +654,6 @@ mod analysis_tests {
     /// Test edge case: all categorical values should match wildcard
     #[test]
     fn test_all_wildcard_categorical() {
-        initialize_test_license();
         
         println!("\n🧪 Testing all-wildcard categorical table");
         
@@ -709,7 +693,6 @@ mod analysis_tests {
     /// Test the specific error case from the logs
     #[test]
     fn test_error_reproduction() {
-        initialize_test_license();
         
         println!("\n🧪 Reproducing the specific error from logs");
         
@@ -764,7 +747,6 @@ mod analysis_tests {
     #[cfg(feature = "benchmarks")]
     #[test]
     fn benchmark_join_where_vs_original() {
-        initialize_test_license();
         
         let sizes = vec![1_000, 10_000, 100_000];
         

@@ -2,7 +2,6 @@
 mod distribution_tests {
     use crate::rating_model::RatingModel;
     use crate::glm::{fit_glm, GLMOptions};
-    use crate::tests::testing_utils::initialize_test_license;
     use polars::prelude::*;
     use std::time::Instant;
 
@@ -28,7 +27,6 @@ mod distribution_tests {
 
     #[test]
     fn test_poisson_glm() {
-        initialize_test_license();
 
         // Create Poisson data: log(E[Y]) = 1.0 + 0.5*x
         let x_values = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
@@ -72,7 +70,6 @@ mod distribution_tests {
 
     #[test]
     fn test_gamma_glm() {
-        initialize_test_license();
 
         // Create Gamma data: log(E[Y]) = 2.0 + 0.3*x
         let x_values = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
@@ -116,7 +113,6 @@ mod distribution_tests {
 
     #[test]
     fn test_tweedie_glm() {
-        initialize_test_license();
 
         // Create Tweedie data with p=1.5
         let x_values = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
@@ -159,7 +155,6 @@ mod distribution_tests {
 
     #[test]
     fn test_logistic_regression() {
-        initialize_test_license();
 
         // Create binary classification data
         let x_values = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
@@ -210,7 +205,6 @@ mod distribution_tests {
 
     #[test]
     fn test_large_dataset_performance() {
-        initialize_test_license();
 
         // Create a larger dataset for performance testing
         let n = 10000;

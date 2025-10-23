@@ -1,7 +1,6 @@
 use super::*;
 #[test]
 fn test_overall_mean_table() {
-    initialize_test_license();
     let json_str = r#"{
         "feature_names": ["numeric_feat", "categorical_feat"],
         "tree_info": [{
@@ -45,7 +44,6 @@ fn test_overall_mean_table() {
 
 #[test]
 fn test_number_of_tables() {
-    initialize_test_license();
     let json_str = r#"{
         "feature_names": ["numeric_feat", "categorical_feat"],
         "tree_info": [{
@@ -85,7 +83,6 @@ fn test_number_of_tables() {
 
 #[test]
 fn test_leaf_paths() {
-    initialize_test_license();
     let json_str = r#"{
         "feature_names": ["numeric_feat", "categorical_feat"],
         "tree_info": [{
@@ -169,7 +166,6 @@ fn test_leaf_paths() {
 
 #[test]
 fn test_predict_and_predict_batch() {
-    initialize_test_license();
     // Create a simple test model
     let json_str = r#"{
         "feature_names": ["numeric_feat", "categorical_feat"],
@@ -254,7 +250,6 @@ fn test_predict_and_predict_batch() {
 
 #[test]
 fn test_predict_edge_cases() {
-initialize_test_license();
 let json_str = r#"{
     "feature_names": ["numeric_feat"],
     "tree_info": [{
@@ -287,7 +282,6 @@ assert!((prediction - 1.0).abs() < 1e-10,
 
 #[test]
 fn test_expand_and_combine_tables() {
-    initialize_test_license();
     // Test Case 1: Simple numeric features
     let table1_data = DataFrame::new(vec![
         Series::new("feature1".into(), vec![1.0, 2.0]).into(),
@@ -469,7 +463,6 @@ fn test_expand_and_combine_tables() {
 
 #[test]
 fn test_predict_with_infinity() {
-    initialize_test_license();
     let json_str = r#"{
         "feature_names": ["numeric_feat"],
         "tree_info": [{
@@ -614,7 +607,6 @@ fn test_build_analysis_tablemodel() {
 
 #[test]
 fn test_combine_all_tables() {
-    initialize_test_license();
     // Create tables with overlapping features
     let table1 = RatingTable::new(
         DataFrame::new(vec![
@@ -743,7 +735,6 @@ fn test_consolidate_tables() {
 
 #[test]
 fn test_consolidate_tables_usage() {
-    initialize_test_license();
     // Create mean table
     let mean_table = RatingTable::new(
         DataFrame::new(vec![
@@ -804,7 +795,6 @@ fn test_consolidate_tables_usage() {
 
 #[test]
 fn test_tweedie_objective() {
-    initialize_test_license();
     // Create a simple model JSON with Tweedie objective
     let json_str = r#"{
         "objective": "tweedie",
@@ -859,7 +849,6 @@ fn test_tweedie_objective() {
 }
 #[test]
 fn test_from_lgbm_json() {
-    initialize_test_license();
     // Test case 1: Valid JSON with regression objective
     let json_str = r#"{
         "objective": "regression",
@@ -954,7 +943,6 @@ fn test_from_lgbm_json() {
 
 #[test]
 fn test_no_empty_tables_from_lgbm() {
-    initialize_test_license();
     // Create a test model JSON similar to your case with Shell_weight and Shucked_weight
     let json_str = r#"{
         "objective": "regression",
@@ -1038,7 +1026,6 @@ fn test_no_empty_tables_from_lgbm() {
 }
 #[test]
 fn test_from_lgbm_json_abalone() {
-initialize_test_license();
 let json_str = r#"{"name": "tree", "version": "v4", "num_class": 1, "num_tree_per_iteration": 1, "label_index": 0, "max_feature_idx": 7, "objective": "regression", "average_output": false, "feature_names": ["Sex", "Length", "Diameter", "Height", "Whole_weight", "Shucked_weight", "Viscera_weight", "Shell_weight"], "monotone_constraints": [], "feature_infos": {"Sex": {"min_value": 0, "max_value": 2, "values": []}, "Length": {"min_value": 0.075, "max_value": 0.815, "values": []}, "Diameter": {"min_value": 0.055, "max_value": 0.65, "values": []}, "Height": {"min_value": 0, "max_value": 0.515, "values": []}, "Whole_weight": {"min_value": 0.002, "max_value": 2.8255, "values": []}, "Shucked_weight": {"min_value": 0.001, "max_value": 1.488, "values": []}, "Viscera_weight": {"min_value": 0.0005, "max_value": 0.76, "values": []}, "Shell_weight": {"min_value": 0.0015, "max_value": 0.897, "values": []}}, "tree_info": [{"tree_index": 0, "num_leaves": 4, "num_cat": 0, "shrinkage": 1, "tree_structure": {"split_index": 0, "split_feature": 7, "split_gain": 81.66829681396484, "threshold": "0.16525000000000004", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 9.94767, "internal_weight": 0, "internal_count": 2924, "left_child": {"split_index": 2, "split_feature": 7, "split_gain": 1210.449951171875, "threshold": "0.04825000000000001", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 9.23754, "internal_weight": 987, "internal_count": 987, "left_child": {"leaf_index": 0, "leaf_value": 8.567987491909633, "leaf_weight": 195, "leaf_count": 195}, "right_child": {"leaf_index": 3, "leaf_value": 9.402387237218434, "leaf_weight": 792, "leaf_count": 792}}, "right_child": {"split_index": 1, "split_feature": 7, "split_gain": 1587.5999755859375, "threshold": "0.35525", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 10.3095, "internal_weight": 1937, "internal_count": 1937, "left_child": {"leaf_index": 1, "leaf_value": 10.136758605089016, "leaf_weight": 1379, "leaf_count": 1379}, "right_child": {"leaf_index": 2, "leaf_value": 10.736490368806376, "leaf_weight": 558, "leaf_count": 558}}}}, {"tree_index": 1, "num_leaves": 4, "num_cat": 0, "shrinkage": 0.3, "tree_structure": {"split_index": 0, "split_feature": 7, "split_gain": 42.375301361083984, "threshold": "0.18550000000000003", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0, "internal_weight": 0, "internal_count": 2924, "left_child": {"split_index": 1, "split_feature": 7, "split_gain": 930.60302734375, "threshold": "0.09675000000000002", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": -0.446303, "internal_weight": 1164, "internal_count": 1164, "left_child": {"leaf_index": 0, "leaf_value": -0.751658196191816, "leaf_weight": 507, "leaf_count": 507}, "right_child": {"leaf_index": 2, "leaf_value": -0.2106630745135486, "leaf_weight": 657, "leaf_count": 657}}, "right_child": {"split_index": 2, "split_feature": 7, "split_gain": 807.4240112304688, "threshold": "0.5040000000000001", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0.295168, "internal_weight": 1760, "internal_count": 1760, "left_child": {"leaf_index": 1, "leaf_value": 0.24529582855392648, "leaf_weight": 1660, "leaf_count": 1660}, "right_child": {"leaf_index": 3, "leaf_value": 1.123052909374237, "leaf_weight": 100, "leaf_count": 100}}}}, {"tree_index": 2, "num_leaves": 4, "num_cat": 0, "shrinkage": 0.3, "tree_structure": {"split_index": 0, "split_feature": 7, "split_gain": 24.28070068359375, "threshold": "0.24525000000000002", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0, "internal_weight": 0, "internal_count": 2924, "left_child": {"split_index": 1, "split_feature": 7, "split_gain": 653.2680053710938, "threshold": "0.11025000000000001", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": -0.256727, "internal_weight": 1561, "internal_count": 1561, "left_child": {"leaf_index": 0, "leaf_value": -0.5030059638903491, "leaf_weight": 598, "leaf_count": 598}, "right_child": {"leaf_index": 2, "leaf_value": -0.10379289546024019, "leaf_weight": 963, "leaf_count": 963}}, "right_child": {"split_index": 2, "split_feature": 7, "split_gain": 298.2300109863281, "threshold": "0.4615000000000001", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0.294021, "internal_weight": 1363, "internal_count": 1363, "left_child": {"leaf_index": 1, "leaf_value": 0.23806212171674612, "leaf_weight": 1176, "leaf_count": 1176}, "right_child": {"leaf_index": 3, "leaf_value": 0.6459309234906406, "leaf_weight": 187, "leaf_count": 187}}}}], "feature_importances": {"Shucked_weight": 2, "Shell_weight": 7}, "pandas_categorical": []}"#;
 
 // Test model creation with both consolidation levels
@@ -1102,7 +1089,6 @@ for consolidation_level in ["max", "analysis"].iter() {
 
 #[test]
 fn test_realistic_prediction() {
-    initialize_test_license();
     // Create a realistic set of rating tables similar to your actual model
     let mean_table = RatingTable::new(
         DataFrame::new(vec![
@@ -1182,7 +1168,6 @@ assert!((prediction - 6.9).abs() < 1e-10,
 
 #[test]
 fn test_realistic_prediction2() {
-initialize_test_license();
 // Create test tables matching your actual model structure
 let mean_table = RatingTable::new(
     DataFrame::new(vec![
@@ -1271,7 +1256,6 @@ for (i, pred) in pred_vec.iter().enumerate() {
 }
 #[test]
 fn test_realistic_prediction2_3ways() {
-initialize_test_license();
 // Create test tables (keeping your existing table creation code)
 let mean_table = RatingTable::new(
     DataFrame::new(vec![
@@ -1400,7 +1384,6 @@ assert!((single_prediction - first_batch_pred).abs() < 1e-10,
 }
 #[test]
 fn test_basic_filtering() {
-initialize_test_license();
 // Create a simple test DataFrame
 let df = DataFrame::new(vec![
     Series::new("Height".into(), vec![0.08, 0.08, 0.1, 0.1, 0.1]).into(),
@@ -1435,7 +1418,6 @@ println!("{:?}", final_filtered);
 }
 #[test]
 fn test_abalone_predictions() {
-initialize_test_license();
 // The LightGBM model JSON string (truncated for readability)
 let model_json = r#"{"name": "tree", "version": "v4", "num_class": 1, "num_tree_per_iteration": 1, "label_index": 0, "max_feature_idx": 7, "objective": "regression", "average_output": false, "feature_names": ["Sex", "Length", "Diameter", "Height", "Whole_weight", "Shucked_weight", "Viscera_weight", "Shell_weight"], "monotone_constraints": [], "feature_infos": {"Sex": {"min_value": 0, "max_value": 2, "values": []}, "Length": {"min_value": 0.075, "max_value": 0.815, "values": []}, "Diameter": {"min_value": 0.055, "max_value": 0.65, "values": []}, "Height": {"min_value": 0, "max_value": 0.515, "values": []}, "Whole_weight": {"min_value": 0.002, "max_value": 2.8255, "values": []}, "Shucked_weight": {"min_value": 0.001, "max_value": 1.488, "values": []}, "Viscera_weight": {"min_value": 0.0005, "max_value": 0.76, "values": []}, "Shell_weight": {"min_value": 0.0015, "max_value": 0.897, "values": []}}, "tree_info": [{"tree_index": 0, "num_leaves": 4, "num_cat": 0, "shrinkage": 1, "tree_structure": {"split_index": 0, "split_feature": 7, "split_gain": 8348.349609375, "threshold": "0.16525000000000004", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 9.94767, "internal_weight": 0, "internal_count": 2924, "left_child": {"split_index": 2, "split_feature": 7, "split_gain": 1210.1800537109375, "threshold": "0.04825000000000001", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 8.76413, "internal_weight": 987, "internal_count": 987, "left_child": {"leaf_index": 0, "leaf_value": 7.64833976306965, "leaf_weight": 195, "leaf_count": 195}, "right_child": {"leaf_index": 3, "leaf_value": 9.038880237432942, "leaf_weight": 792, "leaf_count": 792}}, "right_child": {"split_index": 1, "split_feature": 7, "split_gain": 1587.5, "threshold": "0.35525", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 10.5508, "internal_weight": 1937, "internal_count": 1937, "left_child": {"leaf_index": 1, "leaf_value": 10.262808818357541, "leaf_weight": 1379, "leaf_count": 1379}, "right_child": {"leaf_index": 2, "leaf_value": 11.262335148139254, "leaf_weight": 558, "leaf_count": 558}}}}, {"tree_index": 1, "num_leaves": 4, "num_cat": 0, "shrinkage": 0.5, "tree_structure": {"split_index": 0, "split_feature": 7, "split_gain": 2553.300048828125, "threshold": "0.24525000000000002", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0, "internal_weight": 0, "internal_count": 2924, "left_child": {"split_index": 1, "split_feature": 7, "split_gain": 835.5549926757812, "threshold": "0.09675000000000002", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": -0.436596, "internal_weight": 1561, "internal_count": 1561, "left_child": {"leaf_index": 0, "leaf_value": -0.9640311902105939, "leaf_weight": 507, "leaf_count": 507}, "right_child": {"leaf_index": 2, "leaf_value": -0.182875297697055, "leaf_weight": 1054, "leaf_count": 1054}}, "right_child": {"split_index": 2, "split_feature": 5, "split_gain": 806.8489990234375, "threshold": "0.41475", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0.500013, "internal_weight": 1363, "internal_count": 1363, "left_child": {"leaf_index": 1, "leaf_value": 1.171245445314032, "leaf_weight": 337, "leaf_count": 337}, "right_child": {"leaf_index": 3, "leaf_value": 0.279526051880701, "leaf_weight": 1026, "leaf_count": 1026}}}}, {"tree_index": 2, "num_leaves": 4, "num_cat": 0, "shrinkage": 0.5, "tree_structure": {"split_index": 0, "split_feature": 7, "split_gain": 924.6630249023438, "threshold": "0.29025000000000006", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0, "internal_weight": 0, "internal_count": 2924, "left_child": {"leaf_index": 0, "leaf_value": -0.20425096174789525, "leaf_weight": 1914, "leaf_count": 1914}, "right_child": {"split_index": 1, "split_feature": 7, "split_gain": 511.0820007324219, "threshold": "0.5040000000000001", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0.387061, "internal_weight": 1010, "internal_count": 1010, "left_child": {"split_index": 2, "split_feature": 5, "split_gain": 581.2630004882812, "threshold": "0.44975000000000004", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0.269141, "internal_weight": 910, "internal_count": 910, "left_child": {"leaf_index": 1, "leaf_value": 1.0032499631026246, "leaf_weight": 208, "leaf_count": 208}, "right_child": {"leaf_index": 3, "leaf_value": 0.05160855112947821, "leaf_weight": 702, "leaf_count": 702}}, "right_child": {"leaf_index": 2, "leaf_value": 1.4599561999230584, "leaf_weight": 100, "leaf_count": 100}}}}], "feature_importances": {"Shucked_weight": 2, "Shell_weight": 7}, "pandas_categorical": []}"#;
 
@@ -1482,7 +1464,6 @@ for (i, (pred, exp)) in predictions.iter().zip(expected.iter()).enumerate() {
 
 #[test]
 fn test_abalone_predictions_debug() {
-initialize_test_license();
 let model_json = r#"{"name": "tree", "version": "v4", "num_class": 1, "num_tree_per_iteration": 1, "label_index": 0, "max_feature_idx": 7, "objective": "regression", "average_output": false, "feature_names": ["Sex", "Length", "Diameter", "Height", "Whole_weight", "Shucked_weight", "Viscera_weight", "Shell_weight"], "monotone_constraints": [], "feature_infos": {"Sex": {"min_value": 0, "max_value": 2, "values": []}, "Length": {"min_value": 0.075, "max_value": 0.815, "values": []}, "Diameter": {"min_value": 0.055, "max_value": 0.65, "values": []}, "Height": {"min_value": 0, "max_value": 0.515, "values": []}, "Whole_weight": {"min_value": 0.002, "max_value": 2.8255, "values": []}, "Shucked_weight": {"min_value": 0.001, "max_value": 1.488, "values": []}, "Viscera_weight": {"min_value": 0.0005, "max_value": 0.76, "values": []}, "Shell_weight": {"min_value": 0.0015, "max_value": 0.897, "values": []}}, "tree_info": [{"tree_index": 0, "num_leaves": 4, "num_cat": 0, "shrinkage": 1, "tree_structure": {"split_index": 0, "split_feature": 7, "split_gain": 8348.349609375, "threshold": "0.16525000000000004", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 9.94767, "internal_weight": 0, "internal_count": 2924, "left_child": {"split_index": 2, "split_feature": 7, "split_gain": 1210.1800537109375, "threshold": "0.04825000000000001", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 8.76413, "internal_weight": 987, "internal_count": 987, "left_child": {"leaf_index": 0, "leaf_value": 7.64833976306965, "leaf_weight": 195, "leaf_count": 195}, "right_child": {"leaf_index": 3, "leaf_value": 9.038880237432942, "leaf_weight": 792, "leaf_count": 792}}, "right_child": {"split_index": 1, "split_feature": 7, "split_gain": 1587.5, "threshold": "0.35525", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 10.5508, "internal_weight": 1937, "internal_count": 1937, "left_child": {"leaf_index": 1, "leaf_value": 10.262808818357541, "leaf_weight": 1379, "leaf_count": 1379}, "right_child": {"leaf_index": 2, "leaf_value": 11.262335148139254, "leaf_weight": 558, "leaf_count": 558}}}}, {"tree_index": 1, "num_leaves": 4, "num_cat": 0, "shrinkage": 0.5, "tree_structure": {"split_index": 0, "split_feature": 7, "split_gain": 2553.300048828125, "threshold": "0.24525000000000002", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0, "internal_weight": 0, "internal_count": 2924, "left_child": {"split_index": 1, "split_feature": 7, "split_gain": 835.5549926757812, "threshold": "0.09675000000000002", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": -0.436596, "internal_weight": 1561, "internal_count": 1561, "left_child": {"leaf_index": 0, "leaf_value": -0.9640311902105939, "leaf_weight": 507, "leaf_count": 507}, "right_child": {"leaf_index": 2, "leaf_value": -0.182875297697055, "leaf_weight": 1054, "leaf_count": 1054}}, "right_child": {"split_index": 2, "split_feature": 5, "split_gain": 806.8489990234375, "threshold": "0.41475", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0.500013, "internal_weight": 1363, "internal_count": 1363, "left_child": {"leaf_index": 1, "leaf_value": 1.171245445314032, "leaf_weight": 337, "leaf_count": 337}, "right_child": {"leaf_index": 3, "leaf_value": 0.279526051880701, "leaf_weight": 1026, "leaf_count": 1026}}}}, {"tree_index": 2, "num_leaves": 4, "num_cat": 0, "shrinkage": 0.5, "tree_structure": {"split_index": 0, "split_feature": 7, "split_gain": 924.6630249023438, "threshold": "0.29025000000000006", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0, "internal_weight": 0, "internal_count": 2924, "left_child": {"leaf_index": 0, "leaf_value": -0.20425096174789525, "leaf_weight": 1914, "leaf_count": 1914}, "right_child": {"split_index": 1, "split_feature": 7, "split_gain": 511.0820007324219, "threshold": "0.5040000000000001", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0.387061, "internal_weight": 1010, "internal_count": 1010, "left_child": {"split_index": 2, "split_feature": 5, "split_gain": 581.2630004882812, "threshold": "0.44975000000000004", "decision_type": "<=", "default_left": true, "missing_type": "None", "internal_value": 0.269141, "internal_weight": 910, "internal_count": 910, "left_child": {"leaf_index": 1, "leaf_value": 1.0032499631026246, "leaf_weight": 208, "leaf_count": 208}, "right_child": {"leaf_index": 3, "leaf_value": 0.05160855112947821, "leaf_weight": 702, "leaf_count": 702}}, "right_child": {"leaf_index": 2, "leaf_value": 1.4599561999230584, "leaf_weight": 100, "leaf_count": 100}}}}], "feature_importances": {"Shucked_weight": 2, "Shell_weight": 7}, "pandas_categorical": []}"#;
 
 // First approach: Direct from process_lgbm_trees
@@ -1599,7 +1580,6 @@ for i in 0..expected.len() {
 }
 #[test]
 fn test_rating_table_single_column_comprehensive() {
-initialize_test_license();
 let table = RatingTable::new(
     DataFrame::new(vec![
         Series::new("Shell_weight".into(), vec![0.04825, 0.16525, f64::INFINITY]).into(),
@@ -1630,7 +1610,6 @@ for (value, expected) in test_cases {
 
 #[test]
 fn test_rating_table_two_columns_comprehensive() {
-initialize_test_license();
 let table = RatingTable::new(
     DataFrame::new(vec![
         Series::new("Shell_weight".into(), vec![0.29025, 0.29025, 0.504, 0.504, f64::INFINITY, f64::INFINITY]).into(),
@@ -1665,7 +1644,6 @@ for (sw, shw, expected) in test_cases {
 }
 #[test]
 fn test_analysis_vs_consolidated_model_predictions() {
-    initialize_test_license();
 
     // Define a minimal LightGBM model JSON.
     // The tree has:
@@ -1749,7 +1727,6 @@ fn test_analysis_vs_consolidated_model_predictions() {
 }
 #[test]
 fn test_internal_node_processing() {
-    initialize_test_license();
     // Simple model with internal_value explicitly defined
     let model_json = r#"{
         "objective": "regression",
@@ -1818,7 +1795,6 @@ fn test_internal_node_processing() {
 
 #[test]
 fn test_analysis_vs_consolidated_methods() {
-    initialize_test_license();
     
     // Create a model JSON with multiple features
     let model_json = r#"{
@@ -1902,7 +1878,6 @@ fn test_analysis_vs_consolidated_methods() {
 
 #[test]
 fn test_analysis_tablemodel_bug() {
-    initialize_test_license();
     
     // Create a simple model with a right-side branch issue
     let model_json = r#"{
@@ -1973,7 +1948,6 @@ fn test_analysis_tablemodel_bug() {
 
 #[test]
 fn test_comparison_of_models() {
-    initialize_test_license();
     // Create a model with multiple features and paths
     let model_json = r#"{
         "objective": "regression",
@@ -2057,7 +2031,6 @@ fn test_comparison_of_models() {
 
 #[test]
 fn test_offset_table_metadata() {
-    initialize_test_license();
 
     // Create a regular table
     let regular_table = RatingTable::new(
@@ -2082,7 +2055,6 @@ fn test_offset_table_metadata() {
 
 #[test]
 fn test_offset_row_metadata() {
-    initialize_test_license();
 
     // Create a table
     let mut table = RatingTable::new(
@@ -2120,7 +2092,6 @@ fn test_offset_row_metadata() {
 
 #[test]
 fn test_add_offset_table_to_model() {
-    initialize_test_license();
 
     // Create a regular table
     let regular_table = RatingTable::new(
@@ -2160,7 +2131,6 @@ fn test_add_offset_table_to_model() {
 
 #[test]
 fn test_offset_table_predictions() {
-    initialize_test_license();
 
     // Create a mean table (offset - won't be updated by GLM)
     let mean_table = RatingTable::new(

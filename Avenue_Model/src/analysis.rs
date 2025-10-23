@@ -1,7 +1,6 @@
 use crate::rating_model::{RatingModel,RatingTable};
 use polars::prelude::*;
 use std::collections::HashMap;
-use crate::license_handler::validate_current_license;
 use crate::rating_model::FeatureValue;
 
 
@@ -38,10 +37,6 @@ pub fn one_way_analysis_table(
         }
     }
     
-    // Check license
-    if !validate_current_license() {
-        panic!("License not valid");
-    }
 
     // Check if target column exists
     if !df.get_column_names().iter().any(|name| name.as_str() == target_column) {
