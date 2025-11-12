@@ -1,24 +1,41 @@
 # Avenue Model
 
-**Insurance rating models without the hassle of design matrices.**
+**Unlock LightGBM's power with regulatory-friendly rating tables. Skip design matrix hell.**
 
-Avenue Model lets you work directly with factor tables — the natural representation for insurance pricing. Fit GLMs on rating tables, convert LightGBM models to interpretable factors, and skip the tedious design matrix conversions that plague traditional actuarial workflows.
+Avenue Model bridges the gap between machine learning accuracy and actuarial interpretability. Convert LightGBM models to transparent factor tables that regulators accept, or fit GLMs directly on rating tables without flattening to design matrices. Work in the natural language of insurance pricing.
 
 ## Why Avenue Model?
 
-**Traditional insurance modeling is painful:**
-- Converting between factor tables and design matrices is error-prone
-- GLMs require you to flatten your natural table structure
-- LightGBM models are black boxes that regulators don't trust
-- Sparsity and interpretability take a back seat to accuracy
+**Traditional insurance modeling forces a false choice:**
+- **Use LightGBM** → Great accuracy, but black box models regulators reject and actuaries can't explain
+- **Use GLMs** → Interpretable, but you're stuck converting factor tables ↔ design matrices forever
+- **Manual conversion** → Error-prone, time-consuming, and loses the intuitive table structure
+- **Production deployment** → Rating tables are easy to inspect and deploy.  Avenue gievs ultra-fast predictions from optimized Rust engine.
 
-**Avenue Model fixes this:**
-- ✅ **Fit GLMs directly on factor tables** — No design matrix conversion required
-- ✅ **Convert LightGBM → factor tables** — Turn black boxes into interpretable rating structures
-- ✅ **Native table operations** — Combine, consolidate, and analyze tables naturally
-- ✅ **Built for insurance** — Handles categorical variables, interactions, and sparsity properly
+**Avenue Model gives you the best of both worlds:**
 
-**Recommended:** Use the Avenue fork of Lightgbm to penalize and tune for sparse, interpretable models.
+### 🎯 Convert LightGBM → Rating Tables
+Turn black box gradient boosting into interpretable, production-ready factor tables:
+- ✅ **Preserve accuracy** — Extract the full predictive power of your LightGBM model
+- ✅ **Gain interpretability** — Every prediction is now explainable as additive table lookups
+- ✅ **Pass regulatory review** — Tables are transparent, auditable, and match traditional actuarial formats
+- ✅ **Deploy instantly** — Drop into existing rating engines that run on factor tables
+- ✅ **Consolidate intelligently** — Choose "max" mode for minimal production tables or "analysis" mode for detailed inspection
+
+### 📊 Fit GLMs Directly on Factor Tables
+Skip design matrices entirely and work with the natural table representation:
+- ✅ **No conversion overhead** — Fit directly on rating tables without flattening
+- ✅ **Natural workflow** — Work with tables the way actuaries think about them
+- ✅ **Fast iterations** — Avoid error-prone matrix conversions in every experiment
+- ✅ **Native operations** — Combine, adjust, and analyze tables as first-class objects
+
+### 🏗️ Built for Insurance Workflows
+- ✅ **Categorical variables** — Native support without dummy encoding
+- ✅ **Interactions** — Multi-dimensional tables capture complex relationships
+- ✅ **Sparsity** — Wildcard matching (`-999`) for efficient representation
+- ✅ **Additive structure** — Tables combine naturally for modular pricing
+
+**Recommended workflow:** Train LightGBM with the [Avenue fork](https://github.com/avenue-model/LightGBM) that penalizes for sparsity and shallow trees, then convert to tables for interpretability and deployment.
 
 ## Installation
 
@@ -35,23 +52,49 @@ maturin develop --release
 
 ## Quick Start
 
-### Python Example
+### Path 1: LightGBM → Rating Tables (Recommended)
+
+Train with LightGBM's accuracy, deploy with actuarial transparency:
+
+```python
+from avenue_model import RatingModel
+import lightgbm as lgb
+
+# 1. Train LightGBM (use Avenue fork for better table conversion)
+lgbm_model = lgb.train(params, train_data)
+lgbm_json = lgbm_model.dump_model()
+
+# 2. Convert to interpretable rating tables
+model = RatingModel.from_lgbm_json(lgbm_json, "max")  # "max" = minimal tables
+
+# 3. Make predictions (exactly match lightgbm.predict!)
+predictions = model.predict(new_data)
+
+# 4. Inspect the factor tables (what regulators see)
+tables = model.model_tables()  # List of Polars DataFrames
+for table_df in tables:
+    print(table_df)  # Factor tables, not black boxes
+
+# 5. Combine with other table-based models
+combined = lgbm_converted_model + manual_adjustments + territory_factors
+```
+
+### Path 2: GLM Directly on Factor Tables
+
+Fit generalized linear models without design matrices:
 
 ```python
 from avenue_model import RatingModel, fit_glm, GLMOptions
 
-# 1. Convert LightGBM model to factor tables
-model = RatingModel.from_lgbm_json(lgbm_json, "max")
+# Start with base rating tables (or converted LightGBM)
+model = RatingModel(base_tables, objective="poisson")
 
-# 2. Fit GLM directly on factor tables (no design matrix!)
+# Fit GLM directly on tables (no flattening!)
 options = GLMOptions(objective="poisson", max_iterations=100)
 fitted_model = fit_glm(model, training_df, "target", "weight", options)
 
-# 3. Make predictions
+# Predictions and table inspection work the same
 predictions = fitted_model.predict(new_data)
-
-# 4. Combine models additively
-combined = base_model + territory_model + driver_model
 ```
 
 ### Rust Example
@@ -63,7 +106,12 @@ use avenue_model::glm::{fit_glm, GLMOptions};
 // Convert LightGBM to rating tables
 let model = RatingModel::from_lgbm_json(&lgbm_json, "max")?;
 
-// Fit GLM on factor tables
+// Inspect the factor tables
+for table in &model.tables {
+    println!("{:?}", table.data);  // Polars DataFrames
+}
+
+// Optionally refine with GLM on tables
 let options = GLMOptions {
     objective: "poisson".to_string(),
     max_iterations: 100,
