@@ -1,41 +1,42 @@
 # Avenue Model
 
-**Unlock LightGBM's power with regulatory-friendly rating tables. Skip design matrix hell.**
+**Convert LightGBM models to rating tables. Fit GLMs directly on rating tables. Skip design matrix conversion altogether.**
 
-Avenue Model bridges the gap between machine learning accuracy and actuarial interpretability. Convert LightGBM models to transparent factor tables that regulators accept, or fit GLMs directly on rating tables without flattening to design matrices. Work in the natural language of insurance pricing.
+Avenue Model lets you work with factor tables as a first-class data structure. Convert trained LightGBM models into transparent rating tables, or fit GLMs directly on table representations without flattening to design matrices.
 
 ## Why Avenue Model?
 
-**Traditional insurance modeling forces a false choice:**
-- **Use LightGBM** → Great accuracy, but black box models regulators reject and actuaries can't explain
-- **Use GLMs** → Interpretable, but you're stuck converting factor tables ↔ design matrices forever
-- **Manual conversion** → Error-prone, time-consuming, and loses the intuitive table structure
-- **Production deployment** → Rating tables are easy to inspect and deploy.  Avenue gievs ultra-fast predictions from optimized Rust engine.
+**The problem:**
+- LightGBM models are accurate but hard to explain and deploy in traditional rating systems
+- GLMs require constant conversion between factor tables and design matrices
+- Regulators want transparent, auditable rating structures
+- Production rating engines expect factor tables, not tree ensembles
 
-**Avenue Model gives you the best of both worlds:**
+**What Avenue Model does:**
 
-### 🎯 Convert LightGBM → Rating Tables
-Turn black box gradient boosting into interpretable, production-ready factor tables:
-- ✅ **Preserve accuracy** — Extract the full predictive power of your LightGBM model
-- ✅ **Gain interpretability** — Every prediction is now explainable as additive table lookups
-- ✅ **Pass regulatory review** — Tables are transparent, auditable, and match traditional actuarial formats
-- ✅ **Deploy instantly** — Drop into existing rating engines that run on factor tables
-- ✅ **Consolidate intelligently** — Choose "max" mode for minimal production tables or "analysis" mode for detailed inspection
+### Convert LightGBM to Rating Tables
+Extract a trained LightGBM model as interpretable factor tables:
+- Predictions exactly match the original LightGBM model
+- Every prediction becomes explainable as a sum of table lookups
+- Tables integrate directly with existing rating engines
+- Choose "max" consolidation for minimal tables or "analysis" for full detail
+- Works best with shallow trees (max depth ≤ 4)
 
-### 📊 Fit GLMs Directly on Factor Tables
-Skip design matrices entirely and work with the natural table representation:
-- ✅ **No conversion overhead** — Fit directly on rating tables without flattening
-- ✅ **Natural workflow** — Work with tables the way actuaries think about them
-- ✅ **Fast iterations** — Avoid error-prone matrix conversions in every experiment
-- ✅ **Native operations** — Combine, adjust, and analyze tables as first-class objects
+### Fit GLMs on Factor Tables
+Estimate generalized linear models without design matrix conversion:
+- Fit directly on rating table structures
+- No need to flatten multidimensional tables
+- Combine, adjust, and refine tables as native objects
+- Standard link functions: identity, logit, log
 
-### 🏗️ Built for Insurance Workflows
-- ✅ **Categorical variables** — Native support without dummy encoding
-- ✅ **Interactions** — Multi-dimensional tables capture complex relationships
-- ✅ **Sparsity** — Wildcard matching (`-999`) for efficient representation
-- ✅ **Additive structure** — Tables combine naturally for modular pricing
+### Native Table Operations
+Built-in support for insurance pricing workflows:
+- Categorical variables without dummy encoding
+- Multi-dimensional tables for interactions
+- Wildcard matching (`-999`) for sparse representations
+- Additive model structure (or multiplicative if log-link)
 
-**Recommended workflow:** Train LightGBM with the [Avenue fork](https://github.com/avenue-model/LightGBM) that penalizes for sparsity and shallow trees, then convert to tables for interpretability and deployment.
+**Note:** For best results, train LightGBM with the [Avenue fork](https://github.com/avenue-model/LightGBM) which includes penalties for sparsity and shallow trees.
 
 ## Installation
 
@@ -67,13 +68,13 @@ lgbm_json = lgbm_model.dump_model()
 # 2. Convert to interpretable rating tables
 model = RatingModel.from_lgbm_json(lgbm_json, "max")  # "max" = minimal tables
 
-# 3. Make predictions (exactly match lightgbm.predict!)
+# 3. Make predictions (exactly matches lgbm_model.predict)
 predictions = model.predict(new_data)
 
-# 4. Inspect the factor tables (what regulators see)
+# 4. Inspect the factor tables
 tables = model.model_tables()  # List of Polars DataFrames
 for table_df in tables:
-    print(table_df)  # Factor tables, not black boxes
+    print(table_df)
 
 # 5. Combine with other table-based models
 combined = lgbm_converted_model + manual_adjustments + territory_factors
@@ -138,12 +139,11 @@ let fitted = fit_glm(&model, &data, "target", Some("weight"), None, options)?;
 - `"max"` consolidation → Minimal tables (production-ready)
 - `"analysis"` consolidation → One table per tree node (for interpretability)
 
-**Note:** LightGBM conversion works best with shallow trees (max depth ≤ 4). Deeper trees create exponentially more rating table rows and become impractical. Use the Avenue LightGBM fork to tune for sparsity and shallow trees.
+**Note:** LightGBM conversion works best with shallow trees (max depth ≤ 4). Deeper trees create exponentially more rating table rows. The Avenue LightGBM fork includes regularization to encourage sparsity and shallow trees.
 
 
 ## Roadmap
 
-**Coming soon:**
 - Penalized regression (Elastic Net, Ridge, Lasso)
 - Easier specification of polynomials and splines
 - More flexible variate handling (offsets, exposure, categorical embeddings)
