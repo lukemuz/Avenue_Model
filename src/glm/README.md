@@ -202,12 +202,35 @@ rows, are left alone.
 
 ### Convergence
 
-The fit stops when the *relative change in deviance* falls below `tolerance`
-(default `1e-8`), or when `max_iterations` sweeps have run.
+The fit stops when the **largest absolute score** over every free parameter falls to
+`tolerance` (default `1e-9`), or when `max_iterations` sweeps have run.
+
+The score of a parameter is the derivative of the log-likelihood with respect to it,
+and it is zero only at the optimum — so this measures how far the *factors* still have
+to move. It is the same criterion glum applies as `gradient_tol`. The score is scaled
+by the total absolute residual, which makes the threshold independent both of the
+number of observations and of the units the response is measured in; a Gaussian fit on
+currency and one on log-odds mean the same thing by `1e-9`.
+
+> **This replaced a test on the relative change in deviance, which did not work.**
+> Deviance is *quadratic* in the parameter error near the optimum, so a deviance
+> tolerance of `1e-t` buys only about `1e-(t/2)` on the factors — and when convergence
+> is slow, the deviance goes flat while the parameters are still moving. On the French
+> Motor Third-Party Liability data the old rule reported convergence with the fitted
+> means `1.1e-04` away from the answer. Under the score rule the same fit reaches
+> `2.1e-07`. It costs more sweeps, because the earlier fit was not finished.
+
+A fit that cannot reach the tolerance stops once the score has failed to improve for
+twelve consecutive sweeps, and reports `converged = false` with the score it achieved.
+Two near-aliased tables — `Area` and `Density` in the French motor data, where one is a
+rebanding of the other — are the usual cause. **`converged` is the flag to check; it
+now means what it says.**
 
 `fit_glm_with_diagnostics` returns a `GLMDiagnostics` alongside the model reporting
-iterations, whether it converged, final and null deviance, the full deviance history,
-and any table rows that received no exposure and so kept their starting factor.
+iterations, whether it converged, `max_gradient` and the full `gradient_history`, final
+and null deviance, the deviance history, and any table rows that received no exposure
+and so kept their starting factor. A gradient history that falls steeply and then
+crawls is the signature of near-aliased tables.
 
 ### Standard errors
 
@@ -418,16 +441,48 @@ python scripts/gen_glm_reference.py
 
 ## Performance
 
-No benchmark against other GLM libraries exists yet, and the numbers previously
-published here were taken in debug mode, which understates release builds by roughly
-an order of magnitude. Rather than replace them with equally unanchored figures, this
-section stays empty until there is a release-mode comparison against **glum** (the
-purpose-built insurance GLM library, and the honest speed target) and **statsmodels**
-(the correctness oracle), fitting the same data.
+Two benchmarks, both release-mode, both gated on the engines agreeing about the fitted
+means: `scripts/bench_glm.py` (synthetic) and `scripts/bench_fremtpl.py` (the French
+motor data glum builds its own `wide-insurance` benchmark from). Fit seconds only,
+fastest of three runs, 5 tables and 81 parameters; **glum** is the speed target and
+**statsmodels** the correctness oracle.
 
-The interesting claim is not raw speed but that Avenue never materialises the design
-matrix, so its advantage should grow with the number of levels — a benchmark should
-hold rows fixed and sweep the level count to show that.
+| synthetic, 1M rows | Avenue | glum | statsmodels |
+|--------------------|-------:|-----:|------------:|
+| Poisson            | 0.100  | 0.441 | — |
+| Gamma              | 0.119  | 0.414 | — |
+| Tweedie(1.5)       | 0.212  | 0.287 | — |
+| Gaussian           | 0.081  | 0.075 | — |
+| Poisson, 100k rows | 0.012  | 0.035 | 1.520 |
+| Poisson, 5M rows   | 0.740  | 2.540 | — |
+
+Peak memory at 1M rows is 54 MB against glum's 112, and at 5M rows 369 against 683 —
+a flat ~1.8x, so it is a constant-factor advantage rather than a different scaling law.
+Both engines are `O(n · tables)`; glum's tabmat does not materialise a dense design
+matrix either. The `O(n · parameters)` blowup Avenue genuinely avoids belongs to the
+dummy-coded route, which is what the 1.5 GB statsmodels row above is measuring.
+
+**The real result is the one that does not flatter us.** Those synthetic factors are
+drawn independently, which is the best case for coordinate descent. On the French motor
+data, where `Area` is essentially a rebanding of `Density` and driver age tracks
+bonus-malus:
+
+| freMTPL2, 678k rows, 79 parameters | fit seconds | sweeps |
+|------------------------------------|------------:|-------:|
+| Avenue                             | 3.61        | 254    |
+| glum, `irls-ls`                    | 0.45        | 5      |
+| glum, `irls-cd`                    | 0.53        | 6      |
+
+Same per-sweep machinery, 50x the sweeps. Backfitting converges at a rate set by the
+canonical correlation between the blocks, and correlated rating factors are the norm
+rather than the exception. Per-sweep cost is not the problem and further micro-optimising
+it will not close this gap; see *Known gaps*.
+
+What does keep the per-sweep cost competitive: `mu` is carried through a sweep as
+`mu *= exp(delta_r)` instead of being re-derived per observation per table, which is the
+difference between `n_rows` exponentials and `n` of them; `mu^(1-p)` is specialised away
+from `powf` for the exponents the common families produce (Poisson's is `mu^0`); and the
+scatter-adds run under rayon above 100k rows.
 
 ## Module Structure
 
@@ -452,12 +507,17 @@ src/glm/
   built.
 - Only Wald standard errors. No likelihood-ratio tests, profile intervals, or robust
   / sandwich covariance.
-- No regularisation.
 - No regularisation. For rating tables the high-value forms are credibility shrinkage
   of sparse levels and difference penalties on adjacent ordinal levels, more than L1
   variable selection.
-- Matching allocates per observation per table, and is the dominant cost on large
-  datasets.
+- **Correlated tables converge slowly.** This is the live limitation, not a micro-
+  optimisation: backfitting's rate is set by the canonical correlation between blocks,
+  so two tables that carry nearly the same information trade a constant back and forth
+  for hundreds of sweeps. The measured cost is 254 sweeps against glum's 5 on the French
+  motor data. The fix is structural — assemble `X'WX` from the tables and take a real
+  Newton step (its diagonal blocks are diagonal, its off-diagonal blocks are weighted
+  contingency tables, and it costs `O(p²)` memory rather than `O(np)`), falling back to
+  accelerated coordinate descent when `p` is too large for that.
 
 ## References
 

@@ -47,9 +47,10 @@ impl PyRatingModel {
     ///     objective: String indicating the model objective ("regression", "binary", etc)
     ///     feature_columns: Optional list of feature column names to use
     #[new]
+    #[pyo3(signature = (tables, objective, feature_columns=None, existing_row_number_col=None))]
     fn new(
-        tables: Vec<PyDataFrame>, 
-        objective: &str, 
+        tables: Vec<PyDataFrame>,
+        objective: &str,
         feature_columns: Option<Vec<String>>,
         existing_row_number_col: Option<&str>
     ) -> PyResult<Self> {
@@ -239,6 +240,7 @@ impl PyRatingModel {
     ///     df: DataFrame containing the data to analyze
     ///     target_column: Column name to analyze (what we're averaging)
     ///     weight_column: Optional column name to use as weights
+    #[pyo3(signature = (df, target_column, weight_column=None))]
     fn one_way_analysis<'py>(&self, df: PyDataFrame, target_column: &str, weight_column: Option<&str>) -> PyResult<Vec<PyDataFrame>> {
         let df: DataFrame = df.0;
         // ⭐ OPTIMIZED: Pass references instead of owned values  
@@ -256,6 +258,7 @@ impl PyRatingModel {
     ///     df: DataFrame containing the data to analyze
     ///     target_column: Column name to analyze (what we're averaging)
     ///     weight_column: Optional column name to use as weights
+    #[pyo3(signature = (table_index, df, target_column, weight_column=None))]
     fn one_way_analysis_table<'py>(&self, table_index: usize, df: PyDataFrame, target_column: &str, weight_column: Option<&str>) -> PyResult<PyDataFrame> {
         if table_index >= self.inner.tables.len() {
             return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
@@ -300,6 +303,15 @@ impl PyGLMOptions {
     ///         after converging. Default True. Turn off for models with thousands
     ///         of levels, where the p x p inversion becomes the dominant cost.
     #[new]
+    #[pyo3(signature = (
+        objective,
+        max_iterations=None,
+        tolerance=None,
+        verbose=None,
+        tweedie_power=None,
+        normalization=None,
+        compute_standard_errors=None,
+    ))]
     fn new(
         objective: String, // Required parameter
         max_iterations: Option<usize>,
@@ -356,6 +368,15 @@ struct PyGLMDiagnostics {
     iterations: usize,
     #[pyo3(get)]
     converged: bool,
+    /// Largest absolute score component at the final iterate, on the same scale as
+    /// GLMOptions.tolerance. When converged is False, this says how far off the
+    /// factors are.
+    #[pyo3(get)]
+    max_gradient: f64,
+    /// Largest absolute score after each sweep. A sequence that falls steeply and
+    /// then crawls is the signature of two near-aliased tables.
+    #[pyo3(get)]
+    gradient_history: Vec<f64>,
     #[pyo3(get)]
     deviance: f64,
     #[pyo3(get)]
@@ -441,8 +462,9 @@ impl PyGLMDiagnostics {
             None => String::new(),
         };
         format!(
-            "GLMDiagnostics(iterations={}, converged={}, deviance={:.6}, null_deviance={:.6}, pseudo_r2={:.4}{})",
-            self.iterations, self.converged, self.deviance, self.null_deviance, self.pseudo_r2, inference
+            "GLMDiagnostics(iterations={}, converged={}, max_gradient={:.2e}, deviance={:.6}, null_deviance={:.6}, pseudo_r2={:.4}{})",
+            self.iterations, self.converged, self.max_gradient, self.deviance,
+            self.null_deviance, self.pseudo_r2, inference
         )
     }
 }
@@ -455,6 +477,8 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
         PyGLMDiagnostics {
             iterations: d.iterations,
             converged: d.converged,
+            max_gradient: d.max_gradient,
+            gradient_history: d.gradient_history,
             deviance: d.deviance,
             null_deviance: d.null_deviance,
             deviance_history: d.deviance_history,

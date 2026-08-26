@@ -1,16 +1,68 @@
 use polars::prelude::*;
 use crate::rating_model::LinkFunction;
 
-/// The largest magnitude a linear predictor is allowed to reach.
+/// The largest magnitude a linear predictor is allowed to reach, on a *nonlinear*
+/// link.
 ///
 /// Guards `exp` against overflow and keeps logistic probabilities strictly inside
 /// (0, 1) so IRLS weights never collapse to exactly zero. `exp(500)` is ~1e217, far
 /// beyond any plausible rating factor, so this never binds on a well-posed problem —
 /// it only catches separation and other degenerate fits.
+///
+/// It must never be applied to the identity link, where `eta` is the response itself
+/// and a bound of 500 is a cap on the data. Reach for [`LossFunction::eta_limit`]
+/// rather than this constant.
 pub const ETA_CLAMP: f64 = 500.0;
+
+/// Largest change permitted in a single rating factor in one sweep, on a *nonlinear*
+/// link.
+///
+/// Guards against IRLS overshooting where the local linearisation is poor — chiefly
+/// the logit link under separation, whose IRLS denominator collapses toward zero. On a
+/// log or logit scale a step of 10 is a factor of 22000, so this never binds on an
+/// ordinary fit.
+///
+/// As with [`ETA_CLAMP`], it must never be applied to the identity link. Reach for
+/// [`LossFunction::step_limit`].
+pub const MAX_STEP: f64 = 10.0;
 
 /// Floor for means under the log link. Below this, `(y - mu)/mu` loses all precision.
 const MU_FLOOR: f64 = 1e-300;
+
+/// `mu^e` for positive `mu`, taking a hardware instruction instead of a `pow` call for
+/// the handful of exponents the supported families actually produce.
+///
+/// The exact log-link coordinate update needs `mu^(1-p)` once per observation *per
+/// table*, which puts this squarely in the hottest loop of the fit. Every common family
+/// lands on an exponent that is not really a power at all: Poisson (`p = 1`) asks for
+/// `mu^0`, and answering that with a library call to compute the constant `1.0` is pure
+/// waste; Gamma (`p = 2`) asks for a reciprocal; the usual Tweedie (`p = 1.5`) asks for
+/// an inverse square root. The IRLS weight `mu^(2-p)` covers the same exponents shifted
+/// by one, which is why `1.0` and `0.5` appear here too.
+///
+/// The comparisons are against exactly-representable constants and `p` is fixed for the
+/// whole fit, so the branch resolves the same way every iteration and predicts perfectly.
+///
+/// Each arm is a constant, a division, or `sqrt` — all correctly rounded — so the result
+/// is within an ulp of `powf` and, in the `mu^0` and `mu^1` cases, exact where `powf` is
+/// merely accurate. That is well inside the tolerance any of these sums carry, but it is
+/// a rounding change, so fits are not bit-for-bit reproducible against earlier versions.
+#[inline]
+pub(crate) fn pow_special(mu: f64, e: f64) -> f64 {
+    if e == 0.0 {
+        1.0
+    } else if e == 1.0 {
+        mu
+    } else if e == -1.0 {
+        1.0 / mu
+    } else if e == -0.5 {
+        1.0 / mu.sqrt()
+    } else if e == 0.5 {
+        mu.sqrt()
+    } else {
+        mu.powf(e)
+    }
+}
 
 /// Natural log of the gamma function, by the Lanczos approximation (g = 7, n = 9).
 ///
@@ -102,13 +154,42 @@ impl LossFunction {
     /// Mean as a function of the linear predictor, `mu = h(eta)`.
     #[inline]
     pub fn inverse_link(&self, eta: f64) -> f64 {
-        let eta = eta.clamp(-ETA_CLAMP, ETA_CLAMP);
         match self {
+            // Identity: mu *is* eta, and there is nothing to overflow. Clamping here
+            // would cap the fitted mean of any Gaussian model whose response runs
+            // past ETA_CLAMP — a currency amount, say — which is a silent wrong
+            // answer rather than a guard.
             LossFunction::Gaussian => eta,
-            LossFunction::Binary => 1.0 / (1.0 + (-eta).exp()),
+            LossFunction::Binary => 1.0 / (1.0 + (-eta.clamp(-ETA_CLAMP, ETA_CLAMP)).exp()),
             LossFunction::Poisson | LossFunction::Gamma | LossFunction::Tweedie(_) => {
-                eta.exp().max(MU_FLOOR)
+                eta.clamp(-ETA_CLAMP, ETA_CLAMP).exp().max(MU_FLOOR)
             }
+        }
+    }
+
+    /// The bound to clamp a linear predictor to, for this family's link.
+    ///
+    /// Infinite for the identity link: see [`ETA_CLAMP`].
+    #[inline]
+    pub fn eta_limit(&self) -> f64 {
+        match self {
+            LossFunction::Gaussian => f64::INFINITY,
+            _ => ETA_CLAMP,
+        }
+    }
+
+    /// The largest step this family permits in one coordinate update.
+    ///
+    /// Infinite for the identity link. IRLS on a linear model is exact — the
+    /// coordinate update *is* the exact minimiser along that coordinate, so it cannot
+    /// overshoot, and capping it only throttles the fit. With the cap in place a
+    /// Gaussian model whose response averages -230 needed 186 sweeps to crawl there in
+    /// steps of 10; without it, 15.
+    #[inline]
+    pub fn step_limit(&self) -> f64 {
+        match self {
+            LossFunction::Gaussian => f64::INFINITY,
+            _ => MAX_STEP,
         }
     }
 
@@ -127,7 +208,7 @@ impl LossFunction {
             LossFunction::Gaussian => 1.0,
             LossFunction::Poisson => mu,
             LossFunction::Gamma => 1.0,
-            LossFunction::Tweedie(p) => mu.powf(2.0 - p),
+            LossFunction::Tweedie(p) => pow_special(mu, 2.0 - p),
             LossFunction::Binary => mu * (1.0 - mu),
         }
     }
@@ -151,7 +232,7 @@ impl LossFunction {
             // w = 1, r = (y - mu)/mu
             LossFunction::Gamma => (y - mu) / mu,
             // w = mu^(2-p), r = (y - mu)/mu
-            LossFunction::Tweedie(p) => mu.powf(1.0 - p) * (y - mu),
+            LossFunction::Tweedie(p) => pow_special(mu, 1.0 - p) * (y - mu),
         }
     }
 
@@ -162,7 +243,7 @@ impl LossFunction {
             LossFunction::Gaussian => 1.0,
             LossFunction::Poisson => mu,
             LossFunction::Gamma => mu * mu,
-            LossFunction::Tweedie(p) => mu.powf(*p),
+            LossFunction::Tweedie(p) => pow_special(mu, *p),
             LossFunction::Binary => mu * (1.0 - mu),
         }
     }

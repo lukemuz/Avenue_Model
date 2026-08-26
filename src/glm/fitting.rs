@@ -1,8 +1,9 @@
 use polars::prelude::*;
+use rayon::prelude::*;
 use crate::rating_model::{variate_basis_params, RatingModel, RatingTable, TableSemantics};
 use super::inference::{compute_inference, solve_spd, GLMInference};
-use super::loss::{LossFunction, ETA_CLAMP};
-use super::matching::precompute_all_matches;
+use super::loss::{pow_special, LossFunction, MAX_STEP};
+use super::matching::{precompute_all_matches, NO_MATCH};
 
 /// How the fitted tables are anchored once the fit has converged.
 ///
@@ -38,6 +39,16 @@ impl Default for Normalization {
 #[derive(Debug, Clone)]
 pub struct GLMOptions {
     pub max_iterations: usize,
+    /// Convergence threshold on the largest absolute score component, scaled by the
+    /// total prior weight.
+    ///
+    /// At the optimum every free parameter's score is zero, so this measures how far
+    /// the fitted factors still have to move. It is the same criterion glum applies
+    /// (`gradient_tol`), on the same scale, so the two are comparable.
+    ///
+    /// This replaced a test on the relative change in deviance, which was far weaker
+    /// than it appeared: deviance is quadratic in the parameter error near the
+    /// optimum, so `1e-t` on deviance bought only about `1e-(t/2)` on the factors.
     pub tolerance: f64,
     pub verbose: bool,
     /// Required: loss function ("poisson", "gamma", "tweedie", "gaussian", "binary")
@@ -58,7 +69,11 @@ impl Default for GLMOptions {
     fn default() -> Self {
         Self {
             max_iterations: 100,
-            tolerance: 1e-8,
+            // On the score scale. Tighter than glum's 1e-4 default because IRLS
+            // converges quadratically and can afford a loose threshold - one more
+            // iteration takes it to machine precision - whereas coordinate descent
+            // converges linearly and genuinely stops where it is told to.
+            tolerance: 1e-9,
             verbose: false,
             objective: "gaussian".to_string(), // Default to Gaussian/regression
             tweedie_power: 1.5,
@@ -73,8 +88,17 @@ impl Default for GLMOptions {
 pub struct GLMDiagnostics {
     /// Sweeps performed over the full set of tables.
     pub iterations: usize,
-    /// Whether the relative deviance change fell below `tolerance`.
+    /// Whether the largest absolute score fell to `tolerance`.
+    ///
+    /// False means the returned factors are not at the optimum. Check
+    /// [`max_gradient`](Self::max_gradient) to see how far off they are.
     pub converged: bool,
+    /// Largest absolute score component at the final iterate, on the same scale as
+    /// [`GLMOptions::tolerance`].
+    pub max_gradient: f64,
+    /// Largest absolute score after each sweep, in order. A sequence that falls
+    /// steeply and then crawls is the signature of two near-aliased tables.
+    pub gradient_history: Vec<f64>,
     /// Weighted deviance of the final fit.
     pub deviance: f64,
     /// Weighted deviance of the intercept-only fit, for reference.
@@ -101,12 +125,6 @@ impl GLMDiagnostics {
         }
     }
 }
-
-/// Largest change permitted in a single rating factor in one sweep, on the link scale.
-///
-/// Only binds for the logit link, whose IRLS denominator collapses toward zero under
-/// separation. Large enough never to interfere with an ordinary fit.
-const MAX_STEP: f64 = 10.0;
 
 /// Fits a GLM by updating the rating factors in the provided RatingModel
 ///
@@ -215,8 +233,8 @@ pub fn fit_glm_with_diagnostics(
         .map(|t| {
             let mut e = vec![0.0; factors[t].len()];
             for (i, m) in matches[t].iter().enumerate() {
-                if let Some(r) = m {
-                    e[*r] += weights[i];
+                if *m != NO_MATCH {
+                    e[*m as usize] += weights[i];
                 }
             }
             e
@@ -227,23 +245,35 @@ pub fn fit_glm_with_diagnostics(
     let mut eta = vec![0.0; n];
     for t in 0..n_tables {
         for (i, m) in matches[t].iter().enumerate() {
-            if let Some(r) = m {
-                eta[i] += factors[t][*r];
+            if *m != NO_MATCH {
+                eta[i] += factors[t][*m as usize];
             }
         }
     }
 
+    // The fitted means, carried alongside `eta` rather than re-derived from it inside
+    // every table update — see [`apply_row_deltas`]. Seeded here so the invariant
+    // `means[i] == inverse_link(eta[i] + offset[i])` holds before the first sweep.
+    let mut means: Vec<f64> = (0..n)
+        .map(|i| loss_fn.inverse_link(eta[i] + offset[i]))
+        .collect();
+
     // Scratch buffers reused across every table and every sweep.
-    let mut means = vec![0.0; n];
     let mut numer = Vec::new();
     let mut denom = Vec::new();
 
     let null_deviance = null_deviance(&loss_fn, &target, &weights, &offset);
 
     let mut deviance_history: Vec<f64> = Vec::with_capacity(options.max_iterations);
-    let mut prev_deviance = f64::INFINITY;
+    let mut gradient_history: Vec<f64> = Vec::with_capacity(options.max_iterations);
     let mut converged = false;
     let mut iterations = 0usize;
+    let mut max_gradient = f64::INFINITY;
+    let mut best_gradient = f64::INFINITY;
+    let mut sweeps_without_progress = 0usize;
+
+    // Reused by the convergence test; one slot per table row.
+    let mut score_scratch: Vec<Vec<f64>> = factors.iter().map(|f| vec![0.0; f.len()]).collect();
 
     for iteration in 0..options.max_iterations {
         iterations = iteration + 1;
@@ -256,6 +286,7 @@ pub fn fit_glm_with_diagnostics(
                 t,
                 &mut factors,
                 &mut eta,
+                &mut means,
                 &matches[t],
                 &target,
                 &weights,
@@ -275,43 +306,78 @@ pub fn fit_glm_with_diagnostics(
                 &working_model.tables,
                 &updatable,
                 options.normalization,
+                loss_fn.eta_limit(),
             );
         }
 
-        // Deviance of the current fit.
+        // Re-derive the means exactly. `apply_row_deltas` has been carrying them
+        // forward multiplicatively through the sweep, which is worth one pass per sweep
+        // to reset: it costs what a single table update used to, and it bounds the
+        // rounding those increments can accumulate to a single sweep's worth.
         for i in 0..n {
             means[i] = loss_fn.inverse_link(eta[i] + offset[i]);
         }
         let deviance = loss_fn.total_deviance(&target, &means, &weights);
         deviance_history.push(deviance);
 
-        let rel_change = if prev_deviance.is_finite() && prev_deviance.abs() > 0.0 {
-            (prev_deviance - deviance).abs() / (prev_deviance.abs() + 1e-12)
-        } else {
-            f64::INFINITY
-        };
+        max_gradient = max_abs_score(
+            &loss_fn,
+            &target,
+            &weights,
+            &means,
+            &matches,
+            &working_model.tables,
+            &updatable,
+            &row_exposure,
+            &variate_values,
+            &mut score_scratch,
+        );
+        gradient_history.push(max_gradient);
 
         if options.verbose {
             println!(
-                "Iteration {}: deviance = {:.10e}, rel change = {:.3e}",
-                iterations, deviance, rel_change
+                "Iteration {}: deviance = {:.10e}, max |score| = {:.3e}",
+                iterations, deviance, max_gradient
             );
         }
 
-        if rel_change < options.tolerance {
+        if max_gradient <= options.tolerance {
             converged = true;
             if options.verbose {
                 println!("Converged after {} iterations", iterations);
             }
             break;
         }
-        prev_deviance = deviance;
+
+        // A fit can run out of reachable precision above the tolerance - two
+        // near-aliased tables trading a constant back and forth, or a threshold set
+        // below the noise floor of the sums involved. Continuing cannot help, so stop;
+        // but the test is on the score itself, not on the deviance. Stalling the
+        // deviance means only that the parameters are within about sqrt(eps) of the
+        // optimum, which is exactly the weak signal this criterion exists to replace.
+        if max_gradient < best_gradient * (1.0 - STALL_IMPROVEMENT) {
+            best_gradient = max_gradient;
+            sweeps_without_progress = 0;
+        } else {
+            sweeps_without_progress += 1;
+            if sweeps_without_progress >= STALL_SWEEPS {
+                if options.verbose {
+                    println!(
+                        "Stopping after {} iterations: max |score| = {:.3e} has not \
+                         improved in {} sweeps and is above the tolerance of {:.1e}",
+                        iterations, max_gradient, STALL_SWEEPS, options.tolerance
+                    );
+                }
+                break;
+            }
+        }
     }
 
     if options.verbose && !converged {
         println!(
-            "WARNING: did not converge in {} iterations (tolerance {:.1e})",
-            options.max_iterations, options.tolerance
+            "WARNING: did not converge in {} iterations (max |score| = {:.3e}, \
+             tolerance {:.1e})",
+            iterations, max_gradient, options.tolerance
         );
     }
 
@@ -374,6 +440,8 @@ pub fn fit_glm_with_diagnostics(
     let diagnostics = GLMDiagnostics {
         iterations,
         converged,
+        max_gradient,
+        gradient_history,
         deviance: *deviance_history.last().unwrap_or(&f64::NAN),
         null_deviance,
         deviance_history,
@@ -406,7 +474,8 @@ fn update_table(
     t: usize,
     factors: &mut [Vec<f64>],
     eta: &mut [f64],
-    table_matches: &[Option<usize>],
+    means: &mut [f64],
+    table_matches: &[u32],
     target: &[f64],
     weights: &[f64],
     offset: &[f64],
@@ -418,7 +487,8 @@ fn update_table(
 ) {
     if let TableSemantics::Variate { values, degree } = table.semantics() {
         update_variate_table(
-            t, factors, eta, table_matches, target, weights, offset, values, *degree, loss_fn,
+            t, factors, eta, means, table_matches, target, weights, offset, values, *degree,
+            loss_fn,
         );
         return;
     }
@@ -430,26 +500,38 @@ fn update_table(
 
     let power = loss_fn.log_link_variance_power();
 
-    for (i, m) in table_matches.iter().enumerate() {
-        let Some(r) = *m else { continue };
-        let a = weights[i];
-        if a == 0.0 {
-            continue;
-        }
-        let mu = loss_fn.inverse_link(eta[i] + offset[i]);
-        match power {
-            // A = sum(a * mu^(1-p) * y), E = sum(a * mu^(2-p))
-            Some(p) => {
-                let base = mu.powf(1.0 - p);
-                numer[r] += a * base * target[i];
-                denom[r] += a * base * mu;
-            }
-            // sum(a * w * r) and sum(a * w)
-            None => {
-                numer[r] += a * loss_fn.weighted_link_residual(target[i], mu);
-                denom[r] += a * loss_fn.irls_weight(mu);
-            }
-        }
+    if let Some(chunk) = parallel_chunk(table_matches.len(), n_rows) {
+        // Each worker accumulates into its own pair of row vectors and the partials are
+        // summed at the end. `n_rows` is the width of one rating table, so replicating
+        // it per worker is cheap - `parallel_chunk` declines when it would not be.
+        let (par_numer, par_denom) = table_matches
+            .par_chunks(chunk)
+            .zip(target.par_chunks(chunk))
+            .zip(weights.par_chunks(chunk))
+            .zip(means.par_chunks(chunk))
+            .fold(
+                || (vec![0.0f64; n_rows], vec![0.0f64; n_rows]),
+                |(mut nu, mut de), (((ms, ys), ws), mus)| {
+                    accumulate_block(ms, ys, ws, mus, power, loss_fn, &mut nu, &mut de);
+                    (nu, de)
+                },
+            )
+            .reduce(
+                || (vec![0.0f64; n_rows], vec![0.0f64; n_rows]),
+                |(mut nu, mut de), (nu2, de2)| {
+                    for r in 0..n_rows {
+                        nu[r] += nu2[r];
+                        de[r] += de2[r];
+                    }
+                    (nu, de)
+                },
+            );
+        numer.copy_from_slice(&par_numer);
+        denom.copy_from_slice(&par_denom);
+    } else {
+        accumulate_block(
+            table_matches, target, weights, means, power, loss_fn, numer, denom,
+        );
     }
 
     for r in 0..n_rows {
@@ -480,21 +562,206 @@ fn update_table(
         }
 
         let old = factors[t][r];
-        let new = (old + step.clamp(-MAX_STEP, MAX_STEP)).clamp(-ETA_CLAMP, ETA_CLAMP);
+        let step_limit = loss_fn.step_limit();
+        let eta_limit = loss_fn.eta_limit();
+        let new = (old + step.clamp(-step_limit, step_limit)).clamp(-eta_limit, eta_limit);
         factors[t][r] = new;
         numer[r] = new - old; // reuse as the delta to apply to eta
     }
 
-    // Fold the changes into the running linear predictor. Reusing `numer` as the
-    // per-row delta keeps this to a single pass with no extra allocation.
+    // Fold the changes into the running linear predictor and mean. Reusing `numer` as
+    // the per-row delta keeps this to a single pass with no extra allocation.
     for r in 0..n_rows {
         if row_exposure[r] <= 0.0 || table.is_row_offset(r) || !(denom[r] > 0.0) || !denom[r].is_finite() {
             numer[r] = 0.0;
         }
     }
+    apply_row_deltas(loss_fn, table_matches, &numer[..n_rows], offset, eta, means);
+}
+
+/// Rows below which splitting the work across threads costs more than it saves.
+const PARALLEL_ROWS: usize = 100_000;
+
+/// Chunk size for a parallel pass over the observations, or `None` to stay serial.
+///
+/// Two things have to hold. The pass must be long enough to cover the cost of handing
+/// work to a thread pool at all, which `PARALLEL_ROWS` sets. And where the pass
+/// accumulates into per-worker copies of a table's rows — as the scatter-adds below do —
+/// those copies have to be cheap relative to the scan itself. A rating table is
+/// typically tens of rows against millions of observations, so they are; but a table
+/// with a row per postcode against a small dataset would spend more time allocating and
+/// reducing partials than reading the data, and that case stays serial.
+///
+/// `replicated` is the number of `f64`s each worker would need its own copy of, or 0 for
+/// a pass that writes only to its own observation's slot.
+fn parallel_chunk(n: usize, replicated: usize) -> Option<usize> {
+    if n < PARALLEL_ROWS {
+        return None;
+    }
+    let workers = rayon::current_num_threads().max(1);
+    if workers < 2 {
+        return None;
+    }
+    if replicated.saturating_mul(workers).saturating_mul(4) > n {
+        return None;
+    }
+    Some((n / workers).max(1))
+}
+
+/// One worker's share of the scatter-add behind a step table's update.
+///
+/// Split out so the serial and parallel paths compute the same sums from the same code;
+/// the only difference is what they accumulate into.
+#[inline]
+fn accumulate_block(
+    table_matches: &[u32],
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    power: Option<f64>,
+    loss_fn: &LossFunction,
+    numer: &mut [f64],
+    denom: &mut [f64],
+) {
     for (i, m) in table_matches.iter().enumerate() {
-        if let Some(r) = m {
-            eta[i] += numer[*r];
+        if *m == NO_MATCH {
+            continue;
+        }
+        let r = *m as usize;
+        let a = weights[i];
+        if a == 0.0 {
+            continue;
+        }
+        let mu = means[i];
+        match power {
+            // A = sum(a * mu^(1-p) * y), E = sum(a * mu^(2-p))
+            Some(p) => {
+                let base = pow_special(mu, 1.0 - p);
+                numer[r] += a * base * target[i];
+                denom[r] += a * base * mu;
+            }
+            // sum(a * w * r) and sum(a * w)
+            None => {
+                numer[r] += a * loss_fn.weighted_link_residual(target[i], mu);
+                denom[r] += a * loss_fn.irls_weight(mu);
+            }
+        }
+    }
+}
+
+/// Folds a table's per-row change into the running linear predictor and the running
+/// mean, in one pass.
+///
+/// `mu` is carried alongside `eta` rather than re-derived from it, because the inverse
+/// link is an `exp` for every log-link family and re-deriving costs one call per
+/// observation *per table* — nine tables over the French motor data is six million
+/// exponentials a sweep. A table's change is constant within a table row, so the whole
+/// update needs only `n_rows` transcendental calls:
+///
+/// * **identity link** — `mu` moves by exactly what `eta` moves by;
+/// * **log link** — `mu` scales by `exp(delta_r)`, one `exp` per row;
+/// * **logit link** — no such shortcut, so the link is evaluated as before. Odds do
+///   scale multiplicatively, but recovering `mu` from them gives up the strict
+///   `(0, 1)` bound that [`LossFunction::eta_limit`] exists to guarantee.
+///
+/// The shortcuts are exact only where the eta clamp does not bind. That is the ordinary
+/// case by an enormous margin — `|eta| < 500` admits a rating factor of 1e217 — but a
+/// separating fit or a level with no positive response can reach it, so each
+/// observation checks both its old and its new position and falls back to a full link
+/// evaluation if either is clamped. Checking costs two adds and two comparisons against
+/// the `exp` it replaces.
+///
+/// Where the clamp does not bind, `mu[i] == exp(eta[i] + offset[i])` exactly, by
+/// induction: the fast path preserves it and the fallback restores it. Rounding cannot
+/// accumulate either, because the caller re-derives `mu` from `eta` at the end of every
+/// sweep — at most `n_tables` multiplications ever separate the two.
+fn apply_row_deltas(
+    loss_fn: &LossFunction,
+    table_matches: &[u32],
+    delta: &[f64],
+    offset: &[f64],
+    eta: &mut [f64],
+    mu: &mut [f64],
+) {
+    // The whole point: `n_rows` exponentials, hoisted out of the pass over the data.
+    let scale: Option<Vec<f64>> = loss_fn
+        .log_link_variance_power()
+        .map(|_| delta.iter().map(|d| d.exp()).collect());
+
+    // Every observation writes only to its own slot, so the workers share nothing and
+    // there is no reduction to pay for.
+    match parallel_chunk(table_matches.len(), 0) {
+        Some(chunk) => table_matches
+            .par_chunks(chunk)
+            .zip(offset.par_chunks(chunk))
+            .zip(eta.par_chunks_mut(chunk))
+            .zip(mu.par_chunks_mut(chunk))
+            .for_each(|(((ms, offs), et), m)| {
+                apply_deltas_block(loss_fn, ms, delta, scale.as_deref(), offs, et, m)
+            }),
+        None => apply_deltas_block(
+            loss_fn,
+            table_matches,
+            delta,
+            scale.as_deref(),
+            offset,
+            eta,
+            mu,
+        ),
+    }
+}
+
+/// One worker's share of [`apply_row_deltas`]. `scale` holds `exp(delta_r)` for the
+/// log-link families and is `None` otherwise.
+#[inline]
+fn apply_deltas_block(
+    loss_fn: &LossFunction,
+    table_matches: &[u32],
+    delta: &[f64],
+    scale: Option<&[f64]>,
+    offset: &[f64],
+    eta: &mut [f64],
+    mu: &mut [f64],
+) {
+    match loss_fn {
+        // mu is eta, and there is no clamp on the identity link, so this is not an
+        // approximation of anything.
+        LossFunction::Gaussian => {
+            for (i, m) in table_matches.iter().enumerate() {
+                if *m != NO_MATCH {
+                    let d = delta[*m as usize];
+                    eta[i] += d;
+                    mu[i] += d;
+                }
+            }
+        }
+
+        LossFunction::Poisson | LossFunction::Gamma | LossFunction::Tweedie(_) => {
+            let scale = scale.expect("log-link families always carry exp(delta)");
+            let limit = loss_fn.eta_limit();
+            for (i, m) in table_matches.iter().enumerate() {
+                if *m == NO_MATCH {
+                    continue;
+                }
+                let r = *m as usize;
+                let before = eta[i] + offset[i];
+                eta[i] += delta[r];
+                let after = eta[i] + offset[i];
+                if before.abs() < limit && after.abs() < limit {
+                    mu[i] *= scale[r];
+                } else {
+                    mu[i] = loss_fn.inverse_link(after);
+                }
+            }
+        }
+
+        LossFunction::Binary => {
+            for (i, m) in table_matches.iter().enumerate() {
+                if *m != NO_MATCH {
+                    eta[i] += delta[*m as usize];
+                    mu[i] = loss_fn.inverse_link(eta[i] + offset[i]);
+                }
+            }
         }
     }
 }
@@ -547,7 +814,8 @@ fn update_variate_table(
     t: usize,
     factors: &mut [Vec<f64>],
     eta: &mut [f64],
-    table_matches: &[Option<usize>],
+    means: &mut [f64],
+    table_matches: &[u32],
     target: &[f64],
     weights: &[f64],
     offset: &[f64],
@@ -580,12 +848,15 @@ fn update_variate_table(
     let mut s_rphi = vec![0.0f64; d]; // ... times phi_m
 
     for (i, m) in table_matches.iter().enumerate() {
-        let Some(r) = *m else { continue };
+        if *m == NO_MATCH {
+            continue;
+        }
+        let r = *m as usize;
         let a = weights[i];
         if a == 0.0 {
             continue;
         }
-        let mu = loss_fn.inverse_link(eta[i] + offset[i]);
+        let mu = means[i];
         let w = a * loss_fn.irls_weight(mu);
         let res = a * loss_fn.weighted_link_residual(target[i], mu);
         if !w.is_finite() || !res.is_finite() {
@@ -623,43 +894,42 @@ fn update_variate_table(
         return;
     };
 
-    // Change to each row's factor, before clamping.
-    let means: Vec<f64> = (0..d).map(|m| s_wphi[m] / s_w).collect();
+    // Change to each row's factor, before clamping. `phi_means` are the basis columns'
+    // weighted means, the centring described above — not the fitted means of the model.
+    let phi_means: Vec<f64> = (0..d).map(|m| s_wphi[m] / s_w).collect();
     let mut delta = vec![0.0f64; n_rows];
     for r in 0..n_rows {
         let mut change = 0.0;
         for m in 0..d {
-            change += step[m] * (phi[r * d + m] - means[m]);
+            change += step[m] * (phi[r * d + m] - phi_means[m]);
         }
         delta[r] = change;
     }
 
-    // MAX_STEP caps how far a factor may move in one sweep. Scale the whole step down
-    // rather than clipping rows individually, which would bend the curve off its
-    // polynomial.
+    // The step limit caps how far a factor may move in one sweep. Scale the whole step
+    // down rather than clipping rows individually, which would bend the curve off its
+    // polynomial. Infinite under the identity link, where the step is exact.
+    let step_limit = loss_fn.step_limit();
     let max_change = delta.iter().fold(0.0f64, |acc, v| acc.max(v.abs()));
     if !max_change.is_finite() {
         return;
     }
-    if max_change > MAX_STEP {
-        let shrink = MAX_STEP / max_change;
+    if max_change > step_limit {
+        let shrink = step_limit / max_change;
         for v in delta.iter_mut() {
             *v *= shrink;
         }
     }
 
+    let eta_limit = loss_fn.eta_limit();
     for r in 0..n_rows {
         let old = factors[t][r];
-        let new = (old + delta[r]).clamp(-ETA_CLAMP, ETA_CLAMP);
+        let new = (old + delta[r]).clamp(-eta_limit, eta_limit);
         factors[t][r] = new;
         delta[r] = new - old;
     }
 
-    for (i, m) in table_matches.iter().enumerate() {
-        if let Some(r) = m {
-            eta[i] += delta[*r];
-        }
-    }
+    apply_row_deltas(loss_fn, table_matches, &delta, offset, eta, means);
 }
 
 /// Shifts a constant out of each feature table and into the intercept table, leaving
@@ -670,6 +940,7 @@ fn normalize(
     tables: &[RatingTable],
     updatable: &[bool],
     mode: Normalization,
+    eta_limit: f64,
 ) {
     // Nothing to anchor against if the intercept itself is locked.
     if factors.is_empty() || !updatable[0] || factors[0].len() != 1 || tables[0].is_row_offset(0) {
@@ -714,12 +985,198 @@ fn normalize(
         shift_into_intercept += anchor;
     }
 
-    factors[0][0] = (factors[0][0] + shift_into_intercept).clamp(-ETA_CLAMP, ETA_CLAMP);
+    factors[0][0] = (factors[0][0] + shift_into_intercept).clamp(-eta_limit, eta_limit);
+}
+
+/// Scatters one observation's score contribution into every table it touches, and
+/// returns its absolute value for the scaling denominator.
+///
+/// The contribution is the same quantity the IRLS step already uses, `a * w * r`, which
+/// for the log-link families is `a * mu^(1-p) * (y - mu)` — the `A - E` of the exact
+/// update, before the log.
+#[inline]
+#[allow(clippy::too_many_arguments)]
+fn score_row(
+    i: usize,
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    updatable: &[bool],
+    rows: &mut [Vec<f64>],
+) -> f64 {
+    let a = weights[i];
+    if a == 0.0 {
+        return 0.0;
+    }
+    let s = a * loss_fn.weighted_link_residual(target[i], means[i]);
+    for (t, table_matches) in matches.iter().enumerate() {
+        if !updatable[t] {
+            continue;
+        }
+        let m = table_matches[i];
+        if m != NO_MATCH {
+            rows[t][m as usize] += s;
+        }
+    }
+    s.abs()
+}
+
+/// Relative improvement in the score that counts as progress.
+const STALL_IMPROVEMENT: f64 = 1e-3;
+
+/// Sweeps without progress before giving up. Backfitting can converge genuinely
+/// slowly, so this has to be loose enough not to cut off a fit that is still working.
+const STALL_SWEEPS: usize = 12;
+
+/// The largest absolute score component over every free parameter, scaled by the total
+/// prior weight.
+///
+/// This is the convergence test, and it is a direct measure of what the caller
+/// receives: at the optimum every free parameter's score is zero, so `max |g|` says how
+/// far the *parameters* still have to move. The deviance change does not — deviance is
+/// quadratic in the parameter error near the optimum, so a deviance tolerance of `1e-t`
+/// buys only about `1e-(t/2)` in the fitted factors, and a fit can report convergence
+/// while still visibly wrong. That is not a hypothetical: on the French motor data the
+/// deviance test declared victory 1.1e-04 away from the answer.
+///
+/// The scaling by total weight matches what glum reports, so the tolerances mean
+/// roughly the same thing in both. Without it the threshold would depend on the number
+/// of observations.
+///
+/// `scratch` is per-table row storage, reused across sweeps.
+#[allow(clippy::too_many_arguments)]
+fn max_abs_score(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    tables: &[RatingTable],
+    updatable: &[bool],
+    row_exposure: &[Vec<f64>],
+    variate_values: &[Option<(Vec<f64>, usize)>],
+    scratch: &mut [Vec<f64>],
+) -> f64 {
+    for rows in scratch.iter_mut() {
+        rows.iter_mut().for_each(|v| *v = 0.0);
+    }
+
+    // This pass costs what the whole update path costs — one scatter-add per table per
+    // observation — so it gets the same treatment. Each worker fills its own copy of
+    // every table's rows, which is why `parallel_chunk` is asked about the total width
+    // of the model rather than one table's.
+    let width: usize = scratch.iter().map(|s| s.len()).sum();
+    let total_abs = match parallel_chunk(target.len(), width) {
+        Some(chunk) => {
+            let shape: Vec<usize> = scratch.iter().map(|s| s.len()).collect();
+            let (partial, total_abs) = target
+                .par_chunks(chunk)
+                .enumerate()
+                .fold(
+                    || (shape.iter().map(|k| vec![0.0f64; *k]).collect::<Vec<_>>(), 0.0f64),
+                    |(mut rows, mut abs), (c, block)| {
+                        // `matches` is indexed by table first, so the pass needs the
+                        // absolute observation index rather than a chunk-local one.
+                        let start = c * chunk;
+                        for k in 0..block.len() {
+                            abs += score_row(
+                                start + k,
+                                loss_fn,
+                                target,
+                                weights,
+                                means,
+                                matches,
+                                updatable,
+                                &mut rows,
+                            );
+                        }
+                        (rows, abs)
+                    },
+                )
+                .reduce(
+                    || (shape.iter().map(|k| vec![0.0f64; *k]).collect::<Vec<_>>(), 0.0f64),
+                    |(mut rows, abs), (rows2, abs2)| {
+                        for (a, b) in rows.iter_mut().zip(rows2.iter()) {
+                            for (x, y) in a.iter_mut().zip(b.iter()) {
+                                *x += y;
+                            }
+                        }
+                        (rows, abs + abs2)
+                    },
+                );
+            for (dst, src) in scratch.iter_mut().zip(partial.iter()) {
+                dst.copy_from_slice(src);
+            }
+            total_abs
+        }
+        None => {
+            let mut total_abs = 0.0f64;
+            for i in 0..target.len() {
+                total_abs +=
+                    score_row(i, loss_fn, target, weights, means, matches, updatable, scratch);
+            }
+            total_abs
+        }
+    };
+
+    let mut worst = 0.0f64;
+    for t in 0..scratch.len() {
+        if !updatable[t] {
+            continue;
+        }
+
+        match &variate_values[t] {
+            // A variate table's free parameters are its polynomial coefficients, not
+            // its rows, so the row scores have to be projected onto the basis the fit
+            // actually moves along.
+            Some((values, degree)) => {
+                let Some((centre, scale)) = variate_basis_params(values) else {
+                    continue;
+                };
+                for m in 1..=*degree {
+                    let mut g = 0.0;
+                    for (r, v) in values.iter().enumerate() {
+                        let u = (v - centre) / scale;
+                        g += scratch[t][r] * u.powi(m as i32);
+                    }
+                    worst = worst.max(g.abs());
+                }
+            }
+            None => {
+                for r in 0..scratch[t].len() {
+                    // A locked row or one with no exposure carries no free parameter,
+                    // so its score is not ours to drive to zero.
+                    if row_exposure[t][r] <= 0.0 || tables[t].is_row_offset(r) {
+                        continue;
+                    }
+                    worst = worst.max(scratch[t][r].abs());
+                }
+            }
+        }
+    }
+
+    // Scale by the total absolute residual, not by the weight. Both make the threshold
+    // independent of the number of observations, but only this one makes it
+    // independent of the units the response is measured in: the score carries the
+    // response's scale, and dividing by a bare weight leaves it there. A Gaussian fit
+    // on currency would otherwise need a different tolerance from one on log-odds.
+    //
+    // Read it as: the fraction of the residual signal still concentrated in the worst
+    // single parameter. At the optimum the signed residuals cancel within every level,
+    // so this goes to zero while the denominator stays put.
+    if total_abs > 0.0 {
+        worst / total_abs
+    } else {
+        worst
+    }
 }
 
 /// Deviance of the best intercept-only fit, used as the reference for `pseudo_r2`.
 fn null_deviance(loss_fn: &LossFunction, target: &[f64], weights: &[f64], offset: &[f64]) -> f64 {
     let mut beta = 0.0f64;
+    let power = loss_fn.log_link_variance_power();
     // Same coordinate update as the fitter, applied to a single global level.
     for _ in 0..200 {
         let mut numer = 0.0;
@@ -730,9 +1187,9 @@ fn null_deviance(loss_fn: &LossFunction, target: &[f64], weights: &[f64], offset
                 continue;
             }
             let mu = loss_fn.inverse_link(beta + offset[i]);
-            match loss_fn.log_link_variance_power() {
+            match power {
                 Some(p) => {
-                    let base = mu.powf(1.0 - p);
+                    let base = pow_special(mu, 1.0 - p);
                     numer += a * base * target[i];
                     denom += a * base * mu;
                 }
@@ -745,7 +1202,7 @@ fn null_deviance(loss_fn: &LossFunction, target: &[f64], weights: &[f64], offset
         if !(denom > 0.0) || !denom.is_finite() {
             break;
         }
-        let step = match loss_fn.log_link_variance_power() {
+        let step = match power {
             Some(_) => {
                 if numer > 0.0 {
                     (numer / denom).ln()
@@ -758,8 +1215,10 @@ fn null_deviance(loss_fn: &LossFunction, target: &[f64], weights: &[f64], offset
         if !step.is_finite() {
             break;
         }
-        let next = (beta + step.clamp(-MAX_STEP, MAX_STEP)).clamp(-ETA_CLAMP, ETA_CLAMP);
-        if (next - beta).abs() < 1e-14 {
+        let step_limit = loss_fn.step_limit();
+        let eta_limit = loss_fn.eta_limit();
+        let next = (beta + step.clamp(-step_limit, step_limit)).clamp(-eta_limit, eta_limit);
+        if (next - beta).abs() < 1e-14 * beta.abs().max(1.0) {
             beta = next;
             break;
         }
@@ -820,15 +1279,15 @@ fn read_f64_column(df: &DataFrame, name: &str, role: &str) -> Result<Vec<f64>, P
 /// a model that quietly dropped a term.
 fn validate_matches(
     model: &RatingModel,
-    matches: &[Vec<Option<usize>>],
+    matches: &[Vec<u32>],
     n_rows: usize,
 ) -> Result<(), PolarsError> {
     for (t, table_matches) in matches.iter().enumerate() {
-        let unmatched = table_matches.iter().filter(|m| m.is_none()).count();
+        let unmatched = table_matches.iter().filter(|m| **m == NO_MATCH).count();
         if unmatched == 0 {
             continue;
         }
-        let first = table_matches.iter().position(|m| m.is_none()).unwrap();
+        let first = table_matches.iter().position(|m| *m == NO_MATCH).unwrap();
         let features: Vec<String> = model.tables[t]
             .get_feature_info()
             .keys()
@@ -924,4 +1383,60 @@ fn validate_inputs(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `apply_row_deltas` carries `mu` forward as `mu *= exp(delta)` instead of
+    /// re-deriving it from `eta`, which is only valid while the eta clamp does not bind.
+    /// Whichever route it takes for a given observation, it must leave the invariant
+    /// `mu[i] == inverse_link(eta[i] + offset[i])` intact.
+    ///
+    /// This is checked here rather than through a fit because the clamp is not reachable
+    /// end-to-end without wrecking the rest of the model: an offset large enough to
+    /// clamp needs a response near `exp(500)` to stay representable, and a response that
+    /// size swamps the convergence test's residual scaling, so every other parameter is
+    /// declared converged before it has moved. The invariant is the thing that matters,
+    /// and it can be checked directly.
+    #[test]
+    fn apply_row_deltas_keeps_mu_consistent_with_eta() {
+        for loss_fn in [
+            LossFunction::Gaussian,
+            LossFunction::Poisson,
+            LossFunction::Gamma,
+            LossFunction::Tweedie(1.5),
+            LossFunction::Binary,
+        ] {
+            // Chosen to exercise every branch of the guard. Reading `eta + offset`
+            // before and after the delta, row by row: 1 -> 9 (both inside the clamp,
+            // fast path); 493 -> 485 (inside); -494.5 -> -502.5 (leaves the clamp);
+            // 505 -> 497 (*enters* from outside, the case where `mu` was pinned at
+            // exp(500) and scaling it would be wrong); -490 -> -482 (inside); and one
+            // observation this table does not match at all.
+            let offset = vec![0.0, 495.0, -495.0, 600.0, -600.0, 3.0];
+            let table_matches = vec![0u32, 1, 1, 1, 0, NO_MATCH];
+            let delta = vec![8.0, -8.0];
+            let mut eta = vec![1.0, -2.0, 0.5, -95.0, 110.0, 2.0];
+
+            let mut mu: Vec<f64> = eta
+                .iter()
+                .zip(offset.iter())
+                .map(|(e, o)| loss_fn.inverse_link(e + o))
+                .collect();
+
+            apply_row_deltas(&loss_fn, &table_matches, &delta, &offset, &mut eta, &mut mu);
+
+            for i in 0..eta.len() {
+                let expected = loss_fn.inverse_link(eta[i] + offset[i]);
+                let tol = 1e-12 * expected.abs().max(f64::MIN_POSITIVE);
+                assert!(
+                    (mu[i] - expected).abs() <= tol,
+                    "{:?} row {}: carried mu = {:e}, but inverse_link(eta + offset) = {:e}",
+                    loss_fn, i, mu[i], expected
+                );
+            }
+        }
+    }
 }

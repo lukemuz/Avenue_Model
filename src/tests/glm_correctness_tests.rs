@@ -148,6 +148,147 @@ mod glm_correctness_tests {
             vec![3.0, 5.0, 4.0, 30.0, 50.0, 40.0, -2.0, -6.0, -1.0]);
     }
 
+    /// Under the identity link `eta` IS the response, so no fixed bound on `eta` can
+    /// be a safety guard - it is a cap on the data. A currency-scale response used to
+    /// come back capped at ETA_CLAMP (500), silently and without a warning.
+    #[test]
+    fn saturated_gaussian_handles_a_large_response() {
+        saturated_one_factor("gaussian", 1.5,
+            vec![30_000.0, 50_000.0, 40_000.0,
+                 300_000.0, 500_000.0, 400_000.0,
+                 -20_000.0, -60_000.0, -10_000.0]);
+    }
+
+    /// The step limiter exists to stop IRLS overshooting where the linearisation is
+    /// poor. Gaussian/identity IRLS is exact, so its coordinate update cannot
+    /// overshoot and must not be capped: a fixed cap of 10 made the fit crawl toward a
+    /// large intercept ten units per sweep. The answer was right, eventually - this
+    /// pins the "eventually".
+    #[test]
+    fn gaussian_converges_in_few_sweeps_at_any_scale() {
+        let x: Vec<f64> = vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0];
+        let w: Vec<f64> = vec![1.0, 2.0, 0.5, 3.0, 1.0, 1.5, 0.25, 2.0, 1.0];
+
+        // Same shape of problem, three orders of magnitude apart. The number of sweeps
+        // must not depend on the units the response happens to be measured in.
+        for scale in [1.0, 1_000.0, 1_000_000.0] {
+            let y: Vec<f64> = vec![3.0, 5.0, 4.0, 30.0, 50.0, 40.0, -2.0, -6.0, -1.0]
+                .into_iter().map(|v| v * scale).collect();
+
+            let df = DataFrame::new(vec![
+                Series::new("x".into(), x.clone()).into(),
+                Series::new("y".into(), y).into(),
+                Series::new("w".into(), w.clone()).into(),
+            ]).unwrap();
+
+            let model = RatingModel::from_dataframes(
+                vec![intercept_table(), factor_table("x", &[1.0, 2.0, f64::INFINITY])],
+                "gaussian", None, None,
+            ).unwrap();
+
+            let (_, diag) = crate::glm::fit_glm_with_diagnostics(
+                &model, &df, "y", Some("w"), None, options("gaussian", 1.5)).unwrap();
+
+            assert!(diag.converged, "scale {}: did not converge", scale);
+            assert!(diag.iterations < 20,
+                "scale {}: took {} sweeps; a step limiter meant for the log scale is \
+                 the usual cause", scale, diag.iterations);
+        }
+    }
+
+    /// Two tables keyed on *nearly* the same driver - the French motor data's
+    /// `Area`/`Density` pair in miniature, where one is a rebanding of the other.
+    /// They leave an almost-flat direction that backfitting can only creep along one
+    /// table at a time, which is the case coordinate descent is worst at.
+    ///
+    /// (Note that *exactly* aliased tables are not the hard case: the exact
+    /// `ln(A / E)` update satisfies the first table's levels outright, leaving the
+    /// second nothing to do. It is near-aliasing that crawls.)
+    ///
+    /// What is under test is that `converged` means what it says. The old rule - a
+    /// relative change in deviance - could not support that claim, because deviance
+    /// goes quadratically flat near the optimum: it stops moving while the parameters
+    /// are still around `sqrt(eps)` away. On the real French motor data it declared
+    /// convergence 1.1e-04 from the answer. The reference here is the same fit driven
+    /// far past the tolerance under test; a fit that says it converged must agree with
+    /// it.
+    #[test]
+    fn convergence_is_not_reported_until_the_factors_arrive() {
+        // x2 tracks x1 except in the last four rows. Correlated, not identical.
+        let x1: Vec<f64> = vec![
+            1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 1.0, 2.0, 3.0, 4.0, 5.0, 3.0,
+        ];
+        let x2: Vec<f64> = vec![
+            1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 2.0, 3.0, 4.0, 5.0, 1.0, 1.0,
+        ];
+        let w: Vec<f64> = vec![
+            1.0, 2.0, 0.5, 3.0, 1.0, 1.5, 0.25, 2.0, 1.0, 0.75, 1.0, 2.0, 1.0, 0.5, 1.5, 1.0,
+        ];
+        let y: Vec<f64> = vec![
+            2.0, 4.0, 6.0, 9.0, 12.0, 15.0, 20.0, 24.0, 30.0, 33.0, 3.0, 8.0, 14.0, 22.0,
+            28.0, 11.0,
+        ];
+
+        let df = DataFrame::new(vec![
+            Series::new("x1".into(), x1).into(),
+            Series::new("x2".into(), x2).into(),
+            Series::new("y".into(), y).into(),
+            Series::new("w".into(), w).into(),
+        ]).unwrap();
+
+        let bounds = [1.0, 2.0, 3.0, 4.0, f64::INFINITY];
+        let model = || {
+            RatingModel::from_dataframes(
+                vec![
+                    intercept_table(),
+                    factor_table("x1", &bounds),
+                    factor_table("x2", &bounds),
+                ],
+                "poisson", None, None,
+            ).unwrap()
+        };
+
+        let fit = |tolerance: f64, max_iterations: usize| {
+            let mut o = options("poisson", 1.5);
+            o.tolerance = tolerance;
+            o.max_iterations = max_iterations;
+            crate::glm::fit_glm_with_diagnostics(&model(), &df, "y", Some("w"), None, o)
+                .unwrap()
+        };
+
+        // Driven far past any tolerance under test.
+        let (reference, reference_diag) = fit(1e-14, 100_000);
+        let truth = predictions(&reference, &df);
+
+        // The problem has to actually be slow, or this test proves nothing.
+        assert!(reference_diag.iterations > 10,
+            "fixture converged in {} sweeps - too easy to exercise the criterion",
+            reference_diag.iterations);
+
+        // A fit that stops early must not claim otherwise.
+        let (_, impatient) = fit(1e-14, 3);
+        assert!(!impatient.converged,
+            "stopped after 3 sweeps on a near-aliased model and claimed convergence");
+
+        // And a fit that does claim convergence has to have arrived. The old deviance
+        // rule failed exactly here.
+        let mut checked = 0;
+        for tolerance in [1e-8, 1e-10, 1e-12] {
+            let (fitted, diag) = fit(tolerance, 100_000);
+            if !diag.converged {
+                continue;
+            }
+            checked += 1;
+            assert_all_close(
+                &predictions(&fitted, &df), &truth, 1e-6,
+                &format!("reported converged at tolerance {:.0e} - fitted means must \
+                          match the over-converged fit", tolerance),
+            );
+        }
+        assert!(checked > 0,
+            "no tolerance reported convergence, so the assertion above never ran");
+    }
+
     #[test]
     fn saturated_poisson_reproduces_group_means() {
         saturated_one_factor("poisson", 1.5,

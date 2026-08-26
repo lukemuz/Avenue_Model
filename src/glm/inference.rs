@@ -24,6 +24,7 @@ use crate::rating_model::variate_basis_params;
 
 use super::fitting::Normalization;
 use super::loss::LossFunction;
+use super::matching::NO_MATCH;
 
 /// Largest reduced-basis design permitted. `X'WX` is dense at `p^2` and inverted in
 /// `p^3`, so this bounds the work at roughly 200 MB and a few seconds.
@@ -145,7 +146,7 @@ pub fn compute_inference(
     target: &[f64],
     weights: &[f64],
     means: &[f64],
-    matches: &[Vec<Option<usize>>],
+    matches: &[Vec<u32>],
     factors: &[Vec<f64>],
     row_exposure: &[Vec<f64>],
     updatable: &[bool],
@@ -279,8 +280,9 @@ pub fn compute_inference(
 
         cols.clear();
         for t in 0..n_tables {
-            if let Some(r) = matches[t][i] {
-                if let ReducedColumn::Loadings(loadings) = &layout[t][r] {
+            let m = matches[t][i];
+            if m != NO_MATCH {
+                if let ReducedColumn::Loadings(loadings) = &layout[t][m as usize] {
                     cols.extend_from_slice(loadings);
                 }
             }
