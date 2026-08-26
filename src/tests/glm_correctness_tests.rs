@@ -522,7 +522,311 @@ mod glm_correctness_tests {
         }
     }
 
-    // ------------------------------------------------- 3. inference edge cases
+    // ------------------------------------------------------- 3. linear variates
+
+    /// A variate table's factors must lie exactly on a straight line through the
+    /// per-row values. This is the defining property: whatever the fit does, the five
+    /// factors are one slope, not five free numbers.
+    fn assert_on_a_line(factors: &[f64], values: &[f64], what: &str) {
+        let slope = (factors[1] - factors[0]) / (values[1] - values[0]);
+        for r in 0..factors.len() {
+            let expected = factors[0] + slope * (values[r] - values[0]);
+            assert!(
+                (factors[r] - expected).abs() < 1e-9,
+                "{}: row {} is {:.12} but the line through rows 0 and 1 gives {:.12} \
+                 (slope {:.12}); factors {:?}",
+                what, r, factors[r], expected, slope, factors
+            );
+        }
+    }
+
+    /// The headline behaviour: five rows, one parameter, factors on a line.
+    #[test]
+    fn variate_factors_lie_on_a_line() {
+        use refdata::LinearVariate as C;
+
+        let df = DataFrame::new(vec![
+            Series::new("x1".into(), C::X1.to_vec()).into(),
+            Series::new("age".into(), C::AGE.to_vec()).into(),
+            Series::new("y".into(), C::Y.to_vec()).into(),
+            Series::new("w".into(), C::WEIGHT.to_vec()).into(),
+        ]).unwrap();
+
+        let fitted = fit_variate_model(&df);
+        let f = rating_factors(&fitted, 2);
+        assert_on_a_line(&f, &C::AGE_VALUES, "age variate");
+
+        // Under base-level anchoring the first row is the reference, so it is zero and
+        // every other factor reads as a relativity against it.
+        assert!(f[0].abs() < 1e-12, "base row should be 0, got {}", f[0]);
+    }
+
+    fn fit_variate_model(df: &DataFrame) -> RatingModel {
+        crate::glm::fit_glm(&variate_model(), df, "y", Some("w"), None,
+                            options("poisson", 1.5)).unwrap()
+    }
+
+    fn variate_model() -> RatingModel {
+        use crate::rating_model::RatingTable;
+        use refdata::LinearVariate as C;
+
+        let age_table = RatingTable::new(factor_table("age", &C::AGE_BOUNDS), None)
+            .as_variate(C::AGE_VALUES.to_vec())
+            .expect("age table should be a valid variate");
+
+        RatingModel::new(
+            vec![
+                RatingTable::new(intercept_table(), None),
+                RatingTable::new(factor_table("x1", &refdata::X1_BOUNDS), None),
+                age_table,
+            ],
+            crate::rating_model::LinkFunction::from_objective("poisson"),
+        )
+    }
+
+    /// The slope, its standard error, the fitted means and the companion step table
+    /// must all agree with the equivalent GLM fitted by statsmodels, where the variate
+    /// is an ordinary continuous covariate taking each record's band value.
+    #[test]
+    fn variate_matches_statsmodels() {
+        use refdata::LinearVariate as C;
+
+        let df = DataFrame::new(vec![
+            Series::new("x1".into(), C::X1.to_vec()).into(),
+            Series::new("age".into(), C::AGE.to_vec()).into(),
+            Series::new("y".into(), C::Y.to_vec()).into(),
+            Series::new("w".into(), C::WEIGHT.to_vec()).into(),
+        ]).unwrap();
+
+        let (fitted, diag) = crate::glm::fit_glm_with_diagnostics(
+            &variate_model(), &df, "y", Some("w"), None, options("poisson", 1.5)).unwrap();
+
+        assert!(diag.converged, "variate fit did not converge in {} sweeps", diag.iterations);
+        assert_all_close(&predictions(&fitted, &df), &C::MU, REF_TOL,
+            "variate - fitted means vs statsmodels");
+        assert_all_close(&[diag.deviance], &[C::DEVIANCE], REF_TOL,
+            "variate - deviance vs statsmodels");
+        assert_all_close(&contrasts(&fitted, 1), &C::X1_CONTRASTS, REF_TOL,
+            "variate - companion step table contrasts vs statsmodels");
+
+        // The slope itself.
+        let slope = fitted.tables[2].variate_slope().expect("table 2 is a variate");
+        assert_all_close(&[slope], &[C::SLOPE], REF_TOL,
+            "variate - slope vs statsmodels");
+
+        // Each row's factor is the slope times its distance from the base value.
+        let f = rating_factors(&fitted, 2);
+        let expected: Vec<f64> = C::AGE_VALUES.iter()
+            .map(|v| C::SLOPE * (v - C::AGE_VALUES[0]))
+            .collect();
+        assert_all_close(&f, &expected, REF_TOL, "variate - row factors vs statsmodels");
+
+        // And each row's standard error is the slope's, scaled the same way.
+        let inf = diag.inference.expect("inference should be computed");
+        let expected_se: Vec<f64> = C::AGE_VALUES.iter()
+            .map(|v| C::SLOPE_SE * (v - C::AGE_VALUES[0]).abs())
+            .collect();
+        assert_all_close(&inf.standard_errors[2], &expected_se, SE_TOL,
+            "variate - row standard errors vs statsmodels");
+        assert_all_close(&inf.standard_errors[1], &C::X1_SE, SE_TOL,
+            "variate - companion step table standard errors vs statsmodels");
+    }
+
+    /// Centring the variate column is what keeps the slope from crawling toward its
+    /// answer alongside the intercept. Without it the fit reports convergence while the
+    /// slope is still drifting, so pin the iteration count: a well-conditioned fit
+    /// settles in a handful of sweeps, not hundreds.
+    #[test]
+    fn variate_converges_quickly() {
+        use refdata::LinearVariate as C;
+
+        let df = DataFrame::new(vec![
+            Series::new("x1".into(), C::X1.to_vec()).into(),
+            Series::new("age".into(), C::AGE.to_vec()).into(),
+            Series::new("y".into(), C::Y.to_vec()).into(),
+            Series::new("w".into(), C::WEIGHT.to_vec()).into(),
+        ]).unwrap();
+
+        let (_, diag) = crate::glm::fit_glm_with_diagnostics(
+            &variate_model(), &df, "y", Some("w"), None, options("poisson", 1.5)).unwrap();
+
+        assert!(diag.converged, "did not converge");
+        assert!(diag.iterations < 40,
+            "took {} sweeps to converge; an uncentred slope column is the usual cause",
+            diag.iterations);
+    }
+
+    /// The whole point of a variate: a five-row table costs one parameter, not four.
+    #[test]
+    fn variate_costs_one_parameter() {
+        use refdata::LinearVariate as C;
+
+        let df = DataFrame::new(vec![
+            Series::new("x1".into(), C::X1.to_vec()).into(),
+            Series::new("age".into(), C::AGE.to_vec()).into(),
+            Series::new("y".into(), C::Y.to_vec()).into(),
+            Series::new("w".into(), C::WEIGHT.to_vec()).into(),
+        ]).unwrap();
+
+        let (_, diag) = crate::glm::fit_glm_with_diagnostics(
+            &variate_model(), &df, "y", Some("w"), None, options("poisson", 1.5)).unwrap();
+
+        // intercept (1) + x1 with 3 levels (2) + age variate (1) = 4
+        let inf = diag.inference.unwrap();
+        assert_eq!(inf.n_parameters, 4,
+            "expected 4 parameters, got {}; a 5-row variate must not spend 4 on its own",
+            inf.n_parameters);
+        assert_all_close(&[inf.df_residual], &[C::DF_RESID], REF_TOL,
+            "variate - residual df vs statsmodels");
+
+        // The same tables as free step factors would spend three more.
+        let free = RatingModel::from_dataframes(
+            vec![
+                intercept_table(),
+                factor_table("x1", &refdata::X1_BOUNDS),
+                factor_table("age", &C::AGE_BOUNDS),
+            ],
+            "poisson", None, None,
+        ).unwrap();
+        let (_, free_diag) = crate::glm::fit_glm_with_diagnostics(
+            &free, &df, "y", Some("w"), None, options("poisson", 1.5)).unwrap();
+        assert_eq!(free_diag.inference.unwrap().n_parameters, 7);
+    }
+
+    /// A band with no exposure still gets a factor, read off the line. A free step
+    /// table would leave it stranded at its starting value.
+    #[test]
+    fn variate_fills_in_empty_bands() {
+        use crate::rating_model::RatingTable;
+
+        // Nobody in the 30-40 band.
+        let ages = vec![22.0, 25.0, 28.0, 44.0, 47.0, 49.0, 55.0, 61.0, 70.0];
+        let y = vec![1.0, 2.0, 1.0, 4.0, 5.0, 4.0, 7.0, 8.0, 9.0];
+        let df = DataFrame::new(vec![
+            Series::new("age".into(), ages).into(),
+            Series::new("y".into(), y).into(),
+        ]).unwrap();
+
+        let bounds = [20.0, 30.0, 40.0, 50.0, f64::INFINITY];
+        let values = vec![20.0, 30.0, 40.0, 50.0, 65.0];
+
+        let model = RatingModel::new(
+            vec![
+                RatingTable::new(intercept_table(), None),
+                RatingTable::new(factor_table("age", &bounds), None)
+                    .as_variate(values.clone()).unwrap(),
+            ],
+            crate::rating_model::LinkFunction::from_objective("poisson"),
+        );
+
+        let (fitted, diag) = crate::glm::fit_glm_with_diagnostics(
+            &model, &df, "y", None, None, options("poisson", 1.5)).unwrap();
+
+        let f = rating_factors(&fitted, 1);
+        assert_on_a_line(&f, &values, "variate with an empty band");
+        // Row 2 (30-40) saw no data but is not stranded at its starting value.
+        assert!(f[2].abs() > 1e-6, "empty band should be filled from the line, got {}", f[2]);
+        assert!(diag.unfitted_rows.is_empty(),
+            "a variate row without exposure is still fitted, got {:?}", diag.unfitted_rows);
+        // It has a standard error too, since it borrows the slope's.
+        let inf = diag.inference.unwrap();
+        assert!(inf.standard_errors[1][2].is_finite() && inf.standard_errors[1][2] > 0.0,
+            "empty band should carry the slope's standard error, got {}",
+            inf.standard_errors[1][2]);
+    }
+
+    /// Anchoring changes where the line sits, never its slope or the predictions.
+    #[test]
+    fn variate_slope_is_invariant_to_anchoring() {
+        use crate::glm::Normalization;
+        use refdata::LinearVariate as C;
+
+        let df = DataFrame::new(vec![
+            Series::new("x1".into(), C::X1.to_vec()).into(),
+            Series::new("age".into(), C::AGE.to_vec()).into(),
+            Series::new("y".into(), C::Y.to_vec()).into(),
+            Series::new("w".into(), C::WEIGHT.to_vec()).into(),
+        ]).unwrap();
+
+        let fit_with = |norm: Normalization| {
+            let mut opts = options("poisson", 1.5);
+            opts.normalization = norm;
+            crate::glm::fit_glm(&variate_model(), &df, "y", Some("w"), None, opts).unwrap()
+        };
+
+        let base = fit_with(Normalization::BaseLevel);
+        let wmean = fit_with(Normalization::WeightedMean);
+        let none = fit_with(Normalization::None);
+
+        for (name, m) in [("WeightedMean", &wmean), ("None", &none)] {
+            assert_all_close(&predictions(m, &df), &predictions(&base, &df), 1e-9,
+                &format!("{} anchoring must not move predictions", name));
+            assert_all_close(
+                &[m.tables[2].variate_slope().unwrap()],
+                &[base.tables[2].variate_slope().unwrap()], 1e-9,
+                &format!("{} anchoring must not change the slope", name));
+            assert_on_a_line(&rating_factors(m, 2), &C::AGE_VALUES,
+                &format!("{} anchoring", name));
+        }
+    }
+
+    /// A variate table is still an ordinary step table to anything reading it, so a
+    /// deployed lookup reproduces the fit exactly - no interpolation, no approximation.
+    #[test]
+    fn variate_predicts_by_step_lookup() {
+        use refdata::LinearVariate as C;
+
+        let df = DataFrame::new(vec![
+            Series::new("x1".into(), C::X1.to_vec()).into(),
+            Series::new("age".into(), C::AGE.to_vec()).into(),
+            Series::new("y".into(), C::Y.to_vec()).into(),
+            Series::new("w".into(), C::WEIGHT.to_vec()).into(),
+        ]).unwrap();
+        let fitted = fit_variate_model(&df);
+
+        // Two ages in the same band must get identical predictions.
+        let probe = DataFrame::new(vec![
+            Series::new("x1".into(), vec![1.0, 1.0, 1.0]).into(),
+            Series::new("age".into(), vec![31.0, 39.0, 41.0]).into(),
+        ]).unwrap();
+        let p = predictions(&fitted, &probe);
+        assert!((p[0] - p[1]).abs() < 1e-12,
+            "ages 31 and 39 are in the same band and must predict alike: {} vs {}", p[0], p[1]);
+        assert!((p[1] - p[2]).abs() > 1e-9,
+            "ages 39 and 41 are in different bands and must differ");
+    }
+
+    /// Values that cannot describe a line are rejected at construction, with the
+    /// reason, rather than producing a fit nobody can interpret.
+    #[test]
+    fn invalid_variate_values_are_rejected() {
+        use crate::rating_model::RatingTable;
+        let bounds = [20.0, 30.0, f64::INFINITY];
+
+        let cases: Vec<(Vec<f64>, &str)> = vec![
+            (vec![20.0, 30.0], "one value per row"),
+            (vec![20.0, 30.0, 40.0, 50.0], "one value per row"),
+            (vec![20.0, 30.0, f64::INFINITY], "not finite"),
+            (vec![25.0, 25.0, 25.0], "no slope to estimate"),
+        ];
+
+        for (values, expected) in cases {
+            let err = RatingTable::new(factor_table("age", &bounds), None)
+                .as_variate(values.clone())
+                .expect_err(&format!("{:?} should be rejected", values))
+                .to_string();
+            assert!(err.contains(expected),
+                "for {:?} expected a message mentioning {:?}, got: {}", values, expected, err);
+        }
+
+        // A locked row cannot coexist with a slope-derived factor.
+        let mut table = RatingTable::new(factor_table("age", &bounds), None);
+        table.set_row_offset(1, true);
+        let err = table.as_variate(vec![20.0, 30.0, 40.0]).unwrap_err().to_string();
+        assert!(err.contains("locked rows"), "unhelpful message: {}", err);
+    }
+
+    // ------------------------------------------------- 4. inference edge cases
 
     /// A completely separated level has zero IRLS weight, so it confounds with the
     /// intercept and its coefficient is not estimable. It must be reported as aliased

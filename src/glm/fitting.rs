@@ -1,5 +1,5 @@
 use polars::prelude::*;
-use crate::rating_model::{RatingModel, RatingTable};
+use crate::rating_model::{RatingModel, RatingTable, TableSemantics};
 use super::inference::{compute_inference, GLMInference};
 use super::loss::{LossFunction, ETA_CLAMP};
 use super::matching::precompute_all_matches;
@@ -199,6 +199,13 @@ pub fn fit_glm_with_diagnostics(
         .map(|t| !t.metadata.is_offset)
         .collect();
 
+    // Per-row values for variate tables, None for step tables.
+    let variate_values: Vec<Option<Vec<f64>>> = working_model
+        .tables
+        .iter()
+        .map(|t| t.variate_values().map(|v| v.to_vec()))
+        .collect();
+
     // Exposure behind each table row, fixed for the whole fit. Used for the
     // weighted-mean anchor and to report rows that never got any data.
     let row_exposure: Vec<Vec<f64>> = (0..n_tables)
@@ -325,6 +332,7 @@ pub fn fit_glm_with_diagnostics(
             &factors,
             &row_exposure,
             &updatable,
+            &variate_values,
             options.normalization,
         ) {
             Ok(inf) => Some(inf),
@@ -345,9 +353,12 @@ pub fn fit_glm_with_diagnostics(
         write_back_factors(&mut working_model.tables[t], &factors[t])?;
     }
 
+    // A step row with no exposure keeps whatever factor it started with, so callers
+    // need to know. A variate row with no exposure is still fitted — it reads its
+    // factor off the table's slope — so it is not listed here.
     let mut unfitted_rows = Vec::new();
     for t in 0..n_tables {
-        if !updatable[t] {
+        if !updatable[t] || working_model.tables[t].variate_values().is_some() {
             continue;
         }
         for (r, e) in row_exposure[t].iter().enumerate() {
@@ -371,11 +382,13 @@ pub fn fit_glm_with_diagnostics(
     Ok((working_model, diagnostics))
 }
 
-/// Updates every row of one table, holding all other tables fixed, and folds the
-/// change straight into the running linear predictor.
+/// Updates one table, holding all others fixed, and folds the change straight into
+/// the running linear predictor.
 ///
-/// Two update rules, both exact minimisers of the deviance for this table given the
-/// others, except for the logit case which takes a single IRLS step:
+/// For a [`TableSemantics::Variate`] table the rows share a single slope, so the whole
+/// table is one scalar update — see [`update_variate_table`]. Otherwise each row moves
+/// independently, and because every observation belongs wholly to one row the weighted
+/// least-squares step collapses to a scalar per row:
 ///
 /// * **Log link.** With `mu_i = c_i * exp(beta_r)` the score equation solves in closed
 ///   form to `beta_r <- beta_r + ln(A / E)`, where `A = sum(a * mu^(1-p) * y)` and
@@ -400,6 +413,12 @@ fn update_table(
     numer: &mut Vec<f64>,
     denom: &mut Vec<f64>,
 ) {
+    if let TableSemantics::Variate { values } = table.semantics() {
+        update_variate_table(
+            t, factors, eta, table_matches, target, weights, offset, values, loss_fn,
+        );
+        return;
+    }
     let n_rows = factors[t].len();
     numer.clear();
     numer.resize(n_rows, 0.0);
@@ -473,6 +492,122 @@ fn update_table(
     for (i, m) in table_matches.iter().enumerate() {
         if let Some(r) = m {
             eta[i] += numer[*r];
+        }
+    }
+}
+
+/// Updates a variate table: one slope for the whole table, however many rows it has.
+///
+/// The row factors are tied together as `factor[r] = slope * values[r] + c`, with `c`
+/// absorbed by the intercept, so there is exactly one thing to estimate. Writing
+/// `z_i = values[row of observation i]`, the table's design is a single column and the
+/// IRLS step is a scalar:
+///
+/// ```text
+///   d_slope = sum(a * z * w * r) / sum(a * z^2 * w)
+/// ```
+///
+/// then `factor[r] += d_slope * values[r]` for every row. Setting all the `values` to
+/// an indicator recovers the single-level step update, which is the sense in which
+/// this is the same least-squares step viewed through a different design column.
+///
+/// # Centring
+///
+/// The column is centred on its weight-weighted mean before the step is taken. This
+/// matters more than it looks. Ages run 20 to 65, nowhere near zero, so the raw slope
+/// column is almost perfectly correlated with the intercept — move one and the other
+/// has to chase it. Coordinate descent between two directions that overlap that badly
+/// converges linearly and slowly: the deviance goes flat long before the parameters
+/// have settled, so the fit reports convergence while the slope is still drifting in
+/// the sixth decimal place.
+///
+/// Centring makes the step orthogonal to the intercept under the current weights, so
+/// it is the exact Newton step for the slope *given that the level is free to adjust*.
+/// It is a pure reparameterisation — the constant lands in the intercept, the factors
+/// stay on the same line, and the fixed point is unchanged. Only the path there is
+/// shorter.
+///
+/// Two further consequences. Rows with no exposure still move, because the slope is
+/// estimated from the whole table and every row reads its factor off the line — that
+/// is the point of a variate. And the log-link closed form does not apply here: it
+/// relies on the coefficient entering one level at a time, whereas `z` varies across
+/// rows. A Newton step on a convex objective converges perfectly well.
+fn update_variate_table(
+    t: usize,
+    factors: &mut [Vec<f64>],
+    eta: &mut [f64],
+    table_matches: &[Option<usize>],
+    target: &[f64],
+    weights: &[f64],
+    offset: &[f64],
+    values: &[f64],
+    loss_fn: &LossFunction,
+) {
+    // Accumulate the raw sums; the centred numerator and denominator follow
+    // algebraically, so this stays a single pass.
+    let mut s_w = 0.0f64; // sum of IRLS weights
+    let mut s_wz = 0.0f64; // ... times z
+    let mut s_wzz = 0.0f64; // ... times z^2
+    let mut s_r = 0.0f64; // sum of weighted link residuals
+    let mut s_rz = 0.0f64; // ... times z
+
+    for (i, m) in table_matches.iter().enumerate() {
+        let Some(r) = *m else { continue };
+        let a = weights[i];
+        if a == 0.0 {
+            continue;
+        }
+        let z = values[r];
+        let mu = loss_fn.inverse_link(eta[i] + offset[i]);
+        let w = a * loss_fn.irls_weight(mu);
+        let res = a * loss_fn.weighted_link_residual(target[i], mu);
+        if !w.is_finite() || !res.is_finite() {
+            continue;
+        }
+        s_w += w;
+        s_wz += w * z;
+        s_wzz += w * z * z;
+        s_r += res;
+        s_rz += res * z;
+    }
+
+    if !(s_w > 0.0) || !s_w.is_finite() {
+        return;
+    }
+    let centre = s_wz / s_w;
+
+    // sum W (z - centre)^2  and  sum R (z - centre)
+    let denom = s_wzz - s_wz * centre;
+    let numer = s_rz - centre * s_r;
+
+    if !(denom > 0.0) || !denom.is_finite() {
+        return;
+    }
+    let mut step = numer / denom;
+    if !step.is_finite() {
+        return;
+    }
+
+    // MAX_STEP caps how far a *factor* may move in one sweep, so translate it through
+    // the largest centred value before clamping the slope.
+    let max_abs = values.iter().fold(0.0f64, |m, v| m.max((v - centre).abs()));
+    if max_abs > 0.0 {
+        let limit = MAX_STEP / max_abs;
+        step = step.clamp(-limit, limit);
+    }
+
+    let n_rows = factors[t].len();
+    let mut delta = vec![0.0; n_rows];
+    for r in 0..n_rows {
+        let old = factors[t][r];
+        let new = (old + step * (values[r] - centre)).clamp(-ETA_CLAMP, ETA_CLAMP);
+        factors[t][r] = new;
+        delta[r] = new - old;
+    }
+
+    for (i, m) in table_matches.iter().enumerate() {
+        if let Some(r) = m {
+            eta[i] += delta[*r];
         }
     }
 }
@@ -706,6 +841,25 @@ fn validate_inputs(
         return Err(PolarsError::ComputeError(
             "Model must have at least 2 tables (mean + feature tables)".into()
         ));
+    }
+
+    // A variate table's factors all come from one slope, so a pinned row is not
+    // representable. (as_variate rejects this too; a row could be locked afterwards.)
+    for (t, table) in model.tables.iter().enumerate() {
+        if table.variate_values().is_none() {
+            continue;
+        }
+        if let Some(r) = (0..table.data.height()).find(|r| table.is_row_offset(*r)) {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Table {} is a variate but row {} is locked. Every factor is derived from \
+                     the one slope, so pinning a single row would break the line. Lock the \
+                     whole table with as_offset() instead.",
+                    t, r
+                )
+                .into(),
+            ));
+        }
     }
 
     // The intercept table must be a single row for normalization to be meaningful.

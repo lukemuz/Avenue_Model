@@ -31,6 +31,8 @@ Estimate generalized linear models without design matrix conversion:
 - Prior weights, offset columns, offset tables and locked rows
 - Tables are anchored to a base level, so the same data always gives the same tables
 - Standard errors per level, plus dispersion, deviance, AIC and BIC
+- Continuous drivers as *variates*: a five-row table costs one parameter, not four,
+  and still deploys as an ordinary step table
 - Validated against statsmodels to 1e-7 on fitted means, contrasts and standard errors
 
 ### Native Table Operations
@@ -161,8 +163,7 @@ let fitted = fit_glm(&model, &data, "target", Some("weight"), None, options)?;
 
 ## Roadmap
 
-- Continuous and linear terms: knot semantics, interpolating between table rows
-  rather than stepping, so a 2-row table *is* a linear term
+- Polynomial variates (degree > 1)
 - Release-mode benchmarks against glum, statsmodels and R `glm`
 - Penalized regression: credibility shrinkage for sparse levels, difference penalties
   on adjacent ordinal levels, monotonicity constraints, Elastic Net

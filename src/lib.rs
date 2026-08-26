@@ -84,6 +84,63 @@ impl PyRatingModel {
         self.inner.get_link_function()
     }
 
+    /// Constrain one table's factors to a straight line, so it costs the fit one
+    /// parameter instead of one per row.
+    ///
+    /// The table is still read as an ordinary step table — lookup and deployment are
+    /// unchanged — but its fitted factors will all lie exactly on a line through
+    /// `values`.
+    ///
+    /// Args:
+    ///     table_index: Which table to constrain.
+    ///     values: One number per row, in row order: what that row is worth on the
+    ///         driver's scale. For an age table with bounds [20, 30, 40, 50, inf],
+    ///         [20, 30, 40, 50, 65] is a natural choice — the last entry stands in
+    ///         for the open-ended top band, which is why these are supplied rather
+    ///         than taken from the table's own bounds column.
+    ///
+    /// Returns:
+    ///     A new RatingModel; the original is unchanged.
+    fn as_variate(&self, table_index: usize, values: Vec<f64>) -> PyResult<Self> {
+        if table_index >= self.inner.tables.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                "Table index {} is out of bounds (0-{})",
+                table_index,
+                self.inner.tables.len() - 1
+            )));
+        }
+        if table_index == 0 {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Table 0 is the intercept and has a single row; there is no line to fit."
+                    .to_string(),
+            ));
+        }
+
+        let mut model = self.inner.clone();
+        let table = std::mem::replace(
+            &mut model.tables[table_index],
+            rating_model::RatingTable::new(DataFrame::empty(), None),
+        );
+        model.tables[table_index] = table.as_variate(values).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+        })?;
+        Ok(PyRatingModel { inner: model })
+    }
+
+    /// The fitted slope of a variate table, or None if that table is not a variate.
+    fn variate_slope(&self, table_index: usize) -> PyResult<Option<f64>> {
+        self.inner
+            .tables
+            .get(table_index)
+            .map(|t| t.variate_slope())
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                    "Table index {} is out of bounds",
+                    table_index
+                ))
+            })
+    }
+
     /// Predict for a single set of features
     fn predict_one(&self, features: &Bound<'_, PyDict>) -> PyResult<f64> {
         let feature_map: HashMap<String, f64> = features.extract()?;

@@ -19,12 +19,53 @@ pub use lgbm_parser::{process_lgbm_trees, build_analysis_tablemodel, build_conso
 pub use consolidation::{expand_and_combine_tables, combine_all_tables};
 
 // Begin Metadata Structures
+
+/// How many free parameters a table's rows represent.
+///
+/// This does not change how a table is *read* — lookup is a step lookup either way,
+/// and a deployed rating engine cannot tell the difference. It changes how many
+/// degrees of freedom the fit spends on the table.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TableSemantics {
+    /// Every row carries its own free factor. A five-row table spends four parameters
+    /// once the model is anchored. This is what a LightGBM-converted table is, and the
+    /// default.
+    Step,
+    /// The row factors are constrained to a straight line through a value attached to
+    /// each row: `factor[r] = slope * values[r]`, up to the constant the intercept
+    /// absorbs. A five-row table spends **one** parameter, whatever its row count.
+    ///
+    /// This is the classical actuarial *variate*: age entered as a continuous driver
+    /// rather than as a set of independent levels. Three things follow from it that
+    /// free levels do not give you:
+    ///
+    /// * The fitted curve is smooth and monotone by construction, not by penalty.
+    /// * Rows with little or no exposure still get a sensible factor, read off the
+    ///   line rather than left at their starting value.
+    /// * The table is still an ordinary step table, so it deploys unchanged.
+    ///
+    /// `values` is one number per row: what that row is worth on the driver's scale.
+    /// It is supplied rather than derived from the table's own numeric column, because
+    /// that column holds inclusive bin *upper bounds* — the top bin's bound is normally
+    /// infinite, and a bound is the edge of a bin rather than a point inside it. See
+    /// [`RatingTable::as_variate`].
+    Variate { values: Vec<f64> },
+}
+
+impl Default for TableSemantics {
+    fn default() -> Self {
+        TableSemantics::Step
+    }
+}
+
 /// Metadata for a RatingTable
 #[derive(Debug, Clone)]
 pub struct TableMetadata {
     pub name: String,
     pub is_offset: bool,      // Table is fixed, not updated by GLM
     pub is_updatable: bool,   // Can GLM update this table's factors?
+    /// How many free parameters this table's rows represent. See [`TableSemantics`].
+    pub semantics: TableSemantics,
 }
 
 impl Default for TableMetadata {
@@ -33,6 +74,7 @@ impl Default for TableMetadata {
             name: String::new(),
             is_offset: false,
             is_updatable: true,
+            semantics: TableSemantics::default(),
         }
     }
 }
@@ -425,6 +467,109 @@ impl RatingTable {
             .and_then(|meta| meta.get(row_idx))
             .map(|m| m.is_offset)
             .unwrap_or(false)
+    }
+
+    // Variate methods
+
+    /// Constrains this table's factors to a straight line through `values`, so the
+    /// whole table costs one parameter instead of one per row.
+    ///
+    /// `values` gives what each row is worth on the driver's scale, in row order. For
+    /// an age table with bounds `[20, 30, 40, 50, inf]` a natural choice is
+    /// `[20, 30, 40, 50, 65]` — note the last entry stands in for the open-ended top
+    /// bin, which is precisely why these are supplied rather than taken from the
+    /// table's own column.
+    ///
+    /// Lookup is unaffected: the table is still read by its bounds, and the fitted
+    /// factors still sit in `Rating_Factor`. The only difference is that all of them
+    /// will lie exactly on a line.
+    ///
+    /// ```text
+    ///  Age (bound)   values    Rating_Factor after fitting
+    ///        20        20            0.0000        <- anchored base
+    ///        30        30            0.0850
+    ///        40        40            0.1700
+    ///        50        50            0.2550
+    ///       inf        65            0.3825
+    /// ```
+    pub fn as_variate(mut self, values: Vec<f64>) -> Result<Self, PolarsError> {
+        let label = if self.metadata.name.is_empty() {
+            "table".to_string()
+        } else {
+            format!("table '{}'", self.metadata.name)
+        };
+        let n_rows = self.data.height();
+
+        if values.len() != n_rows {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Cannot make {} a variate: got {} values for {} rows. Supply one value \
+                     per row, in row order.",
+                    label, values.len(), n_rows
+                ).into(),
+            ));
+        }
+
+        for (i, v) in values.iter().enumerate() {
+            if !v.is_finite() {
+                return Err(PolarsError::ComputeError(
+                    format!(
+                        "Cannot make {} a variate: value {} for row {} is not finite. These \
+                         are points on the driver's scale, not bin bounds - for an \
+                         open-ended top bin, choose a representative value such as the \
+                         exposure-weighted mean.",
+                        label, v, i
+                    ).into(),
+                ));
+            }
+        }
+
+        let distinct = values.iter().any(|v| *v != values[0]);
+        if !distinct {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Cannot make {} a variate: all {} values are {}. A line through \
+                     identical points has no slope to estimate.",
+                    label, n_rows, values[0]
+                ).into(),
+            ));
+        }
+
+        if (0..n_rows).any(|r| self.is_row_offset(r)) {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Cannot make {} a variate: it has locked rows. Every factor is derived \
+                     from the one slope, so pinning a single row would break the line. Lock \
+                     the whole table with as_offset() instead.",
+                    label
+                ).into(),
+            ));
+        }
+
+        self.metadata.semantics = TableSemantics::Variate { values };
+        Ok(self)
+    }
+
+    /// How many free parameters this table's rows represent.
+    pub fn semantics(&self) -> &TableSemantics {
+        &self.metadata.semantics
+    }
+
+    /// The per-row values behind a variate table, or `None` for a step table.
+    pub fn variate_values(&self) -> Option<&[f64]> {
+        match &self.metadata.semantics {
+            TableSemantics::Variate { values } => Some(values),
+            TableSemantics::Step => None,
+        }
+    }
+
+    /// The fitted slope of a variate table, recovered from any two rows whose values
+    /// differ. `None` for a step table.
+    pub fn variate_slope(&self) -> Option<f64> {
+        let values = self.variate_values()?;
+        let v0 = values[0];
+        let r = values.iter().position(|v| *v != v0)?;
+        Some((self.get_rating_factor(r) - self.get_rating_factor(0)) / (values[r] - v0))
     }
 
     /// Set the table name for better diagnostics

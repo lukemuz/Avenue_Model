@@ -62,6 +62,63 @@ Steps are capped at 10 on the link scale and factors at ±500, which only binds 
 separation — a level whose observations are all 0 or all 1 has no finite MLE, so the
 fit walks it to the boundary and stops rather than producing `NaN`.
 
+### Variates: continuous drivers in a table
+
+By default every row of a table carries its own free factor, so a five-row age table
+spends four parameters. Often that is not what you want — age drives risk smoothly, and
+four free levels spend degrees of freedom estimating wiggle you do not believe in.
+
+Marking a table a **variate** ties its factors to a single slope:
+
+```
+factor[r] = slope * values[r]     (+ a constant the intercept absorbs)
+```
+
+Five rows, **one** parameter, whatever the row count. Three things follow:
+
+- The fitted curve is smooth and monotone by construction, not by penalty.
+- Rows with little or no exposure still get a sensible factor, read off the line rather
+  than left stranded at their starting value.
+- **Lookup does not change.** The table is still an ordinary step table with the same
+  bounds and the same `Rating_Factor` column, so any rating engine reads it unchanged.
+  Nothing interpolates and nothing is approximated — the table *is* the fitted model.
+
+```rust
+use avenue_model::rating_model::RatingTable;
+
+// Bounds as usual: inclusive upper bounds, ascending, last one unbounded.
+let age = RatingTable::new(age_df, None)
+    .as_variate(vec![20.0, 30.0, 40.0, 50.0, 65.0])?;
+```
+
+`values` is what each row is worth on the driver's scale, one per row. It is supplied
+rather than derived from the table's own numeric column, because that column holds bin
+*upper bounds*: the top bin's bound is normally `inf`, and a bound is the edge of a bin
+rather than a point inside it. Supplying the values is also how you say what the
+open-ended top band is worth.
+
+After fitting, the table looks like this — five factors, all exactly on one line:
+
+```
+ Age (bound)   values    Rating_Factor
+       20        20         0.0000        <- anchored base
+       30        30         0.0850
+       40        40         0.1700
+       50        50         0.2550
+      inf        65         0.3825
+```
+
+`table.variate_slope()` recovers the slope. Standard errors work out as you would
+expect: each row's is the slope's, scaled by that row's distance from the base value,
+so the base row's is exactly 0 and the whole table contributes one column to `X'WX`.
+
+Rows cannot be locked on a variate table — every factor comes from the one slope, so
+pinning a single row has no representation. Lock the whole table with `as_offset()`
+instead.
+
+Only degree 1 for now. Polynomial variates are a small extension of the same idea: `d`
+design columns and a `d x d` solve instead of a scalar.
+
 ### Identifiability
 
 A model carrying an intercept table *and* a free factor for every level is
@@ -165,6 +222,22 @@ print(diag)          # iterations, converged, deviance, pseudo_r2, dispersion, a
 predictions = fitted.predict(test_data)
 ```
 
+### A continuous driver
+
+```python
+# Age as a single slope rather than five free levels.
+age_table = pl.DataFrame({
+    "Age": [20.0, 30.0, 40.0, 50.0, float("inf")],   # inclusive upper bounds
+    "Rating_Factor": [0.0] * 5,
+})
+model = RatingModel([mean_table, age_table], objective="poisson")
+model = model.as_variate(1, [20.0, 30.0, 40.0, 50.0, 65.0])
+
+fitted, diag = fit_glm_with_diagnostics(model, df, "claims", "exposure", options=options)
+print(fitted.variate_slope(1))     # the one estimated parameter
+print(fitted.model_tables()[1])    # five factors, all on that line
+```
+
 ### Reading the standard errors
 
 `diag.standard_errors` lines up index-for-index with `model_tables()`:
@@ -265,7 +338,8 @@ cargo test --lib glm_correctness     # the correctness harness specifically
    statsmodels' treatment coding; the tests compare quantities that are invariant to
    the parameterisation — fitted means per row and level contrasts within a table —
    along with deviance, dispersion, residual degrees of freedom, standard errors,
-   log-likelihood and AIC.
+   log-likelihood and AIC. A variate case is included, fitted in statsmodels as an
+   ordinary continuous covariate taking each record's band value.
 
 Regenerate the reference fixtures (requires `numpy`, `scipy`, `statsmodels`):
 
@@ -300,11 +374,15 @@ src/glm/
 
 ## Known gaps
 
-- Numeric tables are step functions only. Continuous and linear terms need knot
-  semantics (interpolating between rows rather than stepping), which is the natural
-  next extension.
+- Variates are degree 1 only. Polynomials are a small extension: `d` design columns
+  and a `d x d` solve instead of a scalar.
+- Lookup is always a step lookup. A table cannot interpolate between its rows, so a
+  variate's continuity lives in the *pattern of factors*, not in the prediction — two
+  ages in the same band get the same factor. Interpolating tables are designed but not
+  built.
 - Only Wald standard errors. No likelihood-ratio tests, profile intervals, or robust
   / sandwich covariance.
+- No regularisation.
 - No regularisation. For rating tables the high-value forms are credibility shrinkage
   of sparse levels and difference penalties on adjacent ordinal levels, more than L1
   variable selection.

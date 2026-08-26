@@ -78,12 +78,18 @@ impl GLMInference {
     }
 }
 
-/// Where a table row sits in the reduced, full-rank basis.
+/// How a table row enters the reduced, full-rank design.
+///
+/// A step row is either the reference or its own column with coefficient 1. A variate
+/// row shares its table's single slope column, with coefficient `values[r] - values[ref]`
+/// — so all the rows of a variate table load on one parameter, which is exactly what
+/// makes the table cost one degree of freedom instead of one per row.
+#[derive(Clone, Copy)]
 enum ReducedColumn {
     /// This row is the anchoring reference and carries no free parameter.
     Reference,
-    /// This row maps to the given column of the reduced design.
-    Column(usize),
+    /// This row loads on the given column with the given coefficient.
+    Column(usize, f64),
     /// No exposure, or held fixed — excluded from inference entirely.
     Excluded,
 }
@@ -102,6 +108,7 @@ pub fn compute_inference(
     factors: &[Vec<f64>],
     row_exposure: &[Vec<f64>],
     updatable: &[bool],
+    variate_values: &[Option<Vec<f64>>],
     normalization: Normalization,
 ) -> Result<GLMInference, PolarsError> {
     let n_obs = target.len();
@@ -109,8 +116,9 @@ pub fn compute_inference(
 
     // ---- 1. Lay out the reduced basis -----------------------------------------
     //
-    // Column 0 is the intercept. Each updatable feature table contributes one column
-    // per row except its reference row, whose effect the intercept absorbs.
+    // Column 0 is the intercept. A step table then contributes one column per row
+    // except its reference row, whose effect the intercept absorbs. A variate table
+    // contributes exactly one column however many rows it has.
     let mut layout: Vec<Vec<ReducedColumn>> = Vec::with_capacity(n_tables);
     let mut n_params = 1usize;
 
@@ -122,7 +130,7 @@ pub fn compute_inference(
             // The intercept table itself is column 0.
             for r in 0..n_rows {
                 table_layout.push(if r == 0 && updatable[0] {
-                    ReducedColumn::Column(0)
+                    ReducedColumn::Column(0, 1.0)
                 } else {
                     ReducedColumn::Excluded
                 });
@@ -130,6 +138,22 @@ pub fn compute_inference(
         } else if !updatable[t] {
             for _ in 0..n_rows {
                 table_layout.push(ReducedColumn::Excluded);
+            }
+        } else if let Some(values) = &variate_values[t] {
+            // One slope for the whole table. Coefficients are measured from the
+            // reference row so the reference reads as exactly zero, matching how the
+            // factors themselves are anchored.
+            let reference = reference_row(&row_exposure[t]).unwrap_or(0);
+            let v_ref = values[reference];
+            let col = n_params;
+            n_params += 1;
+            for r in 0..n_rows {
+                let coef = values[r] - v_ref;
+                table_layout.push(if coef == 0.0 {
+                    ReducedColumn::Reference
+                } else {
+                    ReducedColumn::Column(col, coef)
+                });
             }
         } else {
             let reference = reference_row(&row_exposure[t]);
@@ -139,7 +163,7 @@ pub fn compute_inference(
                 } else if Some(r) == reference {
                     table_layout.push(ReducedColumn::Reference);
                 } else {
-                    table_layout.push(ReducedColumn::Column(n_params));
+                    table_layout.push(ReducedColumn::Column(n_params, 1.0));
                     n_params += 1;
                 }
             }
@@ -167,7 +191,7 @@ pub fn compute_inference(
     let mut xtwx = vec![0.0f64; n_params * n_params];
     let mut pearson_chi2 = 0.0f64;
     let mut active_obs = 0usize;
-    let mut cols: Vec<usize> = Vec::with_capacity(n_tables + 1);
+    let mut cols: Vec<(usize, f64)> = Vec::with_capacity(n_tables + 1);
 
     for i in 0..n_obs {
         let a = weights[i];
@@ -192,17 +216,18 @@ pub fn compute_inference(
         cols.clear();
         for t in 0..n_tables {
             if let Some(r) = matches[t][i] {
-                if let ReducedColumn::Column(c) = layout[t][r] {
-                    cols.push(c);
+                if let ReducedColumn::Column(c, coef) = layout[t][r] {
+                    cols.push((c, coef));
                 }
             }
         }
 
-        for (a_idx, &u) in cols.iter().enumerate() {
-            xtwx[u * n_params + u] += w;
-            for &v_col in cols.iter().skip(a_idx + 1) {
-                xtwx[u * n_params + v_col] += w;
-                xtwx[v_col * n_params + u] += w;
+        for (a_idx, &(u, cu)) in cols.iter().enumerate() {
+            xtwx[u * n_params + u] += w * cu * cu;
+            for &(v_col, cv) in cols.iter().skip(a_idx + 1) {
+                let contribution = w * cu * cv;
+                xtwx[u * n_params + v_col] += contribution;
+                xtwx[v_col * n_params + u] += contribution;
             }
         }
     }
@@ -279,25 +304,27 @@ pub fn compute_inference(
         for r in 0..n_rows {
             match layout[t][r] {
                 ReducedColumn::Excluded => ses[r] = f64::NAN,
-                ReducedColumn::Reference | ReducedColumn::Column(_) => {
+                ReducedColumn::Reference | ReducedColumn::Column(..) => {
                     // Build the contrast vector for this row, sparsely.
                     let mut contrast: Vec<(usize, f64)> = Vec::new();
-                    if let ReducedColumn::Column(c) = layout[t][r] {
-                        contrast.push((c, 1.0));
+                    if let ReducedColumn::Column(c, coef) = layout[t][r] {
+                        contrast.push((c, coef));
                     }
                     if let Some(p) = &shares {
                         for (s, share) in p.iter().enumerate() {
                             if *share == 0.0 {
                                 continue;
                             }
-                            if let ReducedColumn::Column(c) = layout[t][s] {
+                            if let ReducedColumn::Column(c, coef) = layout[t][s] {
+                                let adjustment = share * coef;
                                 match contrast.iter_mut().find(|(idx, _)| *idx == c) {
-                                    Some(entry) => entry.1 -= share,
-                                    None => contrast.push((c, -share)),
+                                    Some(entry) => entry.1 -= adjustment,
+                                    None => contrast.push((c, -adjustment)),
                                 }
                             }
                         }
                     }
+                    contrast.retain(|(_, w)| *w != 0.0);
 
                     if contrast.is_empty() {
                         // A pure reference level: fixed by construction, not estimated.
