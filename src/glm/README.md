@@ -506,6 +506,30 @@ difference between `n_rows` exponentials and `n` of them; `mu^(1-p)` is speciali
 from `powf` for the exponents the common families produce (Poisson's is `mu^0`); and the
 scatter-adds run under rayon above 100k rows.
 
+### Build settings
+
+Stock `cargo --release`. Three obvious levers were measured on the synthetic suite and
+**none of them moved a single number outside run-to-run noise**, so none are configured:
+
+| | build time | effect |
+|--|-----------:|--------|
+| `lto = "fat"`, `codegen-units = 1` | 5s -> 379s | none |
+| `-C target-cpu=native` | 5s -> 106s | none |
+| eliding the scatter-add bounds check (`get_unchecked`) | — | none |
+
+The reason is the shape of the inner loop rather than anything about the compiler. The
+work is a scatter-add at a data-dependent index — `numer[table_matches[i]] += ...` — which
+cannot vectorise, because each lane would need a different address and the indices repeat
+constantly (that is what a rating table *is*). Wider registers have nothing to fill, and
+the bounds check disappears into the latency of the dependent load it guards. LTO has
+nothing to inline across either: the hot loops are all inside this module and already
+marked `#[inline]`, and the data is copied out of Polars into plain `Vec`s before fitting
+precisely so the fit never crosses back.
+
+`target-cpu=native` is also actively wrong to ship — the wheel would fault with an illegal
+instruction on any machine older than the one that built it — so it would need to earn its
+place, and it does not.
+
 ## Module Structure
 
 ```
