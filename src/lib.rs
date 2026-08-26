@@ -84,12 +84,12 @@ impl PyRatingModel {
         self.inner.get_link_function()
     }
 
-    /// Constrain one table's factors to a straight line, so it costs the fit one
-    /// parameter instead of one per row.
+    /// Constrain one table's factors to a polynomial curve, so it costs the fit
+    /// `degree` parameters instead of one per row.
     ///
     /// The table is still read as an ordinary step table — lookup and deployment are
-    /// unchanged — but its fitted factors will all lie exactly on a line through
-    /// `values`.
+    /// unchanged — but its fitted factors will all lie exactly on a degree-`degree`
+    /// polynomial in `values`.
     ///
     /// Args:
     ///     table_index: Which table to constrain.
@@ -98,10 +98,15 @@ impl PyRatingModel {
     ///         [20, 30, 40, 50, 65] is a natural choice — the last entry stands in
     ///         for the open-ended top band, which is why these are supplied rather
     ///         than taken from the table's own bounds column.
+    ///     degree: Polynomial degree. 1 (the default) is a straight line and costs
+    ///         one parameter; 2 bends once and costs two. Must be below the number
+    ///         of distinct values, since at that point the curve already passes
+    ///         through every row.
     ///
     /// Returns:
     ///     A new RatingModel; the original is unchanged.
-    fn as_variate(&self, table_index: usize, values: Vec<f64>) -> PyResult<Self> {
+    #[pyo3(signature = (table_index, values, degree=1))]
+    fn as_variate(&self, table_index: usize, values: Vec<f64>, degree: usize) -> PyResult<Self> {
         if table_index >= self.inner.tables.len() {
             return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
                 "Table index {} is out of bounds (0-{})",
@@ -121,18 +126,53 @@ impl PyRatingModel {
             &mut model.tables[table_index],
             rating_model::RatingTable::new(DataFrame::empty(), None),
         );
-        model.tables[table_index] = table.as_variate(values).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
-        })?;
+        model.tables[table_index] = table
+            .as_polynomial_variate(values, degree)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
         Ok(PyRatingModel { inner: model })
     }
 
-    /// The fitted slope of a variate table, or None if that table is not a variate.
+    /// The fitted slope of a linear variate table.
+    ///
+    /// None for a step table, and for a variate of degree above 1 — a curve has no
+    /// single slope. Use variate_coefficients() there.
     fn variate_slope(&self, table_index: usize) -> PyResult<Option<f64>> {
         self.inner
             .tables
             .get(table_index)
             .map(|t| t.variate_slope())
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                    "Table index {} is out of bounds",
+                    table_index
+                ))
+            })
+    }
+
+    /// The fitted polynomial coefficients [beta_1, ..., beta_degree] on the raw
+    /// scale, so that factor[r] = constant + sum of beta_m * values[r] ** m.
+    ///
+    /// None if that table is not a variate. The constant is not returned: anchoring
+    /// has moved it into the intercept, so it is not a property of this table.
+    fn variate_coefficients(&self, table_index: usize) -> PyResult<Option<Vec<f64>>> {
+        self.inner
+            .tables
+            .get(table_index)
+            .map(|t| t.variate_coefficients())
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                    "Table index {} is out of bounds",
+                    table_index
+                ))
+            })
+    }
+
+    /// The polynomial degree of a variate table, or None for a step table.
+    fn variate_degree(&self, table_index: usize) -> PyResult<Option<usize>> {
+        self.inner
+            .tables
+            .get(table_index)
+            .map(|t| t.variate_degree())
             .ok_or_else(|| {
                 PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
                     "Table index {} is out of bounds",
@@ -362,6 +402,14 @@ struct PyGLMDiagnostics {
     /// Why standard errors are absent despite being requested. The fit is unaffected.
     #[pyo3(get)]
     inference_error: Option<String>,
+    /// The fitted polynomial behind each variate table, one entry per variate table:
+    /// (table_index, degree, raw-scale coefficients, standard errors, top-degree z).
+    ///
+    /// The standard errors are on the rescaled basis the fit uses. Because that basis
+    /// is triangular, the top degree's z statistic does not depend on the scaling —
+    /// it is the one that answers whether the curve needs to bend.
+    #[pyo3(get)]
+    variate_terms: Option<Vec<(usize, usize, Vec<f64>, Vec<f64>, Option<f64>)>>,
 }
 
 #[cfg(feature = "python")]
@@ -422,6 +470,20 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
             aic: inf.as_ref().and_then(|i| i.aic),
             bic: inf.as_ref().and_then(|i| i.bic),
             inference_error: d.inference_error,
+            variate_terms: inf.as_ref().map(|i| {
+                i.variate_terms
+                    .iter()
+                    .map(|v| {
+                        (
+                            v.table_index,
+                            v.degree,
+                            v.coefficients.clone(),
+                            v.standard_errors.clone(),
+                            v.top_degree_z(),
+                        )
+                    })
+                    .collect()
+            }),
         }
     }
 }

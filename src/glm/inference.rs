@@ -20,6 +20,8 @@
 
 use polars::prelude::*;
 
+use crate::rating_model::variate_basis_params;
+
 use super::fitting::Normalization;
 use super::loss::LossFunction;
 
@@ -62,6 +64,8 @@ pub struct GLMInference {
     /// Bayesian information criterion, counting the mean parameters only. `None` when
     /// the log-likelihood is unavailable.
     pub bic: Option<f64>,
+    /// The fitted polynomial behind each variate table, one entry per variate table.
+    pub variate_terms: Vec<VariateTerms>,
 }
 
 impl GLMInference {
@@ -81,17 +85,54 @@ impl GLMInference {
 /// How a table row enters the reduced, full-rank design.
 ///
 /// A step row is either the reference or its own column with coefficient 1. A variate
-/// row shares its table's single slope column, with coefficient `values[r] - values[ref]`
-/// — so all the rows of a variate table load on one parameter, which is exactly what
-/// makes the table cost one degree of freedom instead of one per row.
-#[derive(Clone, Copy)]
+/// row loads on its table's `degree` shared columns, with the coefficients being the
+/// powers of its value measured from the reference row's — so every row of a variate
+/// table draws on the same handful of parameters, which is exactly what makes the table
+/// cost `degree` degrees of freedom instead of one per row.
+#[derive(Clone)]
 enum ReducedColumn {
     /// This row is the anchoring reference and carries no free parameter.
     Reference,
-    /// This row loads on the given column with the given coefficient.
-    Column(usize, f64),
+    /// This row loads on the listed columns with the listed coefficients.
+    Loadings(Vec<(usize, f64)>),
     /// No exposure, or held fixed — excluded from inference entirely.
     Excluded,
+}
+
+/// The fitted polynomial behind a variate table.
+#[derive(Debug, Clone)]
+pub struct VariateTerms {
+    /// Which table this describes.
+    pub table_index: usize,
+    /// Polynomial degree.
+    pub degree: usize,
+    /// Coefficients on the raw scale, `[beta_1, ..., beta_degree]`, so that
+    /// `factor[r] = constant + sum of beta_m * values[r]^m`. This is the form to write
+    /// the fitted curve down in.
+    pub coefficients: Vec<f64>,
+    /// The same curve expressed on the rescaled basis the fit actually uses, where the
+    /// driver is mapped onto `[-1, 1]`. Pairs with `standard_errors`.
+    pub scaled_coefficients: Vec<f64>,
+    /// Standard error of each degree's coefficient, in the rescaled basis the fit uses.
+    ///
+    /// The basis is triangular — the `m`th column involves no power above `m` — so the
+    /// **top** degree's z statistic is the same whatever scale the lower terms are
+    /// expressed on. That is the one that answers the question worth asking: does this
+    /// curve need to bend, or would one fewer degree do?
+    pub standard_errors: Vec<f64>,
+}
+
+impl VariateTerms {
+    /// Wald z statistic for the top degree: is the highest power earning its place?
+    ///
+    /// Compare against a normal quantile as usual. The lower degrees' z statistics
+    /// depend on how the basis is centred and are not reported for that reason; to
+    /// judge them, refit at a lower degree and compare deviance.
+    pub fn top_degree_z(&self) -> Option<f64> {
+        let se = *self.standard_errors.last()?;
+        let coef = *self.scaled_coefficients.last()?;
+        (se > 0.0 && se.is_finite()).then(|| coef / se)
+    }
 }
 
 /// Computes standard errors and fit statistics from a converged fit.
@@ -108,7 +149,7 @@ pub fn compute_inference(
     factors: &[Vec<f64>],
     row_exposure: &[Vec<f64>],
     updatable: &[bool],
-    variate_values: &[Option<Vec<f64>>],
+    variate_values: &[Option<(Vec<f64>, usize)>],
     normalization: Normalization,
 ) -> Result<GLMInference, PolarsError> {
     let n_obs = target.len();
@@ -130,7 +171,7 @@ pub fn compute_inference(
             // The intercept table itself is column 0.
             for r in 0..n_rows {
                 table_layout.push(if r == 0 && updatable[0] {
-                    ReducedColumn::Column(0, 1.0)
+                    ReducedColumn::Loadings(vec![(0, 1.0)])
                 } else {
                     ReducedColumn::Excluded
                 });
@@ -139,20 +180,43 @@ pub fn compute_inference(
             for _ in 0..n_rows {
                 table_layout.push(ReducedColumn::Excluded);
             }
-        } else if let Some(values) = &variate_values[t] {
-            // One slope for the whole table. Coefficients are measured from the
-            // reference row so the reference reads as exactly zero, matching how the
-            // factors themselves are anchored.
+        } else if let Some((values, degree)) = &variate_values[t] {
+            // `degree` shared columns for the whole table. Loadings are the powers of
+            // the row's value measured from the reference row's, so the reference row
+            // reads as exactly zero — matching how the factors themselves are anchored.
             let reference = reference_row(&row_exposure[t]).unwrap_or(0);
-            let v_ref = values[reference];
-            let col = n_params;
-            n_params += 1;
+            let Some((centre, scale)) = variate_basis_params(values) else {
+                for _ in 0..n_rows {
+                    table_layout.push(ReducedColumn::Excluded);
+                }
+                layout.push(table_layout);
+                continue;
+            };
+            let first_col = n_params;
+            n_params += degree;
+
+            let powers = |v: f64| -> Vec<f64> {
+                let u = (v - centre) / scale;
+                let mut out = Vec::with_capacity(*degree);
+                let mut p = 1.0;
+                for _ in 0..*degree {
+                    p *= u;
+                    out.push(p);
+                }
+                out
+            };
+            let ref_powers = powers(values[reference]);
+
             for r in 0..n_rows {
-                let coef = values[r] - v_ref;
-                table_layout.push(if coef == 0.0 {
+                let row_powers = powers(values[r]);
+                let loadings: Vec<(usize, f64)> = (0..*degree)
+                    .map(|m| (first_col + m, row_powers[m] - ref_powers[m]))
+                    .filter(|(_, coef)| *coef != 0.0)
+                    .collect();
+                table_layout.push(if loadings.is_empty() {
                     ReducedColumn::Reference
                 } else {
-                    ReducedColumn::Column(col, coef)
+                    ReducedColumn::Loadings(loadings)
                 });
             }
         } else {
@@ -163,7 +227,7 @@ pub fn compute_inference(
                 } else if Some(r) == reference {
                     table_layout.push(ReducedColumn::Reference);
                 } else {
-                    table_layout.push(ReducedColumn::Column(n_params, 1.0));
+                    table_layout.push(ReducedColumn::Loadings(vec![(n_params, 1.0)]));
                     n_params += 1;
                 }
             }
@@ -216,8 +280,8 @@ pub fn compute_inference(
         cols.clear();
         for t in 0..n_tables {
             if let Some(r) = matches[t][i] {
-                if let ReducedColumn::Column(c, coef) = layout[t][r] {
-                    cols.push((c, coef));
+                if let ReducedColumn::Loadings(loadings) = &layout[t][r] {
+                    cols.extend_from_slice(loadings);
                 }
             }
         }
@@ -304,22 +368,24 @@ pub fn compute_inference(
         for r in 0..n_rows {
             match layout[t][r] {
                 ReducedColumn::Excluded => ses[r] = f64::NAN,
-                ReducedColumn::Reference | ReducedColumn::Column(..) => {
+                ReducedColumn::Reference | ReducedColumn::Loadings(_) => {
                     // Build the contrast vector for this row, sparsely.
                     let mut contrast: Vec<(usize, f64)> = Vec::new();
-                    if let ReducedColumn::Column(c, coef) = layout[t][r] {
-                        contrast.push((c, coef));
+                    if let ReducedColumn::Loadings(loadings) = &layout[t][r] {
+                        contrast.extend_from_slice(loadings);
                     }
                     if let Some(p) = &shares {
                         for (s, share) in p.iter().enumerate() {
                             if *share == 0.0 {
                                 continue;
                             }
-                            if let ReducedColumn::Column(c, coef) = layout[t][s] {
-                                let adjustment = share * coef;
-                                match contrast.iter_mut().find(|(idx, _)| *idx == c) {
-                                    Some(entry) => entry.1 -= adjustment,
-                                    None => contrast.push((c, -adjustment)),
+                            if let ReducedColumn::Loadings(loadings) = &layout[t][s] {
+                                for (c, coef) in loadings {
+                                    let adjustment = share * coef;
+                                    match contrast.iter_mut().find(|(idx, _)| idx == c) {
+                                        Some(entry) => entry.1 -= adjustment,
+                                        None => contrast.push((*c, -adjustment)),
+                                    }
                                 }
                             }
                         }
@@ -384,10 +450,70 @@ pub fn compute_inference(
         None => (None, None),
     };
 
+    // ---- 7. Per-degree statistics for variate tables ---------------------------
+    //
+    // The reduced design gives these directly: a variate table owns `degree` adjacent
+    // columns, so its coefficients are the corresponding entries of the fitted
+    // parameter vector and their standard errors the diagonal of the covariance there.
+    let mut variate_terms = Vec::new();
+    for t in 0..n_tables {
+        let Some((values, degree)) = &variate_values[t] else {
+            continue;
+        };
+        let Some((centre, scale)) = variate_basis_params(values) else {
+            continue;
+        };
+
+        // Find the table's first column by looking at any row that carries loadings.
+        let Some(first_col) = layout[t].iter().find_map(|c| match c {
+            ReducedColumn::Loadings(l) => l.first().map(|(col, _)| *col),
+            _ => None,
+        }) else {
+            continue;
+        };
+        // Loadings are filtered of zero coefficients, so the lowest column seen is the
+        // table's base column only if every degree appears somewhere. Take the minimum.
+        let first_col = layout[t]
+            .iter()
+            .filter_map(|c| match c {
+                ReducedColumn::Loadings(l) => l.iter().map(|(col, _)| *col).min(),
+                _ => None,
+            })
+            .min()
+            .unwrap_or(first_col);
+
+        // Recover the fitted coefficients on the rescaled basis from the anchored
+        // factors, which lie exactly on the polynomial by construction.
+        let scaled_coefficients = fit_polynomial_to_factors(&factors[t], values, *degree, centre, scale);
+        let Some(scaled_coefficients) = scaled_coefficients else {
+            continue;
+        };
+
+        let standard_errors: Vec<f64> = (0..*degree)
+            .map(|m| {
+                let c = first_col + m;
+                if compact_of.get(c).copied().flatten().is_none() {
+                    return f64::NAN;
+                }
+                let var = dispersion * cov[c * n_params + c];
+                if var >= 0.0 { var.sqrt() } else { f64::NAN }
+            })
+            .collect();
+
+        variate_terms.push(VariateTerms {
+            table_index: t,
+            degree: *degree,
+            coefficients: expand_to_raw_scale(&scaled_coefficients, centre, scale),
+            scaled_coefficients,
+            standard_errors,
+        });
+    }
+
     Ok(GLMInference {
         standard_errors,
         aliased_rows,
         dispersion,
+        variate_terms,
         n_parameters: rank,
         df_residual,
         pearson_chi2,
@@ -395,6 +521,65 @@ pub fn compute_inference(
         aic,
         bic,
     })
+}
+
+/// Recovers a variate's coefficients on the rescaled basis from its fitted factors.
+///
+/// The factors lie exactly on the polynomial by construction, so this is a consistent
+/// system and the least-squares solution is the exact one. Returns `[a_1, ..., a_d]`,
+/// dropping the constant, which anchoring has already moved into the intercept.
+fn fit_polynomial_to_factors(
+    factors: &[f64],
+    values: &[f64],
+    degree: usize,
+    centre: f64,
+    scale: f64,
+) -> Option<Vec<f64>> {
+    let k = degree + 1;
+    let mut ata = vec![0.0f64; k * k];
+    let mut atb = vec![0.0f64; k];
+    let mut basis = vec![0.0f64; k];
+
+    for r in 0..values.len() {
+        let u = (values[r] - centre) / scale;
+        let mut p = 1.0;
+        for b in basis.iter_mut() {
+            *b = p;
+            p *= u;
+        }
+        let f = factors[r];
+        if !f.is_finite() {
+            return None;
+        }
+        for a in 0..k {
+            atb[a] += basis[a] * f;
+            for b in 0..k {
+                ata[a * k + b] += basis[a] * basis[b];
+            }
+        }
+    }
+
+    solve_spd(&ata, &atb, k).map(|mut c| {
+        c.remove(0);
+        c
+    })
+}
+
+/// Expands `sum a_m ((v - centre)/scale)^m` into coefficients on powers of `v`.
+fn expand_to_raw_scale(scaled: &[f64], centre: f64, scale: f64) -> Vec<f64> {
+    let degree = scaled.len();
+    let mut raw = vec![0.0f64; degree];
+    for m in 1..=degree {
+        let a_m = scaled[m - 1] / scale.powi(m as i32);
+        for j in 1..=m {
+            let mut binom = 1.0f64;
+            for i in 0..j {
+                binom = binom * (m - i) as f64 / (i + 1) as f64;
+            }
+            raw[j - 1] += a_m * binom * (-centre).powi((m - j) as i32);
+        }
+    }
+    raw
 }
 
 /// The row a table is anchored on: its first row carrying exposure.
@@ -447,6 +632,57 @@ fn find_aliased(a: &[f64], n: usize) -> Vec<bool> {
     }
 
     aliased
+}
+
+/// Solves `A x = b` for a small symmetric positive-definite `A`, by Cholesky.
+///
+/// Returns `None` rather than an error when `A` is singular or nearly so: callers here
+/// are in a position to skip the step and try again on better-conditioned weights.
+pub fn solve_spd(a: &[f64], b: &[f64], n: usize) -> Option<Vec<f64>> {
+    if n == 0 {
+        return Some(Vec::new());
+    }
+
+    let mut l = vec![0.0f64; n * n];
+    for i in 0..n {
+        for j in 0..=i {
+            let mut sum = a[i * n + j];
+            for k in 0..j {
+                sum -= l[i * n + k] * l[j * n + k];
+            }
+            if i == j {
+                let tol = 1e-13 * a[i * n + i].abs().max(f64::MIN_POSITIVE);
+                if !(sum > tol) || !sum.is_finite() {
+                    return None;
+                }
+                l[i * n + i] = sum.sqrt();
+            } else {
+                l[i * n + j] = sum / l[j * n + j];
+            }
+        }
+    }
+
+    // Forward substitution: L y = b
+    let mut y = vec![0.0f64; n];
+    for i in 0..n {
+        let mut sum = b[i];
+        for k in 0..i {
+            sum -= l[i * n + k] * y[k];
+        }
+        y[i] = sum / l[i * n + i];
+    }
+
+    // Back substitution: L' x = y
+    let mut x = vec![0.0f64; n];
+    for i in (0..n).rev() {
+        let mut sum = y[i];
+        for k in (i + 1)..n {
+            sum -= l[k * n + i] * x[k];
+        }
+        x[i] = sum / l[i * n + i];
+    }
+
+    x.iter().all(|v| v.is_finite()).then_some(x)
 }
 
 /// Inverts a symmetric positive-definite matrix by Cholesky decomposition.

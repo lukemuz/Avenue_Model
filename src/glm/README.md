@@ -76,7 +76,8 @@ factor[r] = slope * values[r]     (+ a constant the intercept absorbs)
 
 Five rows, **one** parameter, whatever the row count. Three things follow:
 
-- The fitted curve is smooth and monotone by construction, not by penalty.
+- The fitted curve is smooth by construction, not by penalty, and at degree 1 monotone
+  as well.
 - Rows with little or no exposure still get a sensible factor, read off the line rather
   than left stranded at their starting value.
 - **Lookup does not change.** The table is still an ordinary step table with the same
@@ -112,12 +113,71 @@ After fitting, the table looks like this — five factors, all exactly on one li
 expect: each row's is the slope's, scaled by that row's distance from the base value,
 so the base row's is exactly 0 and the whole table contributes one column to `X'WX`.
 
-Rows cannot be locked on a variate table — every factor comes from the one slope, so
+Rows cannot be locked on a variate table — every factor comes from the fitted curve, so
 pinning a single row has no representation. Lock the whole table with `as_offset()`
 instead.
 
-Only degree 1 for now. Polynomial variates are a small extension of the same idea: `d`
-design columns and a `d x d` solve instead of a scalar.
+#### Polynomials
+
+`as_polynomial_variate(values, degree)` fits a curve instead of a line:
+
+```
+factor[r] = sum over m of  beta_m * values[r]^m
+```
+
+Degree 1 is a line and costs one parameter, degree 2 bends once and costs two, and so
+on. The table always keeps every row and is always read as a step table — the degree
+only decides how many parameters the fit spends describing the shape.
+
+The degree cannot reach the number of distinct values. At `distinct - 1` the polynomial
+already passes exactly through every row, which is the same fit as free levels; beyond
+that the extra terms are not identified. The hard ceiling is `MAX_VARIATE_DEGREE` (8),
+well past anything defensible — high-degree polynomials oscillate between the points
+they pass through, which is the opposite of what a variate is for.
+
+**Is the curve earning its bend?** `GLMInference.variate_terms` carries each variate's
+coefficients and their standard errors, and `top_degree_z()` gives the Wald statistic
+for the highest power:
+
+```rust
+for terms in &diag.inference.unwrap().variate_terms {
+    println!("table {}: degree {}, coefficients {:?}", terms.table_index, terms.degree, terms.coefficients);
+    if let Some(z) = terms.top_degree_z() {
+        println!("  top degree z = {:.2}", z);   // |z| < 2 -> try one degree lower
+    }
+}
+```
+
+The standard errors are on the rescaled basis the fit uses, where the driver is mapped
+onto `[-1, 1]`. That basis is triangular — the `m`th column involves no power above `m`
+— so the **top** degree's z statistic is the same whatever scale the lower terms are
+expressed on, which makes it a valid test for dropping that degree. The lower degrees'
+z statistics depend on how the basis is centred; to judge them, refit a degree lower and
+compare deviance.
+
+`coefficients` is on the raw scale, so the fitted curve can be written down directly.
+`variate_slope()` is a degree-1 convenience and returns `None` above that — a curve has
+no single slope.
+
+#### Conditioning
+
+Two things keep the small solve well behaved, both pure reparameterisations that leave
+the fit and its fixed point identical:
+
+- **Rescaling.** The powers are taken of `u = (v - centre) / half_range`, which lies in
+  `[-1, 1]`. Age to the fourth is around ten million while age is around forty; without
+  rescaling the normal matrix spans orders of magnitude and the solve loses most of its
+  significant digits.
+- **Centring.** Each column is then centred on its weight-weighted mean, making the step
+  orthogonal to the intercept under the current weights — the exact Newton step for the
+  shape given the level is free to adjust. Without it, a slope column that never crosses
+  zero is nearly collinear with the intercept, and coordinate descent between the two
+  crawls: the deviance goes flat long before the coefficients have settled, so the fit
+  reports convergence having not arrived.
+
+The powers are also solved **jointly**, as one `d x d` system rather than one coordinate
+at a time. `v` and `v^2` are strongly correlated over any range that does not straddle
+zero, so cycling between them would converge just as slowly.
 
 ### Identifiability
 
@@ -236,6 +296,15 @@ model = model.as_variate(1, [20.0, 30.0, 40.0, 50.0, 65.0])
 fitted, diag = fit_glm_with_diagnostics(model, df, "claims", "exposure", options=options)
 print(fitted.variate_slope(1))     # the one estimated parameter
 print(fitted.model_tables()[1])    # five factors, all on that line
+
+# A curve instead of a line: same table, two parameters.
+model = model.as_variate(1, [20.0, 30.0, 40.0, 50.0, 65.0], degree=2)
+fitted, diag = fit_glm_with_diagnostics(model, df, "claims", "exposure", options=options)
+
+print(fitted.variate_coefficients(1))      # [beta_1, beta_2] on the raw age scale
+for table_index, degree, coefs, ses, z in diag.variate_terms:
+    print(f"table {table_index}: degree {degree}, top-degree z = {z:.2f}")
+    # |z| < 2 suggests the bend is not earning its parameter; try degree=1.
 ```
 
 ### Reading the standard errors
@@ -374,8 +443,9 @@ src/glm/
 
 ## Known gaps
 
-- Variates are degree 1 only. Polynomials are a small extension: `d` design columns
-  and a `d x d` solve instead of a scalar.
+- Only Wald z for the top polynomial degree. Choosing a degree properly wants
+  likelihood-ratio tests or AIC across a fitted sequence; for now, refit at each degree
+  and compare `deviance` or `aic` yourself.
 - Lookup is always a step lookup. A table cannot interpolate between its rows, so a
   variate's continuity lives in the *pattern of factors*, not in the prediction — two
   ages in the same band get the same factor. Interpolating tables are designed but not

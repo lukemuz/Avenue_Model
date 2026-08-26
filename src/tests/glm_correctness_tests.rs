@@ -826,6 +826,301 @@ mod glm_correctness_tests {
         assert!(err.contains("locked rows"), "unhelpful message: {}", err);
     }
 
+    // --------------------------------------------------- 3b. polynomial variates
+
+    /// A variate table's factors must lie exactly on a polynomial of the declared
+    /// degree in the per-row values. Checked by fitting the polynomial back through
+    /// the factors and requiring a residual of zero.
+    fn assert_on_a_polynomial(factors: &[f64], values: &[f64], degree: usize, what: &str) {
+        // Normal equations on a basis rescaled to [-1, 1], the same way the library
+        // does it, so this checks the shape and not the conditioning.
+        let (centre, scale) = crate::rating_model::variate_basis_params(values)
+            .expect("values must vary");
+        let k = degree + 1;
+        let mut ata = vec![0.0f64; k * k];
+        let mut atb = vec![0.0f64; k];
+        for r in 0..values.len() {
+            let u = (values[r] - centre) / scale;
+            let basis: Vec<f64> = (0..k).map(|m| u.powi(m as i32)).collect();
+            for a in 0..k {
+                atb[a] += basis[a] * factors[r];
+                for b in 0..k {
+                    ata[a * k + b] += basis[a] * basis[b];
+                }
+            }
+        }
+        let coefs = crate::glm::solve_spd(&ata, &atb, k).expect("basis should be solvable");
+
+        for r in 0..values.len() {
+            let u = (values[r] - centre) / scale;
+            let predicted: f64 = (0..k).map(|m| coefs[m] * u.powi(m as i32)).sum();
+            assert!(
+                (factors[r] - predicted).abs() < 1e-9,
+                "{}: row {} is {:.12} but the degree-{} polynomial through the table gives \
+                 {:.12}; factors {:?}",
+                what, r, factors[r], degree, predicted, factors
+            );
+        }
+    }
+
+    fn quadratic_model(degree: usize) -> RatingModel {
+        use crate::rating_model::RatingTable;
+        use refdata::QuadraticVariate as C;
+
+        let age_table = RatingTable::new(factor_table("age", &C::AGE_BOUNDS), None)
+            .as_polynomial_variate(C::AGE_VALUES.to_vec(), degree)
+            .expect("age table should be a valid variate");
+
+        RatingModel::new(
+            vec![
+                RatingTable::new(intercept_table(), None),
+                RatingTable::new(factor_table("x1", &refdata::X1_BOUNDS), None),
+                age_table,
+            ],
+            crate::rating_model::LinkFunction::from_objective("poisson"),
+        )
+    }
+
+    fn quadratic_df() -> DataFrame {
+        use refdata::QuadraticVariate as C;
+        DataFrame::new(vec![
+            Series::new("x1".into(), C::X1.to_vec()).into(),
+            Series::new("age".into(), C::AGE.to_vec()).into(),
+            Series::new("y".into(), C::Y.to_vec()).into(),
+            Series::new("w".into(), C::WEIGHT.to_vec()).into(),
+        ]).unwrap()
+    }
+
+    /// A degree-2 variate must reproduce the equivalent GLM carrying both z and z^2,
+    /// including the raw-scale coefficients on each power.
+    #[test]
+    fn quadratic_variate_matches_statsmodels() {
+        use refdata::QuadraticVariate as C;
+        let df = quadratic_df();
+
+        let (fitted, diag) = crate::glm::fit_glm_with_diagnostics(
+            &quadratic_model(2), &df, "y", Some("w"), None, options("poisson", 1.5)).unwrap();
+
+        assert!(diag.converged, "quadratic fit did not converge in {} sweeps", diag.iterations);
+        assert_all_close(&predictions(&fitted, &df), &C::MU, REF_TOL,
+            "quadratic variate - fitted means vs statsmodels");
+        assert_all_close(&[diag.deviance], &[C::DEVIANCE], REF_TOL,
+            "quadratic variate - deviance vs statsmodels");
+        assert_all_close(&contrasts(&fitted, 1), &C::X1_CONTRASTS, REF_TOL,
+            "quadratic variate - step table contrasts vs statsmodels");
+
+        // The two raw-scale coefficients, recovered from the fitted table.
+        let coefs = fitted.tables[2].variate_coefficients().expect("table 2 is a variate");
+        assert_eq!(coefs.len(), 2);
+        assert_all_close(&coefs, &C::COEFFICIENTS, SE_TOL,
+            "quadratic variate - raw-scale coefficients vs statsmodels");
+
+        // And the same numbers via the diagnostics.
+        let inf = diag.inference.expect("inference should be computed");
+        assert_eq!(inf.variate_terms.len(), 1);
+        let terms = &inf.variate_terms[0];
+        assert_eq!(terms.table_index, 2);
+        assert_eq!(terms.degree, 2);
+        assert_all_close(&terms.coefficients, &C::COEFFICIENTS, SE_TOL,
+            "quadratic variate - reported coefficients vs statsmodels");
+    }
+
+    /// The factors must sit exactly on the quadratic - that is the constraint.
+    #[test]
+    fn quadratic_variate_factors_lie_on_a_curve() {
+        use refdata::QuadraticVariate as C;
+        let fitted = crate::glm::fit_glm(
+            &quadratic_model(2), &quadratic_df(), "y", Some("w"), None,
+            options("poisson", 1.5)).unwrap();
+
+        let f = rating_factors(&fitted, 2);
+        assert_on_a_polynomial(&f, &C::AGE_VALUES, 2, "quadratic age variate");
+        assert!(f[0].abs() < 1e-12, "base row should be 0, got {}", f[0]);
+
+        // A genuine bend: the curve is not a straight line through the same points.
+        let slope_lo = (f[1] - f[0]) / (C::AGE_VALUES[1] - C::AGE_VALUES[0]);
+        let slope_hi = (f[4] - f[3]) / (C::AGE_VALUES[4] - C::AGE_VALUES[3]);
+        assert!((slope_hi - slope_lo).abs() > 1e-3,
+            "expected curvature, but the ends have slopes {:.6} and {:.6}", slope_lo, slope_hi);
+    }
+
+    /// A degree-d variate costs exactly d parameters, whatever the row count.
+    #[test]
+    fn polynomial_degree_sets_the_parameter_count() {
+        use refdata::QuadraticVariate as C;
+        let df = quadratic_df();
+
+        // intercept (1) + x1 with 3 levels (2) + age variate (degree)
+        for degree in 1..=4 {
+            let (_, diag) = crate::glm::fit_glm_with_diagnostics(
+                &quadratic_model(degree), &df, "y", Some("w"), None,
+                options("poisson", 1.5)).unwrap();
+            let inf = diag.inference.unwrap();
+            assert_eq!(inf.n_parameters, 3 + degree,
+                "degree {} should cost {} parameters, got {}", degree, 3 + degree, inf.n_parameters);
+            assert_eq!(inf.variate_terms[0].degree, degree);
+            assert_eq!(inf.variate_terms[0].coefficients.len(), degree);
+        }
+
+        // Degree 4 through 5 distinct values passes through every row exactly, so it
+        // must reproduce the free-level fit.
+        let free = RatingModel::from_dataframes(
+            vec![
+                intercept_table(),
+                factor_table("x1", &refdata::X1_BOUNDS),
+                factor_table("age", &C::AGE_BOUNDS),
+            ],
+            "poisson", None, None,
+        ).unwrap();
+        let free_fit = crate::glm::fit_glm(&free, &df, "y", Some("w"), None,
+                                           options("poisson", 1.5)).unwrap();
+        let sat_fit = crate::glm::fit_glm(&quadratic_model(4), &df, "y", Some("w"), None,
+                                          options("poisson", 1.5)).unwrap();
+        assert_all_close(&predictions(&sat_fit, &df), &predictions(&free_fit, &df), 1e-7,
+            "a degree-4 variate over 5 values is saturated and must equal free levels");
+    }
+
+    /// Raising the degree can only improve the fit, and each degree is nested in the
+    /// next - a basic sanity property that catches a mis-specified basis.
+    #[test]
+    fn higher_degree_never_fits_worse() {
+        let df = quadratic_df();
+        let mut previous = f64::INFINITY;
+        for degree in 1..=4 {
+            let (_, diag) = crate::glm::fit_glm_with_diagnostics(
+                &quadratic_model(degree), &df, "y", Some("w"), None,
+                options("poisson", 1.5)).unwrap();
+            assert!(diag.deviance <= previous + 1e-6,
+                "degree {} has deviance {} against {} at degree {}",
+                degree, diag.deviance, previous, degree - 1);
+            previous = diag.deviance;
+        }
+    }
+
+    /// The top degree's z statistic is what tells you whether the curve needs to bend.
+    /// On data generated with real curvature the quadratic term must be significant;
+    /// on data generated from a straight line it must not be.
+    #[test]
+    fn top_degree_z_detects_curvature() {
+        use refdata::LinearVariate as L;
+
+        let (_, curved) = crate::glm::fit_glm_with_diagnostics(
+            &quadratic_model(2), &quadratic_df(), "y", Some("w"), None,
+            options("poisson", 1.5)).unwrap();
+        let z_curved = curved.inference.unwrap().variate_terms[0]
+            .top_degree_z().expect("quadratic term should have a z");
+        assert!(z_curved.abs() > 3.0,
+            "curved data should show a significant quadratic term, got z = {:.3}", z_curved);
+
+        // The linear dataset, fitted with a spare degree it does not need.
+        use crate::rating_model::RatingTable;
+        let linear_df = DataFrame::new(vec![
+            Series::new("x1".into(), L::X1.to_vec()).into(),
+            Series::new("age".into(), L::AGE.to_vec()).into(),
+            Series::new("y".into(), L::Y.to_vec()).into(),
+            Series::new("w".into(), L::WEIGHT.to_vec()).into(),
+        ]).unwrap();
+        let model = RatingModel::new(
+            vec![
+                RatingTable::new(intercept_table(), None),
+                RatingTable::new(factor_table("x1", &refdata::X1_BOUNDS), None),
+                RatingTable::new(factor_table("age", &L::AGE_BOUNDS), None)
+                    .as_polynomial_variate(L::AGE_VALUES.to_vec(), 2).unwrap(),
+            ],
+            crate::rating_model::LinkFunction::from_objective("poisson"),
+        );
+        let (_, straight) = crate::glm::fit_glm_with_diagnostics(
+            &model, &linear_df, "y", Some("w"), None, options("poisson", 1.5)).unwrap();
+        let z_straight = straight.inference.unwrap().variate_terms[0]
+            .top_degree_z().expect("quadratic term should have a z");
+        assert!(z_straight.abs() < 2.0,
+            "data generated from a line should not show a significant quadratic term, \
+             got z = {:.3}", z_straight);
+    }
+
+    /// Anchoring moves the curve up and down, never its shape.
+    #[test]
+    fn quadratic_coefficients_are_invariant_to_anchoring() {
+        use crate::glm::Normalization;
+        use refdata::QuadraticVariate as C;
+        let df = quadratic_df();
+
+        let fit_with = |norm: Normalization| {
+            let mut opts = options("poisson", 1.5);
+            opts.normalization = norm;
+            crate::glm::fit_glm(&quadratic_model(2), &df, "y", Some("w"), None, opts).unwrap()
+        };
+        let base = fit_with(Normalization::BaseLevel);
+
+        for (name, norm) in [
+            ("WeightedMean", Normalization::WeightedMean),
+            ("None", Normalization::None),
+        ] {
+            let m = fit_with(norm);
+            assert_all_close(&predictions(&m, &df), &predictions(&base, &df), 1e-9,
+                &format!("{} anchoring must not move predictions", name));
+            assert_all_close(
+                &m.tables[2].variate_coefficients().unwrap(),
+                &base.tables[2].variate_coefficients().unwrap(), 1e-7,
+                &format!("{} anchoring must not change the curve", name));
+            assert_on_a_polynomial(&rating_factors(&m, 2), &C::AGE_VALUES, 2,
+                &format!("{} anchoring", name));
+        }
+    }
+
+    /// variate_slope is a linear-only convenience; a curve has no single slope.
+    #[test]
+    fn variate_slope_is_none_above_degree_one() {
+        let fitted = crate::glm::fit_glm(
+            &quadratic_model(2), &quadratic_df(), "y", Some("w"), None,
+            options("poisson", 1.5)).unwrap();
+        assert!(fitted.tables[2].variate_slope().is_none(),
+            "a degree-2 variate should not report a single slope");
+        assert_eq!(fitted.tables[2].variate_degree(), Some(2));
+        // Table 1 is an ordinary step table.
+        assert!(fitted.tables[1].variate_slope().is_none());
+        assert_eq!(fitted.tables[1].variate_degree(), None);
+        // Whereas a degree-1 variate does report one, equal to its only coefficient.
+        let linear = fit_variate_model(&{
+            use refdata::LinearVariate as L;
+            DataFrame::new(vec![
+                Series::new("x1".into(), L::X1.to_vec()).into(),
+                Series::new("age".into(), L::AGE.to_vec()).into(),
+                Series::new("y".into(), L::Y.to_vec()).into(),
+                Series::new("w".into(), L::WEIGHT.to_vec()).into(),
+            ]).unwrap()
+        });
+        let slope = linear.tables[2].variate_slope().unwrap();
+        let coefs = linear.tables[2].variate_coefficients().unwrap();
+        assert_eq!(coefs.len(), 1);
+        assert!((slope - coefs[0]).abs() < 1e-9,
+            "slope {} and coefficient {} should agree", slope, coefs[0]);
+    }
+
+    /// Degrees that cannot be identified are rejected at construction.
+    #[test]
+    fn invalid_degrees_are_rejected() {
+        use crate::rating_model::{RatingTable, MAX_VARIATE_DEGREE};
+        let bounds = [20.0, 30.0, 40.0, f64::INFINITY];
+        let values = vec![20.0, 30.0, 40.0, 55.0];
+
+        let table = || RatingTable::new(factor_table("age", &bounds), None);
+
+        let err = table().as_polynomial_variate(values.clone(), 0).unwrap_err().to_string();
+        assert!(err.contains("degree 0"), "unhelpful message: {}", err);
+
+        // 4 distinct values support at most degree 3.
+        let err = table().as_polynomial_variate(values.clone(), 4).unwrap_err().to_string();
+        assert!(err.contains("distinct"), "unhelpful message: {}", err);
+        assert!(table().as_polynomial_variate(values.clone(), 3).is_ok(),
+            "degree 3 through 4 distinct values should be allowed");
+
+        let err = table()
+            .as_polynomial_variate(values, MAX_VARIATE_DEGREE + 1)
+            .unwrap_err().to_string();
+        assert!(err.contains("limit is"), "unhelpful message: {}", err);
+    }
+
     // ------------------------------------------------- 4. inference edge cases
 
     /// A completely separated level has zero IRLS weight, so it confounds with the

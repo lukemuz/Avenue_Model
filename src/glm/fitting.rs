@@ -1,6 +1,6 @@
 use polars::prelude::*;
-use crate::rating_model::{RatingModel, RatingTable, TableSemantics};
-use super::inference::{compute_inference, GLMInference};
+use crate::rating_model::{variate_basis_params, RatingModel, RatingTable, TableSemantics};
+use super::inference::{compute_inference, solve_spd, GLMInference};
 use super::loss::{LossFunction, ETA_CLAMP};
 use super::matching::precompute_all_matches;
 
@@ -199,11 +199,14 @@ pub fn fit_glm_with_diagnostics(
         .map(|t| !t.metadata.is_offset)
         .collect();
 
-    // Per-row values for variate tables, None for step tables.
-    let variate_values: Vec<Option<Vec<f64>>> = working_model
+    // Per-row values and degree for variate tables, None for step tables.
+    let variate_values: Vec<Option<(Vec<f64>, usize)>> = working_model
         .tables
         .iter()
-        .map(|t| t.variate_values().map(|v| v.to_vec()))
+        .map(|t| match (t.variate_values(), t.variate_degree()) {
+            (Some(v), Some(d)) => Some((v.to_vec(), d)),
+            _ => None,
+        })
         .collect();
 
     // Exposure behind each table row, fixed for the whole fit. Used for the
@@ -413,9 +416,9 @@ fn update_table(
     numer: &mut Vec<f64>,
     denom: &mut Vec<f64>,
 ) {
-    if let TableSemantics::Variate { values } = table.semantics() {
+    if let TableSemantics::Variate { values, degree } = table.semantics() {
         update_variate_table(
-            t, factors, eta, table_matches, target, weights, offset, values, loss_fn,
+            t, factors, eta, table_matches, target, weights, offset, values, *degree, loss_fn,
         );
         return;
     }
@@ -496,42 +499,50 @@ fn update_table(
     }
 }
 
-/// Updates a variate table: one slope for the whole table, however many rows it has.
+/// Updates a variate table: `degree` parameters for the whole table, however many rows
+/// it has.
 ///
-/// The row factors are tied together as `factor[r] = slope * values[r] + c`, with `c`
-/// absorbed by the intercept, so there is exactly one thing to estimate. Writing
-/// `z_i = values[row of observation i]`, the table's design is a single column and the
-/// IRLS step is a scalar:
+/// The row factors are tied together as `factor[r] = sum_m beta_m * values[r]^m + c`,
+/// with `c` absorbed by the intercept, so there are exactly `degree` things to
+/// estimate. The table's design is `degree` columns — the powers of the row's value —
+/// and one IRLS step solves them jointly:
 ///
 /// ```text
-///   d_slope = sum(a * z * w * r) / sum(a * z^2 * w)
+///   A[m][l] = sum a * w * phi_m * phi_l          (degree x degree, symmetric)
+///   b[m]    = sum a * phi_m * (w * r)
+///   A * d_beta = b
 /// ```
 ///
-/// then `factor[r] += d_slope * values[r]` for every row. Setting all the `values` to
-/// an indicator recovers the single-level step update, which is the sense in which
-/// this is the same least-squares step viewed through a different design column.
+/// then `factor[r] += sum_m d_beta_m * phi_m(r)` for every row. At degree 1 the matrix
+/// is 1x1 and this is the scalar slope step; the two are the same formula.
 ///
-/// # Centring
+/// Solving the powers *jointly* rather than one at a time matters: `v` and `v^2` are
+/// strongly correlated over any range that does not straddle zero, and cycling between
+/// them would converge at a crawl.
 ///
-/// The column is centred on its weight-weighted mean before the step is taken. This
-/// matters more than it looks. Ages run 20 to 65, nowhere near zero, so the raw slope
-/// column is almost perfectly correlated with the intercept — move one and the other
-/// has to chase it. Coordinate descent between two directions that overlap that badly
-/// converges linearly and slowly: the deviance goes flat long before the parameters
-/// have settled, so the fit reports convergence while the slope is still drifting in
-/// the sixth decimal place.
+/// # Conditioning
 ///
-/// Centring makes the step orthogonal to the intercept under the current weights, so
-/// it is the exact Newton step for the slope *given that the level is free to adjust*.
-/// It is a pure reparameterisation — the constant lands in the intercept, the factors
-/// stay on the same line, and the fixed point is unchanged. Only the path there is
-/// shorter.
+/// Two things keep the small solve well behaved, and both are pure
+/// reparameterisations — the span of the basis is unchanged, so the fit and its fixed
+/// point are identical either way. Only the path there is shorter.
 ///
-/// Two further consequences. Rows with no exposure still move, because the slope is
-/// estimated from the whole table and every row reads its factor off the line — that
-/// is the point of a variate. And the log-link closed form does not apply here: it
-/// relies on the coefficient entering one level at a time, whereas `z` varies across
-/// rows. A Newton step on a convex objective converges perfectly well.
+/// *Rescaling.* The powers are taken of `u = (v - centre) / half_range`, which lies in
+/// `[-1, 1]`, rather than of `v` itself. Age to the fourth is around ten million while
+/// age is around forty; without rescaling the normal matrix spans orders of magnitude.
+///
+/// *Centring.* Each column is then centred on its weight-weighted mean, which makes the
+/// step orthogonal to the intercept under the current weights — the exact Newton step
+/// for the shape *given that the level is free to adjust*. Without it, a slope column
+/// that never crosses zero is nearly collinear with the intercept, and coordinate
+/// descent between the two converges linearly and slowly: the deviance goes flat long
+/// before the parameters have settled, so the fit reports convergence while the
+/// coefficients are still drifting in the sixth decimal place.
+///
+/// Two further consequences. Rows with no exposure still move, because the curve is
+/// estimated from the whole table and every row reads its factor off it — that is the
+/// point of a variate. And the log-link closed form does not apply here: it relies on
+/// the coefficient entering one level at a time, whereas the design varies across rows.
+/// A Newton step on a convex objective converges perfectly well.
 fn update_variate_table(
     t: usize,
     factors: &mut [Vec<f64>],
@@ -541,15 +552,32 @@ fn update_variate_table(
     weights: &[f64],
     offset: &[f64],
     values: &[f64],
+    degree: usize,
     loss_fn: &LossFunction,
 ) {
-    // Accumulate the raw sums; the centred numerator and denominator follow
-    // algebraically, so this stays a single pass.
+    let n_rows = factors[t].len();
+    let d = degree;
+    let Some((centre, scale)) = variate_basis_params(values) else {
+        return;
+    };
+
+    // phi[r][m] = u_r^(m+1), for m in 0..d
+    let mut phi = vec![0.0f64; n_rows * d];
+    for r in 0..n_rows {
+        let u = (values[r] - centre) / scale;
+        let mut p = 1.0;
+        for m in 0..d {
+            p *= u;
+            phi[r * d + m] = p;
+        }
+    }
+
+    // Accumulate the raw sums; centring follows algebraically, so this stays one pass.
     let mut s_w = 0.0f64; // sum of IRLS weights
-    let mut s_wz = 0.0f64; // ... times z
-    let mut s_wzz = 0.0f64; // ... times z^2
+    let mut s_wphi = vec![0.0f64; d]; // ... times phi_m
+    let mut s_wphiphi = vec![0.0f64; d * d]; // ... times phi_m phi_l
     let mut s_r = 0.0f64; // sum of weighted link residuals
-    let mut s_rz = 0.0f64; // ... times z
+    let mut s_rphi = vec![0.0f64; d]; // ... times phi_m
 
     for (i, m) in table_matches.iter().enumerate() {
         let Some(r) = *m else { continue };
@@ -557,50 +585,72 @@ fn update_variate_table(
         if a == 0.0 {
             continue;
         }
-        let z = values[r];
         let mu = loss_fn.inverse_link(eta[i] + offset[i]);
         let w = a * loss_fn.irls_weight(mu);
         let res = a * loss_fn.weighted_link_residual(target[i], mu);
         if !w.is_finite() || !res.is_finite() {
             continue;
         }
+        let row = &phi[r * d..(r + 1) * d];
         s_w += w;
-        s_wz += w * z;
-        s_wzz += w * z * z;
         s_r += res;
-        s_rz += res * z;
+        for m in 0..d {
+            s_wphi[m] += w * row[m];
+            s_rphi[m] += res * row[m];
+            for l in 0..d {
+                s_wphiphi[m * d + l] += w * row[m] * row[l];
+            }
+        }
     }
 
     if !(s_w > 0.0) || !s_w.is_finite() {
         return;
     }
-    let centre = s_wz / s_w;
 
-    // sum W (z - centre)^2  and  sum R (z - centre)
-    let denom = s_wzz - s_wz * centre;
-    let numer = s_rz - centre * s_r;
+    // Centred normal equations:
+    //   A[m][l] = sum W (phi_m - mean_m)(phi_l - mean_l) = S_mml - S_m S_l / S_w
+    //   b[m]    = sum R (phi_m - mean_m)                 = S_rm  - S_r S_m / S_w
+    let mut a_mat = vec![0.0f64; d * d];
+    let mut b_vec = vec![0.0f64; d];
+    for m in 0..d {
+        b_vec[m] = s_rphi[m] - s_r * s_wphi[m] / s_w;
+        for l in 0..d {
+            a_mat[m * d + l] = s_wphiphi[m * d + l] - s_wphi[m] * s_wphi[l] / s_w;
+        }
+    }
 
-    if !(denom > 0.0) || !denom.is_finite() {
+    let Some(step) = solve_spd(&a_mat, &b_vec, d) else {
+        return;
+    };
+
+    // Change to each row's factor, before clamping.
+    let means: Vec<f64> = (0..d).map(|m| s_wphi[m] / s_w).collect();
+    let mut delta = vec![0.0f64; n_rows];
+    for r in 0..n_rows {
+        let mut change = 0.0;
+        for m in 0..d {
+            change += step[m] * (phi[r * d + m] - means[m]);
+        }
+        delta[r] = change;
+    }
+
+    // MAX_STEP caps how far a factor may move in one sweep. Scale the whole step down
+    // rather than clipping rows individually, which would bend the curve off its
+    // polynomial.
+    let max_change = delta.iter().fold(0.0f64, |acc, v| acc.max(v.abs()));
+    if !max_change.is_finite() {
         return;
     }
-    let mut step = numer / denom;
-    if !step.is_finite() {
-        return;
+    if max_change > MAX_STEP {
+        let shrink = MAX_STEP / max_change;
+        for v in delta.iter_mut() {
+            *v *= shrink;
+        }
     }
 
-    // MAX_STEP caps how far a *factor* may move in one sweep, so translate it through
-    // the largest centred value before clamping the slope.
-    let max_abs = values.iter().fold(0.0f64, |m, v| m.max((v - centre).abs()));
-    if max_abs > 0.0 {
-        let limit = MAX_STEP / max_abs;
-        step = step.clamp(-limit, limit);
-    }
-
-    let n_rows = factors[t].len();
-    let mut delta = vec![0.0; n_rows];
     for r in 0..n_rows {
         let old = factors[t][r];
-        let new = (old + step * (values[r] - centre)).clamp(-ETA_CLAMP, ETA_CLAMP);
+        let new = (old + delta[r]).clamp(-ETA_CLAMP, ETA_CLAMP);
         factors[t][r] = new;
         delta[r] = new - old;
     }

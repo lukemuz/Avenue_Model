@@ -31,26 +31,66 @@ pub enum TableSemantics {
     /// once the model is anchored. This is what a LightGBM-converted table is, and the
     /// default.
     Step,
-    /// The row factors are constrained to a straight line through a value attached to
-    /// each row: `factor[r] = slope * values[r]`, up to the constant the intercept
-    /// absorbs. A five-row table spends **one** parameter, whatever its row count.
+    /// The row factors are constrained to a polynomial in a value attached to each
+    /// row: `factor[r] = sum over m of beta_m * values[r]^m`, up to the constant the
+    /// intercept absorbs. A table spends `degree` parameters, whatever its row count —
+    /// one for a straight line, two for a curve that bends once.
     ///
     /// This is the classical actuarial *variate*: age entered as a continuous driver
     /// rather than as a set of independent levels. Three things follow from it that
     /// free levels do not give you:
     ///
-    /// * The fitted curve is smooth and monotone by construction, not by penalty.
+    /// * The fitted curve is smooth by construction, not by penalty, and at degree 1
+    ///   monotone as well.
     /// * Rows with little or no exposure still get a sensible factor, read off the
-    ///   line rather than left at their starting value.
+    ///   curve rather than left at their starting value.
     /// * The table is still an ordinary step table, so it deploys unchanged.
     ///
     /// `values` is one number per row: what that row is worth on the driver's scale.
     /// It is supplied rather than derived from the table's own numeric column, because
     /// that column holds inclusive bin *upper bounds* — the top bin's bound is normally
     /// infinite, and a bound is the edge of a bin rather than a point inside it. See
-    /// [`RatingTable::as_variate`].
-    Variate { values: Vec<f64> },
+    /// [`RatingTable::as_variate`] and [`RatingTable::as_polynomial_variate`].
+    Variate { values: Vec<f64>, degree: usize },
 }
+
+/// Centre and half-range of a variate's values, mapping them onto `[-1, 1]`.
+///
+/// Powers of a raw driver are a bad basis: age to the fourth is around ten million
+/// while age itself is around forty, so the normal matrix spans orders of magnitude and
+/// the solve loses most of its precision. Mapping onto `[-1, 1]` first keeps every
+/// power in the same range. It changes nothing about the fit — the span of
+/// `{1, u, u^2, ...}` is the span of `{1, v, v^2, ...}` — only its conditioning.
+///
+/// `None` when every value is identical, which leaves no range to scale by.
+pub fn variate_basis_params(values: &[f64]) -> Option<(f64, f64)> {
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    for v in values {
+        lo = lo.min(*v);
+        hi = hi.max(*v);
+    }
+    if !(hi > lo) {
+        return None;
+    }
+    Some(((lo + hi) / 2.0, (hi - lo) / 2.0))
+}
+
+/// Binomial coefficient, exact for the small degrees a variate allows.
+fn binomial(n: usize, k: usize) -> f64 {
+    let mut result = 1.0f64;
+    for i in 0..k {
+        result = result * (n - i) as f64 / (i + 1) as f64;
+    }
+    result
+}
+
+/// The most a variate's degree may be, regardless of how many rows the table has.
+///
+/// Well past anything defensible: high-degree polynomials oscillate between the points
+/// they interpolate, which is the opposite of what a variate is for. If a curve needs
+/// more shape than this, it needs a different basis, not a higher power.
+pub const MAX_VARIATE_DEGREE: usize = 8;
 
 impl Default for TableSemantics {
     fn default() -> Self {
@@ -492,7 +532,28 @@ impl RatingTable {
     ///        50        50            0.2550
     ///       inf        65            0.3825
     /// ```
-    pub fn as_variate(mut self, values: Vec<f64>) -> Result<Self, PolarsError> {
+    ///
+    /// For a curve rather than a line, see [`RatingTable::as_polynomial_variate`].
+    pub fn as_variate(self, values: Vec<f64>) -> Result<Self, PolarsError> {
+        self.as_polynomial_variate(values, 1)
+    }
+
+    /// As [`RatingTable::as_variate`], but fits a polynomial of the given degree
+    /// instead of a straight line: `factor[r] = sum of beta_m * values[r]^m`.
+    ///
+    /// Degree 1 is a line and costs one parameter; degree 2 bends once and costs two;
+    /// and so on. The table always keeps every row and is always read as a step table
+    /// — the degree only decides how many parameters the fit spends describing the
+    /// shape.
+    ///
+    /// The degree cannot reach the number of distinct values: at `distinct - 1` the
+    /// polynomial already passes exactly through every row, which is the same fit as
+    /// free levels, and beyond that the extra terms are not identified.
+    pub fn as_polynomial_variate(
+        mut self,
+        values: Vec<f64>,
+        degree: usize,
+    ) -> Result<Self, PolarsError> {
         let label = if self.metadata.name.is_empty() {
             "table".to_string()
         } else {
@@ -524,13 +585,45 @@ impl RatingTable {
             }
         }
 
-        let distinct = values.iter().any(|v| *v != values[0]);
-        if !distinct {
+        if degree == 0 {
             return Err(PolarsError::ComputeError(
                 format!(
-                    "Cannot make {} a variate: all {} values are {}. A line through \
-                     identical points has no slope to estimate.",
+                    "Cannot make {} a variate of degree 0: that is a constant, which the \
+                     intercept already carries.",
+                    label
+                ).into(),
+            ));
+        }
+        if degree > MAX_VARIATE_DEGREE {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Cannot make {} a variate of degree {}: the limit is {}. High-degree \
+                     polynomials oscillate between the points they pass through, which is \
+                     the opposite of what a variate is for.",
+                    label, degree, MAX_VARIATE_DEGREE
+                ).into(),
+            ));
+        }
+
+        let mut distinct: Vec<f64> = values.clone();
+        distinct.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        distinct.dedup();
+        if distinct.len() == 1 {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Cannot make {} a variate: all {} values are {}, so there is no variation \
+                     to fit a curve through and no slope to estimate.",
                     label, n_rows, values[0]
+                ).into(),
+            ));
+        }
+        if distinct.len() <= degree {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Cannot make {} a variate of degree {}: its values take only {} distinct \
+                     value(s), so a degree-{} polynomial already passes through every row and \
+                     the higher terms are not identified. Use degree {} or lower.",
+                    label, degree, distinct.len(), distinct.len() - 1, distinct.len() - 1
                 ).into(),
             ));
         }
@@ -539,14 +632,14 @@ impl RatingTable {
             return Err(PolarsError::ComputeError(
                 format!(
                     "Cannot make {} a variate: it has locked rows. Every factor is derived \
-                     from the one slope, so pinning a single row would break the line. Lock \
-                     the whole table with as_offset() instead.",
+                     from the fitted curve, so pinning a single row would break it. Lock the \
+                     whole table with as_offset() instead.",
                     label
                 ).into(),
             ));
         }
 
-        self.metadata.semantics = TableSemantics::Variate { values };
+        self.metadata.semantics = TableSemantics::Variate { values, degree };
         Ok(self)
     }
 
@@ -558,18 +651,85 @@ impl RatingTable {
     /// The per-row values behind a variate table, or `None` for a step table.
     pub fn variate_values(&self) -> Option<&[f64]> {
         match &self.metadata.semantics {
-            TableSemantics::Variate { values } => Some(values),
+            TableSemantics::Variate { values, .. } => Some(values),
             TableSemantics::Step => None,
         }
     }
 
-    /// The fitted slope of a variate table, recovered from any two rows whose values
-    /// differ. `None` for a step table.
+    /// The polynomial degree of a variate table, or `None` for a step table.
+    pub fn variate_degree(&self) -> Option<usize> {
+        match &self.metadata.semantics {
+            TableSemantics::Variate { degree, .. } => Some(*degree),
+            TableSemantics::Step => None,
+        }
+    }
+
+    /// The fitted slope of a *linear* variate table, recovered from any two rows whose
+    /// values differ.
+    ///
+    /// `None` for a step table, and for a variate of degree above 1 — a curve has no
+    /// single slope. Use [`RatingTable::variate_coefficients`] there.
     pub fn variate_slope(&self) -> Option<f64> {
+        if self.variate_degree()? != 1 {
+            return None;
+        }
         let values = self.variate_values()?;
         let v0 = values[0];
         let r = values.iter().position(|v| *v != v0)?;
         Some((self.get_rating_factor(r) - self.get_rating_factor(0)) / (values[r] - v0))
+    }
+
+    /// The fitted polynomial coefficients `[beta_1, ..., beta_degree]` on the raw
+    /// scale, so that `factor[r] = constant + sum of beta_m * values[r]^m`.
+    ///
+    /// The constant is not returned: it is not a property of this table, having been
+    /// moved into the intercept by anchoring.
+    ///
+    /// Recovered by solving on a basis rescaled to `[-1, 1]` and then expanding back,
+    /// rather than fitting powers of the raw values directly. Raw powers of a driver
+    /// like age produce a normal matrix with entries spanning many orders of magnitude,
+    /// and the recovered coefficients would lose most of their significant digits.
+    pub fn variate_coefficients(&self) -> Option<Vec<f64>> {
+        let values = self.variate_values()?;
+        let degree = self.variate_degree()?;
+        let (centre, scale) = variate_basis_params(values)?;
+
+        // Least squares of the factors on [1, u, u^2, ...], solved through the normal
+        // equations. The factors lie exactly on the polynomial by construction, so this
+        // is a consistent system and the fit is exact.
+        let k = degree + 1;
+        let mut ata = vec![0.0f64; k * k];
+        let mut atb = vec![0.0f64; k];
+        for r in 0..values.len() {
+            let u = (values[r] - centre) / scale;
+            let mut basis = vec![0.0; k];
+            let mut p = 1.0;
+            for b in basis.iter_mut() {
+                *b = p;
+                p *= u;
+            }
+            let f = self.get_rating_factor(r);
+            for a in 0..k {
+                atb[a] += basis[a] * f;
+                for b in 0..k {
+                    ata[a * k + b] += basis[a] * basis[b];
+                }
+            }
+        }
+
+        let scaled = crate::glm::solve_spd(&ata, &atb, k)?;
+
+        // Expand sum_m a_m ((v - c)/s)^m into powers of v.
+        // beta_j = sum over m >= j of (a_m / s^m) * C(m, j) * (-c)^(m - j)
+        let mut raw = vec![0.0f64; degree];
+        for m in 1..=degree {
+            let a_m = scaled[m] / scale.powi(m as i32);
+            for j in 1..=m {
+                let binom = binomial(m, j);
+                raw[j - 1] += a_m * binom * (-centre).powi((m - j) as i32);
+            }
+        }
+        Some(raw)
     }
 
     /// Set the table name for better diagnostics
