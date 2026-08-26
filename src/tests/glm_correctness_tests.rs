@@ -108,6 +108,40 @@ mod glm_correctness_tests {
         (0..n_levels).map(|j| num[j] / den[j]).collect()
     }
 
+    /// Two tables carrying almost the same information: `x2` tracks `x1` except in the
+    /// last four rows. This is the structure that makes backfitting crawl - the sweep
+    /// spends its passes trading a constant between the pair rather than fitting - and
+    /// it is a small copy of what `Area` and `Density` do to the French motor data.
+    fn near_aliased_df() -> DataFrame {
+        DataFrame::new(vec![
+            Series::new("x1".into(), vec![
+                1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 1.0, 2.0, 3.0, 4.0, 5.0, 3.0,
+            ]).into(),
+            Series::new("x2".into(), vec![
+                1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 2.0, 3.0, 4.0, 5.0, 1.0, 1.0,
+            ]).into(),
+            Series::new("y".into(), vec![
+                2.0, 4.0, 6.0, 9.0, 12.0, 15.0, 20.0, 24.0, 30.0, 33.0, 3.0, 8.0, 14.0, 22.0,
+                28.0, 11.0,
+            ]).into(),
+            Series::new("w".into(), vec![
+                1.0, 2.0, 0.5, 3.0, 1.0, 1.5, 0.25, 2.0, 1.0, 0.75, 1.0, 2.0, 1.0, 0.5, 1.5, 1.0,
+            ]).into(),
+        ]).unwrap()
+    }
+
+    fn near_aliased_model() -> RatingModel {
+        let bounds = [1.0, 2.0, 3.0, 4.0, f64::INFINITY];
+        RatingModel::from_dataframes(
+            vec![
+                intercept_table(),
+                factor_table("x1", &bounds),
+                factor_table("x2", &bounds),
+            ],
+            "poisson", None, None,
+        ).unwrap()
+    }
+
     // ------------------------------------------------- 1. closed-form checks
 
     /// For ANY exponential-family GLM, a saturated one-factor model must reproduce
@@ -214,45 +248,12 @@ mod glm_correctness_tests {
     /// it.
     #[test]
     fn convergence_is_not_reported_until_the_factors_arrive() {
-        // x2 tracks x1 except in the last four rows. Correlated, not identical.
-        let x1: Vec<f64> = vec![
-            1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 1.0, 2.0, 3.0, 4.0, 5.0, 3.0,
-        ];
-        let x2: Vec<f64> = vec![
-            1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 2.0, 3.0, 4.0, 5.0, 1.0, 1.0,
-        ];
-        let w: Vec<f64> = vec![
-            1.0, 2.0, 0.5, 3.0, 1.0, 1.5, 0.25, 2.0, 1.0, 0.75, 1.0, 2.0, 1.0, 0.5, 1.5, 1.0,
-        ];
-        let y: Vec<f64> = vec![
-            2.0, 4.0, 6.0, 9.0, 12.0, 15.0, 20.0, 24.0, 30.0, 33.0, 3.0, 8.0, 14.0, 22.0,
-            28.0, 11.0,
-        ];
-
-        let df = DataFrame::new(vec![
-            Series::new("x1".into(), x1).into(),
-            Series::new("x2".into(), x2).into(),
-            Series::new("y".into(), y).into(),
-            Series::new("w".into(), w).into(),
-        ]).unwrap();
-
-        let bounds = [1.0, 2.0, 3.0, 4.0, f64::INFINITY];
-        let model = || {
-            RatingModel::from_dataframes(
-                vec![
-                    intercept_table(),
-                    factor_table("x1", &bounds),
-                    factor_table("x2", &bounds),
-                ],
-                "poisson", None, None,
-            ).unwrap()
-        };
-
+        let df = near_aliased_df();
         let fit = |tolerance: f64, max_iterations: usize| {
             let mut o = options("poisson", 1.5);
             o.tolerance = tolerance;
             o.max_iterations = max_iterations;
-            crate::glm::fit_glm_with_diagnostics(&model(), &df, "y", Some("w"), None, o)
+            crate::glm::fit_glm_with_diagnostics(&near_aliased_model(), &df, "y", Some("w"), None, o)
                 .unwrap()
         };
 
@@ -287,6 +288,142 @@ mod glm_correctness_tests {
         }
         assert!(checked > 0,
             "no tolerance reported convergence, so the assertion above never ran");
+    }
+
+    /// SQUAREM changes how quickly the sweep arrives, never where it arrives. Run the
+    /// near-aliased fixture both ways: the accelerated fit must land on the same answer,
+    /// and must get there in meaningfully fewer sweeps, or the accelerator is either
+    /// broken or pointless.
+    #[test]
+    fn acceleration_reaches_the_same_fit_in_fewer_sweeps() {
+        let df = near_aliased_df();
+        let fit = |accelerate: bool| {
+            let mut o = options("poisson", 1.5);
+            o.tolerance = 1e-12;
+            o.max_iterations = 100_000;
+            o.accelerate = accelerate;
+            crate::glm::fit_glm_with_diagnostics(&near_aliased_model(), &df, "y", Some("w"), None, o)
+                .unwrap()
+        };
+
+        let (plain, plain_diag) = fit(false);
+        let (fast, fast_diag) = fit(true);
+
+        assert!(plain_diag.converged, "unaccelerated fit did not converge");
+        assert!(fast_diag.converged, "accelerated fit did not converge");
+
+        // If the unaccelerated fit is quick, there is nothing here to accelerate and the
+        // comparison below proves nothing.
+        assert!(plain_diag.iterations > 20,
+            "fixture converged in {} sweeps without acceleration - too easy to be a test",
+            plain_diag.iterations);
+
+        assert!(fast_diag.accelerated_steps > 0,
+            "no extrapolation was accepted on a near-aliased model, which is the one              case the accelerator exists for");
+        assert!(fast_diag.iterations < plain_diag.iterations,
+            "acceleration took {} sweeps against {} unaccelerated - no faster",
+            fast_diag.iterations, plain_diag.iterations);
+
+        assert_all_close(
+            &predictions(&fast, &df), &predictions(&plain, &df), 1e-9,
+            "accelerated and unaccelerated fits must agree",
+        );
+        assert_eq!(plain_diag.accelerated_steps, 0,
+            "acceleration was switched off but steps were still taken");
+    }
+
+    /// Anchoring moves a constant out of a table and into the intercept, leaving every
+    /// prediction untouched. It must therefore leave the running linear predictor
+    /// untouched too — or refuse to act.
+    ///
+    /// The case that breaks it: a level with no positive response has an MLE of minus
+    /// infinity, so it walks down by `MAX_STEP` each sweep until it sits on the clamp. If
+    /// that level is its table's base level, anchoring against it asks the intercept to
+    /// go past the clamp as well. Truncating it there leaves the factors no longer
+    /// summing to `eta`, and the fit locks solid at a gradient it can never improve —
+    /// silently, reporting factors that do not describe the predictions.
+    ///
+    /// The fixture needs three things at once: a base level with no response, an overall
+    /// level low enough that the intercept has no room to absorb the shift, and enough
+    /// sweeps for the dead level to reach the clamp — which is what the near-aliased pair
+    /// is doing here.
+    #[test]
+    fn anchoring_never_corrupts_the_linear_predictor() {
+        // The near-aliased pair, plus four rows on a third table whose base level never
+        // sees a claim. The offset of 400 drags the intercept down to about -404, which
+        // is what leaves it no room to absorb the anchor: the dead level reaches roughly
+        // -200 before the rest of the model converges, and -404 - 200 is past the clamp.
+        let mut x1 = vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 1.0, 2.0, 3.0, 4.0, 5.0, 3.0];
+        let mut x2 = vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0, 2.0, 3.0, 4.0, 5.0, 1.0, 1.0];
+        let mut y: Vec<f64> = vec![
+            2.0, 4.0, 6.0, 9.0, 12.0, 15.0, 20.0, 24.0, 30.0, 33.0, 3.0, 8.0, 14.0, 22.0, 28.0, 11.0,
+        ].into_iter().map(|v| v / 1000.0).collect();
+        let mut x3 = vec![2.0; 16];
+
+        for (a, b) in [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0), (4.0, 4.0)] {
+            x1.push(a);
+            x2.push(b);
+            y.push(0.0);
+            x3.push(1.0);
+        }
+
+        let n_rows = y.len();
+        let df = DataFrame::new(vec![
+            Series::new("x1".into(), x1).into(),
+            Series::new("x2".into(), x2).into(),
+            Series::new("x3".into(), x3).into(),
+            Series::new("y".into(), y).into(),
+            Series::new("off".into(), vec![400.0; n_rows]).into(),
+        ]).unwrap();
+
+        let bounds = [1.0, 2.0, 3.0, 4.0, f64::INFINITY];
+        let model = RatingModel::from_dataframes(
+            vec![
+                intercept_table(),
+                factor_table("x1", &bounds),
+                factor_table("x2", &bounds),
+                factor_table("x3", &[1.0, f64::INFINITY]),
+            ],
+            "poisson", None, None,
+        ).unwrap();
+
+        let mut o = options("poisson", 1.5);
+        o.tolerance = 1e-11;
+        o.max_iterations = 5000;
+        let (fitted, diag) =
+            crate::glm::fit_glm_with_diagnostics(&model, &df, "y", None, Some("off"), o).unwrap();
+
+        // The dead level has to dive far enough that anchoring against it would demand an
+        // intercept past the clamp, or the fixture proves nothing. The gap between x3's
+        // two levels says how far without depending on the gauge, which is exactly what
+        // is in question here.
+        let gap = contrasts(&fitted, 3)[1];
+        assert!(gap > 150.0,
+            "fixture did not reach the failing case: x3's dead level is only {} below its              live one, so anchoring against it would not overflow an intercept near -404",
+            gap);
+
+        // No factor may sit outside the range the link can evaluate. Anchoring shifting a
+        // table past the clamp is how the corruption becomes visible.
+        for t in 0..4 {
+            for (r, f) in rating_factors(&fitted, t).iter().enumerate() {
+                assert!(f.abs() <= 500.0 + 1e-9,
+                    "table {} row {} is at {}, outside the +/-500 the link is clamped to",
+                    t, r, f);
+            }
+        }
+
+        assert!(diag.converged,
+            "fit did not converge (max |score| = {:.3e} after {} sweeps) - the linear              predictor stopped agreeing with the factors",
+            diag.max_gradient, diag.iterations);
+
+        // And the surviving levels must still be fitted correctly: rows 0..16 are a
+        // saturated fit on x1 crossed with x2, so the four dead rows must not have
+        // dragged anything with them.
+        let preds = predictions(&fitted, &df);
+        assert!(preds.iter().all(|p| p.is_finite() && *p >= 0.0),
+            "predictions went bad: {:?}", preds);
+        assert!(preds[19] < 1e-12,
+            "the dead level should predict essentially zero, got {}", preds[19]);
     }
 
     #[test]

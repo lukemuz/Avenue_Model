@@ -302,6 +302,10 @@ impl PyGLMOptions {
     ///     compute_standard_errors: Compute standard errors and fit statistics
     ///         after converging. Default True. Turn off for models with thousands
     ///         of levels, where the p x p inversion becomes the dominant cost.
+    ///     accelerate: Accelerate the sweep with SQUAREM extrapolation. Default
+    ///         True. Costs three parameter vectors of memory and pays for itself
+    ///         many times over when tables are correlated. Turn it off only to
+    ///         reproduce the unaccelerated sequence exactly.
     #[new]
     #[pyo3(signature = (
         objective,
@@ -311,6 +315,7 @@ impl PyGLMOptions {
         tweedie_power=None,
         normalization=None,
         compute_standard_errors=None,
+        accelerate=None,
     ))]
     fn new(
         objective: String, // Required parameter
@@ -320,6 +325,7 @@ impl PyGLMOptions {
         tweedie_power: Option<f64>,
         normalization: Option<&str>,
         compute_standard_errors: Option<bool>,
+        accelerate: Option<bool>,
     ) -> PyResult<Self> {
         let mut options = glm::GLMOptions::default();
 
@@ -355,6 +361,10 @@ impl PyGLMOptions {
             options.compute_standard_errors = se;
         }
 
+        if let Some(a) = accelerate {
+            options.accelerate = a;
+        }
+
         Ok(PyGLMOptions { inner: options })
     }
 }
@@ -387,6 +397,11 @@ struct PyGLMDiagnostics {
     /// as (table_index, row_index) pairs.
     #[pyo3(get)]
     unfitted_rows: Vec<(usize, usize)>,
+    /// Extrapolation steps the accelerator accepted. A large count next to a small
+    /// `iterations` is SQUAREM earning its keep; zero means the fit converged
+    /// before it was needed, or that acceleration is off.
+    #[pyo3(get)]
+    accelerated_steps: usize,
     /// Fraction of the null deviance explained by the fit.
     #[pyo3(get)]
     pseudo_r2: f64,
@@ -483,6 +498,7 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
             null_deviance: d.null_deviance,
             deviance_history: d.deviance_history,
             unfitted_rows: d.unfitted_rows,
+            accelerated_steps: d.accelerated_steps,
             pseudo_r2,
             standard_errors: inf.as_ref().map(|i| i.standard_errors.clone()),
             aliased_rows: inf.as_ref().map(|i| i.aliased_rows.clone()),

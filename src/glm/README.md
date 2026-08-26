@@ -462,21 +462,43 @@ Both engines are `O(n · tables)`; glum's tabmat does not materialise a dense de
 matrix either. The `O(n · parameters)` blowup Avenue genuinely avoids belongs to the
 dummy-coded route, which is what the 1.5 GB statsmodels row above is measuring.
 
-**The real result is the one that does not flatter us.** Those synthetic factors are
-drawn independently, which is the best case for coordinate descent. On the French motor
-data, where `Area` is essentially a rebanding of `Density` and driver age tracks
-bonus-malus:
+**The harder case is correlated tables**, since those synthetic factors are drawn
+independently — the best case for coordinate descent. glum's suite carries two real
+datasets, and between them they bracket the range.
 
-| freMTPL2, 678k rows, 79 parameters | fit seconds | sweeps |
-|------------------------------------|------------:|-------:|
-| Avenue                             | 3.61        | 254    |
-| glum, `irls-ls`                    | 0.45        | 5      |
-| glum, `irls-cd`                    | 0.53        | 6      |
+The French motor data is close to a worst case: `Area` is a six-band rebanding of
+`Density`. `house_sales` is the ordinary case: correlated, with `sqft_living` against
+`grade` at 0.76, but nothing aliased.
 
-Same per-sweep machinery, 50x the sweeps. Backfitting converges at a rate set by the
-canonical correlation between the blocks, and correlated rating factors are the norm
-rather than the exception. Per-sweep cost is not the problem and further micro-optimising
-it will not close this gap; see *Known gaps*.
+| real data, unpenalised, fit seconds | Avenue | glum `irls-ls` | glum `irls-cd` |
+|-------------------------------------|-------:|---------------:|---------------:|
+| freMTPL2, 678k rows, 79 params, Poisson | 1.40 (66 sweeps) | **0.44** (5) | 0.52 (6) |
+| house_sales, 21.6k rows, 92 params, Gamma | **0.049** (50) | 0.051 (6) | 0.755 (9) |
+| house_sales, Gaussian | 0.039 (53) | **0.011** (1) | 0.334 (1) |
+
+Backfitting's rate is set by the canonical correlation between the blocks, and the two
+datasets differ in exactly that, measurably:
+
+| | tail `rho` | sweeps per decade | worst single table |
+|--|-----------:|------------------:|--------------------|
+| freMTPL2   | 0.943 | 39  | drop `Area` **or** `Density`: 254 sweeps -> 20 |
+| house_sales | 0.765 | 8.6 | drop `sqft_living`: 79 -> 54 |
+
+On the French motor data one near-duplicate pair is the *entire* problem — every other
+table is irrelevant to the rate. On the housing data no table dominates; the correlation
+is spread across the drivers and costs proportionately less. So the insurance result is a
+tail case rather than the typical one, and `scripts/bench_housing.py --diagnose` runs the
+drop-one sweep that tells the two apart.
+
+The accelerator ([`squarem_steplength`]) takes the French motor fit from 254 sweeps to 66
+and the housing fit from 79 to 50. A clean geometric decay is exactly what three-point
+extrapolation annihilates, and it needs no detection heuristic — it reads the dominant
+mode off the iterates themselves.
+
+Note that glum's own coordinate-descent solver, `irls-cd`, is 8-15x slower than Avenue on
+the housing data and is the only engine that fails the agreement check on any of these
+problems. The comparison worth making is against `irls-ls`, its Cholesky solver, which is
+what it picks by default when unpenalised.
 
 What does keep the per-sweep cost competitive: `mu` is carried through a sweep as
 `mu *= exp(delta_r)` instead of being re-derived per observation per table, which is the
@@ -510,14 +532,19 @@ src/glm/
 - No regularisation. For rating tables the high-value forms are credibility shrinkage
   of sparse levels and difference penalties on adjacent ordinal levels, more than L1
   variable selection.
-- **Correlated tables converge slowly.** This is the live limitation, not a micro-
-  optimisation: backfitting's rate is set by the canonical correlation between blocks,
-  so two tables that carry nearly the same information trade a constant back and forth
-  for hundreds of sweeps. The measured cost is 254 sweeps against glum's 5 on the French
-  motor data. The fix is structural — assemble `X'WX` from the tables and take a real
-  Newton step (its diagonal blocks are diagonal, its off-diagonal blocks are weighted
-  contingency tables, and it costs `O(p²)` memory rather than `O(np)`), falling back to
-  accelerated coordinate descent when `p` is too large for that.
+- **Near-aliased tables still converge slowly**, just less so. SQUAREM takes the French
+  motor fit from 254 sweeps to 66 against glum's 5, so a 3x gap remains there — though on
+  the housing data, where nothing is aliased, the gap is gone. Closing the remainder means
+  changing the algorithm rather than tuning it: assemble `X'WX` from the tables and take a
+  real Newton step. Its diagonal blocks are diagonal — each observation hits exactly one
+  level of its own table — and its off-diagonal blocks are weighted contingency tables,
+  so it costs `O(p²)` memory rather than `O(np)`, with accelerated coordinate descent as
+  the fallback when `p` is too large for that.
+- **Nothing reports near-aliased tables.** The fit slows to a crawl and the standard
+  errors go wide, but neither says *which* pair is redundant, and on this data the answer
+  was worth knowing on its own terms: `Area` carries almost no information that `Density`
+  does not. The weighted contingency table that would detect it is the same one the
+  Newton step above needs.
 
 ## References
 

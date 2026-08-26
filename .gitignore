@@ -3,5 +3,6 @@
 license_key.txt
 __pycache__/
 
-# Benchmark dataset cache, downloaded from OpenML on first run (~55 MB).
+# Benchmark dataset caches, downloaded from OpenML on first run.
 scripts/.fremtpl2freq.parquet
+scripts/.house_sales.parquet
