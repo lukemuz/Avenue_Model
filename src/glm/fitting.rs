@@ -1,5 +1,6 @@
 use polars::prelude::*;
 use crate::rating_model::{RatingModel, RatingTable};
+use super::inference::{compute_inference, GLMInference};
 use super::loss::{LossFunction, ETA_CLAMP};
 use super::matching::precompute_all_matches;
 
@@ -45,6 +46,12 @@ pub struct GLMOptions {
     pub tweedie_power: f64,
     /// How to anchor the over-parameterised tables. See [`Normalization`].
     pub normalization: Normalization,
+    /// Compute standard errors and fit statistics after converging.
+    ///
+    /// Costs one pass over the data plus the inversion of a `p x p` matrix, where `p`
+    /// is the number of free parameters. Negligible for ordinary rating models; turn
+    /// it off for models with thousands of levels.
+    pub compute_standard_errors: bool,
 }
 
 impl Default for GLMOptions {
@@ -56,6 +63,7 @@ impl Default for GLMOptions {
             objective: "gaussian".to_string(), // Default to Gaussian/regression
             tweedie_power: 1.5,
             normalization: Normalization::default(),
+            compute_standard_errors: true,
         }
     }
 }
@@ -76,6 +84,11 @@ pub struct GLMDiagnostics {
     /// Table rows that received no exposure and so kept their starting factor,
     /// as `(table_index, row_index)`.
     pub unfitted_rows: Vec<(usize, usize)>,
+    /// Standard errors and fit statistics, when
+    /// [`GLMOptions::compute_standard_errors`] is set.
+    pub inference: Option<GLMInference>,
+    /// Why `inference` is absent despite being requested. The fit itself is unaffected.
+    pub inference_error: Option<String>,
 }
 
 impl GLMDiagnostics {
@@ -292,6 +305,41 @@ pub fn fit_glm_with_diagnostics(
         );
     }
 
+    // `means` holds the final fit only if the loop ran at least one sweep; recompute
+    // so inference never reads a stale buffer.
+    for i in 0..n {
+        means[i] = loss_fn.inverse_link(eta[i] + offset[i]);
+    }
+
+    // Inference is a report on the fit, not part of it. A model whose tables are
+    // collinear still has perfectly good predictions, so a failure here is recorded
+    // rather than allowed to discard the fit the caller asked for.
+    let mut inference_error: Option<String> = None;
+    let inference = if options.compute_standard_errors {
+        match compute_inference(
+            &loss_fn,
+            &target,
+            &weights,
+            &means,
+            &matches,
+            &factors,
+            &row_exposure,
+            &updatable,
+            options.normalization,
+        ) {
+            Ok(inf) => Some(inf),
+            Err(e) => {
+                if options.verbose {
+                    println!("WARNING: standard errors unavailable: {}", e);
+                }
+                inference_error = Some(e.to_string());
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Write the fitted factors back into the model's DataFrames.
     for t in 0..n_tables {
         write_back_factors(&mut working_model.tables[t], &factors[t])?;
@@ -316,6 +364,8 @@ pub fn fit_glm_with_diagnostics(
         null_deviance,
         deviance_history,
         unfitted_rows,
+        inference,
+        inference_error,
     };
 
     Ok((working_model, diagnostics))

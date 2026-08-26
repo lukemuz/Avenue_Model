@@ -199,6 +199,9 @@ impl PyGLMOptions {
     ///         "base_level" (default) puts each table's first row at zero,
     ///         "weighted_mean" centres each table on its exposure-weighted mean,
     ///         "none" leaves factors wherever the fit put them.
+    ///     compute_standard_errors: Compute standard errors and fit statistics
+    ///         after converging. Default True. Turn off for models with thousands
+    ///         of levels, where the p x p inversion becomes the dominant cost.
     #[new]
     fn new(
         objective: String, // Required parameter
@@ -207,6 +210,7 @@ impl PyGLMOptions {
         verbose: Option<bool>,
         tweedie_power: Option<f64>,
         normalization: Option<&str>,
+        compute_standard_errors: Option<bool>,
     ) -> PyResult<Self> {
         let mut options = glm::GLMOptions::default();
 
@@ -238,6 +242,10 @@ impl PyGLMOptions {
             };
         }
 
+        if let Some(se) = compute_standard_errors {
+            options.compute_standard_errors = se;
+        }
+
         Ok(PyGLMOptions { inner: options })
     }
 }
@@ -264,15 +272,72 @@ struct PyGLMDiagnostics {
     /// Fraction of the null deviance explained by the fit.
     #[pyo3(get)]
     pseudo_r2: f64,
+
+    // --- inference; None when compute_standard_errors is off ---
+    /// Standard error of each table's rows, matching the model's table layout.
+    /// A row that is the anchoring reference has a standard error of exactly 0.
+    /// A row with no exposure, or one that is aliased, is NaN.
+    #[pyo3(get)]
+    standard_errors: Option<Vec<Vec<f64>>>,
+    /// Table rows whose effect cannot be separated from another parameter's, as
+    /// (table_index, row_index) pairs. Usually two tables keyed on the same
+    /// feature, or a completely separated level.
+    #[pyo3(get)]
+    aliased_rows: Option<Vec<(usize, usize)>>,
+    /// 1 for Poisson and Binomial; Pearson chi-squared over residual degrees of
+    /// freedom for Gaussian, Gamma and Tweedie.
+    #[pyo3(get)]
+    dispersion: Option<f64>,
+    /// Free parameters actually estimated, i.e. the model's rank.
+    #[pyo3(get)]
+    n_parameters: Option<usize>,
+    #[pyo3(get)]
+    df_residual: Option<f64>,
+    #[pyo3(get)]
+    pearson_chi2: Option<f64>,
+    /// None for Tweedie, whose density has no closed form.
+    #[pyo3(get)]
+    log_likelihood: Option<f64>,
+    #[pyo3(get)]
+    aic: Option<f64>,
+    #[pyo3(get)]
+    bic: Option<f64>,
+    /// Why standard errors are absent despite being requested. The fit is unaffected.
+    #[pyo3(get)]
+    inference_error: Option<String>,
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyGLMDiagnostics {
+    /// Wald z statistic for one table row: the factor divided by its standard error.
+    ///
+    /// Returns None for reference levels, aliased rows, and rows with no exposure.
+    fn z_value(&self, table_index: usize, row_index: usize, factor: f64) -> Option<f64> {
+        let se = *self.standard_errors.as_ref()?.get(table_index)?.get(row_index)?;
+        if se > 0.0 && se.is_finite() {
+            Some(factor / se)
+        } else {
+            None
+        }
+    }
+
     fn __repr__(&self) -> String {
+        let inference = match self.dispersion {
+            Some(d) => format!(
+                ", dispersion={:.6}, n_parameters={}, aic={}",
+                d,
+                self.n_parameters.unwrap_or(0),
+                match self.aic {
+                    Some(a) => format!("{:.4}", a),
+                    None => "None".to_string(),
+                }
+            ),
+            None => String::new(),
+        };
         format!(
-            "GLMDiagnostics(iterations={}, converged={}, deviance={:.6}, null_deviance={:.6}, pseudo_r2={:.4})",
-            self.iterations, self.converged, self.deviance, self.null_deviance, self.pseudo_r2
+            "GLMDiagnostics(iterations={}, converged={}, deviance={:.6}, null_deviance={:.6}, pseudo_r2={:.4}{})",
+            self.iterations, self.converged, self.deviance, self.null_deviance, self.pseudo_r2, inference
         )
     }
 }
@@ -281,6 +346,7 @@ impl PyGLMDiagnostics {
 impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
     fn from(d: glm::GLMDiagnostics) -> Self {
         let pseudo_r2 = d.pseudo_r2();
+        let inf = d.inference;
         PyGLMDiagnostics {
             iterations: d.iterations,
             converged: d.converged,
@@ -289,6 +355,16 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
             deviance_history: d.deviance_history,
             unfitted_rows: d.unfitted_rows,
             pseudo_r2,
+            standard_errors: inf.as_ref().map(|i| i.standard_errors.clone()),
+            aliased_rows: inf.as_ref().map(|i| i.aliased_rows.clone()),
+            dispersion: inf.as_ref().map(|i| i.dispersion),
+            n_parameters: inf.as_ref().map(|i| i.n_parameters),
+            df_residual: inf.as_ref().map(|i| i.df_residual),
+            pearson_chi2: inf.as_ref().map(|i| i.pearson_chi2),
+            log_likelihood: inf.as_ref().and_then(|i| i.log_likelihood),
+            aic: inf.as_ref().and_then(|i| i.aic),
+            bic: inf.as_ref().and_then(|i| i.bic),
+            inference_error: d.inference_error,
         }
     }
 }

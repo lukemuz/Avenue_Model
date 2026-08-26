@@ -2,8 +2,10 @@
 // Fits Generalized Linear Models using IRLS coordinate descent on RatingTables
 
 pub mod fitting;
+pub mod inference;
 pub mod loss;
 pub mod utils;
 pub mod matching;
 
 pub use fitting::{fit_glm, fit_glm_with_diagnostics, GLMDiagnostics, GLMOptions, Normalization};
+pub use inference::GLMInference;

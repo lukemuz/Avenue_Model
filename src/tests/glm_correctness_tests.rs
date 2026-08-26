@@ -29,6 +29,10 @@ mod glm_correctness_tests {
     /// optimisation to near machine precision, so this is generous.
     const REF_TOL: f64 = 1e-7;
 
+    /// Standard errors go through a matrix inversion on both sides, so they carry a
+    /// little more numerical noise than the coefficients themselves.
+    const SE_TOL: f64 = 1e-6;
+
     // ---------------------------------------------------------------- helpers
 
     fn intercept_table() -> DataFrame {
@@ -408,6 +412,15 @@ mod glm_correctness_tests {
         x1_contrasts: &'a [f64],
         x2_contrasts: &'a [f64],
         deviance: f64,
+        x1_se: &'a [f64],
+        x2_se: &'a [f64],
+        intercept_se: f64,
+        scale: f64,
+        df_resid: f64,
+        /// statsmodels values. Not compared for Tweedie, whose density has no closed
+        /// form: statsmodels substitutes an approximation and Avenue reports None.
+        llf: Option<f64>,
+        aic: Option<f64>,
     }
 
     fn check_reference(case: RefCase) {
@@ -473,6 +486,176 @@ mod glm_correctness_tests {
             &format!("{} - x2 level contrasts vs statsmodels", case.name));
         assert_all_close(&[diag.deviance], &[case.deviance], REF_TOL,
             &format!("{} - deviance vs statsmodels", case.name));
+
+        // Standard errors, dispersion and residual degrees of freedom. Under the
+        // default base-level anchoring the reported factors ARE the treatment-coded
+        // contrasts, so these line up directly with statsmodels' bse.
+        let inf = diag.inference.as_ref().expect("inference should be computed by default");
+        assert_all_close(&[inf.dispersion], &[case.scale], REF_TOL,
+            &format!("{} - dispersion vs statsmodels", case.name));
+        assert_all_close(&[inf.df_residual], &[case.df_resid], REF_TOL,
+            &format!("{} - residual df vs statsmodels", case.name));
+        assert_all_close(&[inf.standard_errors[0][0]], &[case.intercept_se], SE_TOL,
+            &format!("{} - intercept standard error vs statsmodels", case.name));
+        assert_all_close(&inf.standard_errors[1], case.x1_se, SE_TOL,
+            &format!("{} - x1 standard errors vs statsmodels", case.name));
+        assert_all_close(&inf.standard_errors[2], case.x2_se, SE_TOL,
+            &format!("{} - x2 standard errors vs statsmodels", case.name));
+
+        match case.llf {
+            Some(llf) => {
+                assert_all_close(
+                    &[inf.log_likelihood.expect("log-likelihood should be available")],
+                    &[llf], SE_TOL,
+                    &format!("{} - log-likelihood vs statsmodels", case.name));
+                assert_all_close(
+                    &[inf.aic.expect("AIC should be available")],
+                    &[case.aic.unwrap()], SE_TOL,
+                    &format!("{} - AIC vs statsmodels", case.name));
+            }
+            None => {
+                assert!(inf.log_likelihood.is_none(),
+                    "{} - log-likelihood should be None, got {:?}", case.name, inf.log_likelihood);
+                assert!(inf.aic.is_none(),
+                    "{} - AIC should be None, got {:?}", case.name, inf.aic);
+            }
+        }
+    }
+
+    // ------------------------------------------------- 3. inference edge cases
+
+    /// A completely separated level has zero IRLS weight, so it confounds with the
+    /// intercept and its coefficient is not estimable. It must be reported as aliased
+    /// rather than given a confident-looking standard error, and it must not cost the
+    /// rest of the model its standard errors.
+    #[test]
+    fn separated_level_is_reported_as_aliased() {
+        let df = DataFrame::new(vec![
+            Series::new("x".into(), vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0]).into(),
+            Series::new("y".into(), vec![1.0, 1.0, 1.0, 0.0, 1.0, 0.0]).into(),
+        ]).unwrap();
+        let model = RatingModel::from_dataframes(
+            vec![intercept_table(), factor_table("x", &[1.0, f64::INFINITY])],
+            "binary", None, None,
+        ).unwrap();
+
+        let (_, diag) = crate::glm::fit_glm_with_diagnostics(
+            &model, &df, "y", None, None, options("binary", 1.5)).unwrap();
+
+        let inf = diag.inference.expect("separation must not suppress inference entirely");
+        assert!(diag.inference_error.is_none(),
+            "fit should not have recorded an inference failure: {:?}", diag.inference_error);
+        // Level 0 is the base level, pinned at zero by construction, not estimated.
+        assert_eq!(inf.standard_errors[1][0], 0.0);
+        // Level 1 cannot be separated from the intercept once level 0 is saturated.
+        assert!(inf.standard_errors[1][1].is_nan(),
+            "aliased level should have no standard error, got {}", inf.standard_errors[1][1]);
+        assert!(inf.aliased_rows.contains(&(1, 1)),
+            "aliased level should be listed, got {:?}", inf.aliased_rows);
+        assert_eq!(inf.n_parameters, 1, "only the intercept is estimable here");
+    }
+
+    /// Two tables keyed on the same column are perfectly collinear: their effects
+    /// cannot be separated. The second table's levels must come back aliased while
+    /// the first table keeps usable standard errors, and the fit itself is unharmed.
+    #[test]
+    fn collinear_tables_are_reported_as_aliased() {
+        use refdata::PoissonTwoFactor as C;
+        let df = DataFrame::new(vec![
+            Series::new("x1".into(), C::X1.to_vec()).into(),
+            Series::new("y".into(), C::Y.to_vec()).into(),
+            Series::new("w".into(), C::WEIGHT.to_vec()).into(),
+        ]).unwrap();
+
+        let model = RatingModel::from_dataframes(
+            vec![
+                intercept_table(),
+                factor_table("x1", &refdata::X1_BOUNDS),
+                factor_table("x1", &refdata::X1_BOUNDS), // same feature, same cuts
+            ],
+            "poisson", None, None,
+        ).unwrap();
+
+        let (fitted, diag) = crate::glm::fit_glm_with_diagnostics(
+            &model, &df, "y", Some("w"), None, options("poisson", 1.5)).unwrap();
+
+        let inf = diag.inference.expect("a collinear design still has estimable parameters");
+        assert!(diag.inference_error.is_none(), "should not be an error: {:?}", diag.inference_error);
+
+        // The duplicate table's non-base levels carry no separable information.
+        assert!(inf.aliased_rows.contains(&(2, 1)) && inf.aliased_rows.contains(&(2, 2)),
+            "duplicate table should be aliased, got {:?}", inf.aliased_rows);
+        // The first table is still fully estimable.
+        assert!(inf.standard_errors[1][1].is_finite() && inf.standard_errors[1][2].is_finite(),
+            "first table should keep its standard errors, got {:?}", inf.standard_errors[1]);
+        assert_eq!(inf.n_parameters, 3, "intercept plus two estimable levels");
+
+        // The fit itself is unharmed.
+        assert!(predictions(&fitted, &df).iter().all(|p| p.is_finite()));
+    }
+
+    /// Doubling every prior weight doubles the information, so standard errors shrink
+    /// by sqrt(2) while the fitted factors do not move.
+    #[test]
+    fn standard_errors_scale_with_weight() {
+        use refdata::PoissonTwoFactor as C;
+
+        let build = |scale: f64| {
+            DataFrame::new(vec![
+                Series::new("x1".into(), C::X1.to_vec()).into(),
+                Series::new("x2".into(), C::X2.to_vec()).into(),
+                Series::new("y".into(), C::Y.to_vec()).into(),
+                Series::new("w".into(), C::WEIGHT.iter().map(|w| w * scale).collect::<Vec<_>>()).into(),
+            ]).unwrap()
+        };
+        let tables = || vec![
+            intercept_table(),
+            factor_table("x1", &refdata::X1_BOUNDS),
+            factor_table("x2", &refdata::X2_BOUNDS),
+        ];
+        let run = |scale: f64| {
+            let model = RatingModel::from_dataframes(tables(), "poisson", None, None).unwrap();
+            crate::glm::fit_glm_with_diagnostics(
+                &model, &build(scale), "y", Some("w"), None, options("poisson", 1.5)).unwrap()
+        };
+
+        let (m1, d1) = run(1.0);
+        let (m2, d2) = run(4.0);
+
+        assert_all_close(&rating_factors(&m2, 1), &rating_factors(&m1, 1), 1e-9,
+            "scaling all weights must not move the factors");
+
+        let se1 = &d1.inference.unwrap().standard_errors[1];
+        let se2 = &d2.inference.unwrap().standard_errors[1];
+        let halved: Vec<f64> = se1.iter().map(|s| s / 2.0).collect();
+        assert_all_close(se2, &halved, 1e-9,
+            "quadrupling weights should halve the standard errors");
+    }
+
+    /// A level with no observations cannot be estimated, and must be flagged rather
+    /// than reported with a confident-looking standard error.
+    #[test]
+    fn empty_level_is_flagged_and_has_no_standard_error() {
+        let df = DataFrame::new(vec![
+            // Nothing lands in the middle bin.
+            Series::new("x".into(), vec![1.0, 1.0, 1.0, 3.0, 3.0, 3.0]).into(),
+            Series::new("y".into(), vec![2.0, 4.0, 3.0, 30.0, 40.0, 35.0]).into(),
+        ]).unwrap();
+        let model = RatingModel::from_dataframes(
+            vec![intercept_table(), factor_table("x", &[1.0, 2.0, f64::INFINITY])],
+            "poisson", None, None,
+        ).unwrap();
+
+        let (_, diag) = crate::glm::fit_glm_with_diagnostics(
+            &model, &df, "y", None, None, options("poisson", 1.5)).unwrap();
+
+        assert!(diag.unfitted_rows.contains(&(1, 1)),
+            "empty level should be listed as unfitted, got {:?}", diag.unfitted_rows);
+        let inf = diag.inference.unwrap();
+        assert!(inf.standard_errors[1][1].is_nan(),
+            "empty level should have no standard error, got {}", inf.standard_errors[1][1]);
+        assert!(inf.standard_errors[1][2].is_finite(),
+            "populated levels should still be estimable");
     }
 
     #[test]
@@ -482,6 +665,9 @@ mod glm_correctness_tests {
             name: "gaussian/identity", objective: "gaussian", tweedie_power: 1.5,
             x1: &C::X1, x2: &C::X2, y: &C::Y, weight: &C::WEIGHT, offset: None,
             mu: &C::MU, x1_contrasts: &C::X1_CONTRASTS, x2_contrasts: &C::X2_CONTRASTS, deviance: C::DEVIANCE,
+            x1_se: &C::X1_SE, x2_se: &C::X2_SE, intercept_se: C::INTERCEPT_SE,
+            scale: C::SCALE, df_resid: C::DF_RESID,
+            llf: Some(C::LLF), aic: Some(C::AIC),
         });
     }
 
@@ -492,6 +678,9 @@ mod glm_correctness_tests {
             name: "poisson/log", objective: "poisson", tweedie_power: 1.5,
             x1: &C::X1, x2: &C::X2, y: &C::Y, weight: &C::WEIGHT, offset: None,
             mu: &C::MU, x1_contrasts: &C::X1_CONTRASTS, x2_contrasts: &C::X2_CONTRASTS, deviance: C::DEVIANCE,
+            x1_se: &C::X1_SE, x2_se: &C::X2_SE, intercept_se: C::INTERCEPT_SE,
+            scale: C::SCALE, df_resid: C::DF_RESID,
+            llf: Some(C::LLF), aic: Some(C::AIC),
         });
     }
 
@@ -502,6 +691,9 @@ mod glm_correctness_tests {
             name: "poisson/log + offset", objective: "poisson", tweedie_power: 1.5,
             x1: &C::X1, x2: &C::X2, y: &C::Y, weight: &C::WEIGHT, offset: Some(&C::OFFSET),
             mu: &C::MU, x1_contrasts: &C::X1_CONTRASTS, x2_contrasts: &C::X2_CONTRASTS, deviance: C::DEVIANCE,
+            x1_se: &C::X1_SE, x2_se: &C::X2_SE, intercept_se: C::INTERCEPT_SE,
+            scale: C::SCALE, df_resid: C::DF_RESID,
+            llf: Some(C::LLF), aic: Some(C::AIC),
         });
     }
 
@@ -512,6 +704,9 @@ mod glm_correctness_tests {
             name: "gamma/log", objective: "gamma", tweedie_power: 1.5,
             x1: &C::X1, x2: &C::X2, y: &C::Y, weight: &C::WEIGHT, offset: None,
             mu: &C::MU, x1_contrasts: &C::X1_CONTRASTS, x2_contrasts: &C::X2_CONTRASTS, deviance: C::DEVIANCE,
+            x1_se: &C::X1_SE, x2_se: &C::X2_SE, intercept_se: C::INTERCEPT_SE,
+            scale: C::SCALE, df_resid: C::DF_RESID,
+            llf: Some(C::LLF), aic: Some(C::AIC),
         });
     }
 
@@ -522,6 +717,9 @@ mod glm_correctness_tests {
             name: "binomial/logit", objective: "binary", tweedie_power: 1.5,
             x1: &C::X1, x2: &C::X2, y: &C::Y, weight: &C::WEIGHT, offset: None,
             mu: &C::MU, x1_contrasts: &C::X1_CONTRASTS, x2_contrasts: &C::X2_CONTRASTS, deviance: C::DEVIANCE,
+            x1_se: &C::X1_SE, x2_se: &C::X2_SE, intercept_se: C::INTERCEPT_SE,
+            scale: C::SCALE, df_resid: C::DF_RESID,
+            llf: Some(C::LLF), aic: Some(C::AIC),
         });
     }
 
@@ -532,6 +730,9 @@ mod glm_correctness_tests {
             name: "tweedie(1.5)/log", objective: "tweedie", tweedie_power: 1.5,
             x1: &C::X1, x2: &C::X2, y: &C::Y, weight: &C::WEIGHT, offset: None,
             mu: &C::MU, x1_contrasts: &C::X1_CONTRASTS, x2_contrasts: &C::X2_CONTRASTS, deviance: C::DEVIANCE,
+            x1_se: &C::X1_SE, x2_se: &C::X2_SE, intercept_se: C::INTERCEPT_SE,
+            scale: C::SCALE, df_resid: C::DF_RESID,
+            llf: None, aic: None,
         });
     }
 }

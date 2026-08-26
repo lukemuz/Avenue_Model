@@ -12,6 +12,38 @@ pub const ETA_CLAMP: f64 = 500.0;
 /// Floor for means under the log link. Below this, `(y - mu)/mu` loses all precision.
 const MU_FLOOR: f64 = 1e-300;
 
+/// Natural log of the gamma function, by the Lanczos approximation (g = 7, n = 9).
+///
+/// Needed for the Poisson and Gamma log-likelihoods, which feed AIC and BIC. Accurate
+/// to roughly 15 significant figures across the range these families produce, and
+/// avoids taking on a dependency for one function.
+fn ln_gamma(x: f64) -> f64 {
+    const COEFFS: [f64; 9] = [
+        0.999_999_999_999_809_93,
+        676.520_368_121_885_1,
+        -1_259.139_216_722_402_8,
+        771.323_428_777_653_13,
+        -176.615_029_162_140_6,
+        12.507_343_278_686_905,
+        -0.138_571_095_265_720_12,
+        9.984_369_578_019_572e-6,
+        1.505_632_735_149_311_6e-7,
+    ];
+
+    if x < 0.5 {
+        // Reflection: gamma(x) gamma(1-x) = pi / sin(pi x)
+        return (std::f64::consts::PI / (std::f64::consts::PI * x).sin()).ln() - ln_gamma(1.0 - x);
+    }
+
+    let x = x - 1.0;
+    let mut a = COEFFS[0];
+    let t = x + 7.5;
+    for (i, c) in COEFFS.iter().enumerate().skip(1) {
+        a += c / (x + i as f64);
+    }
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + a.ln()
+}
+
 /// Loss functions for different GLM families.
 ///
 /// Each family pairs a variance function `V(mu)` with a link. Together these determine
@@ -121,6 +153,109 @@ impl LossFunction {
             // w = mu^(2-p), r = (y - mu)/mu
             LossFunction::Tweedie(p) => mu.powf(1.0 - p) * (y - mu),
         }
+    }
+
+    /// The variance function `V(mu)`.
+    #[inline]
+    pub fn variance(&self, mu: f64) -> f64 {
+        match self {
+            LossFunction::Gaussian => 1.0,
+            LossFunction::Poisson => mu,
+            LossFunction::Gamma => mu * mu,
+            LossFunction::Tweedie(p) => mu.powf(*p),
+            LossFunction::Binary => mu * (1.0 - mu),
+        }
+    }
+
+    /// Whether the dispersion is fixed at 1 by the family, rather than estimated.
+    ///
+    /// Poisson and Binomial have no free scale parameter. Gaussian, Gamma and Tweedie
+    /// do, and it is estimated from the Pearson statistic.
+    pub fn has_fixed_dispersion(&self) -> bool {
+        matches!(self, LossFunction::Poisson | LossFunction::Binary)
+    }
+
+    /// Log-likelihood of the fit, where the family has a tractable one.
+    ///
+    /// `None` for Tweedie: its density is an infinite series with no closed form, so
+    /// reporting an AIC for it would mean quietly substituting an approximation.
+    pub fn log_likelihood(
+        &self,
+        target: &[f64],
+        means: &[f64],
+        weights: &[f64],
+        dispersion: f64,
+    ) -> Option<f64> {
+        let n: f64 = weights.iter().filter(|w| **w > 0.0).count() as f64;
+        let mut llf = 0.0;
+
+        match self {
+            LossFunction::Gaussian => {
+                // The likelihood is profiled at the ML estimate of the variance,
+                // SSE/n, not at the Pearson estimate SSE/(n-p) used for standard
+                // errors. Those differ by the degrees-of-freedom correction, and
+                // using the unbiased one here would give an AIC that is off by a
+                // constant. statsmodels makes the same distinction.
+                let mut sse = 0.0;
+                let mut log_w = 0.0;
+                for i in 0..target.len() {
+                    let w = weights[i];
+                    if w <= 0.0 {
+                        continue;
+                    }
+                    sse += w * (target[i] - means[i]).powi(2);
+                    log_w += w.ln();
+                }
+                if n <= 0.0 || !(sse > 0.0) {
+                    return None;
+                }
+                let phi_ml = sse / n;
+                llf = -0.5
+                    * (sse / phi_ml + n * (2.0 * std::f64::consts::PI * phi_ml).ln() - log_w);
+            }
+            LossFunction::Poisson => {
+                for i in 0..target.len() {
+                    let w = weights[i];
+                    if w <= 0.0 {
+                        continue;
+                    }
+                    let mu = means[i].max(MU_FLOOR);
+                    llf += w * (target[i] * mu.ln() - mu - ln_gamma(target[i] + 1.0));
+                }
+            }
+            LossFunction::Binary => {
+                for i in 0..target.len() {
+                    let w = weights[i];
+                    if w <= 0.0 {
+                        continue;
+                    }
+                    let mu = means[i].clamp(1e-15, 1.0 - 1e-15);
+                    llf += w * (target[i] * mu.ln() + (1.0 - target[i]) * (1.0 - mu).ln());
+                }
+            }
+            LossFunction::Gamma => {
+                if !(dispersion > 0.0) {
+                    return None;
+                }
+                // Shape parameter of the Gamma is 1/dispersion.
+                let shape = 1.0 / dispersion;
+                for i in 0..target.len() {
+                    let w = weights[i];
+                    if w <= 0.0 || target[i] <= 0.0 {
+                        continue;
+                    }
+                    let mu = means[i].max(MU_FLOOR);
+                    let s = shape * w;
+                    let y_over_mu = target[i] / mu;
+                    llf += s * s.ln() + s * y_over_mu.ln() - s * y_over_mu
+                        - ln_gamma(s)
+                        - target[i].ln();
+                }
+            }
+            LossFunction::Tweedie(_) => return None,
+        }
+
+        llf.is_finite().then_some(llf)
     }
 
     /// Unit deviance contribution for one observation, excluding the prior weight.

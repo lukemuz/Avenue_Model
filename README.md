@@ -30,7 +30,8 @@ Estimate generalized linear models without design matrix conversion:
 - Gaussian, Poisson, Gamma, Tweedie and Binomial families
 - Prior weights, offset columns, offset tables and locked rows
 - Tables are anchored to a base level, so the same data always gives the same tables
-- Validated against statsmodels to 1e-7 on fitted means and level contrasts
+- Standard errors per level, plus dispersion, deviance, AIC and BIC
+- Validated against statsmodels to 1e-7 on fitted means, contrasts and standard errors
 
 ### Native Table Operations
 Built-in support for insurance pricing workflows:
@@ -104,7 +105,8 @@ fitted_model, diag = fit_glm_with_diagnostics(
     offset_col="log_exposure",
     options=options,
 )
-print(diag)   # iterations, converged, deviance, null_deviance, pseudo_r2
+print(diag)   # iterations, converged, deviance, pseudo_r2, dispersion, aic
+print(diag.standard_errors)   # per table, per row; aligns with model_tables()
 
 # Predictions and table inspection work the same
 predictions = fitted_model.predict(new_data)
@@ -159,7 +161,6 @@ let fitted = fit_glm(&model, &data, "target", Some("weight"), None, options)?;
 
 ## Roadmap
 
-- Standard errors and covariance for fitted factors; dispersion, AIC/BIC
 - Continuous and linear terms: knot semantics, interpolating between table rows
   rather than stepping, so a 2-row table *is* a linear term
 - Release-mode benchmarks against glum, statsmodels and R `glm`

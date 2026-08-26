@@ -62,8 +62,11 @@ def true_eta(x1: np.ndarray, x2: np.ndarray, b0: float, b1: list, b2: list) -> n
 
 
 def fit(family, X, y, weight, offset=None):
+    # Leave `scale` at the family default: 1 for Poisson and Binomial, Pearson
+    # chi-squared over residual degrees of freedom for Gaussian, Gamma and Tweedie.
+    # Scale does not affect the fitted mean, only the standard errors.
     model = sm.GLM(y, X, family=family, var_weights=weight, offset=offset)
-    res = model.fit(tol=1e-13, maxiter=200, scale=1.0)
+    res = model.fit(tol=1e-13, maxiter=200)
     return res
 
 
@@ -74,6 +77,16 @@ def contrasts(res):
     x1_c = [0.0] + list(p[1 : N_X1])
     x2_c = [0.0] + list(p[N_X1 : N_X1 + N_X2 - 1])
     return x1_c, x2_c
+
+
+def standard_errors(res):
+    """Standard errors laid out the way Avenue reports them: the intercept, then
+    each table's rows with the base level pinned at exactly 0."""
+    b = res.bse
+    intercept = b[0]
+    x1_se = [0.0] + list(b[1 : N_X1])
+    x2_se = [0.0] + list(b[N_X1 : N_X1 + N_X2 - 1])
+    return intercept, x1_se, x2_se
 
 
 def _full(v: float) -> str:
@@ -101,6 +114,7 @@ def rust_short(vals, per_line=16, indent=8):
 
 def emit_case(name, x1, x2, y, weight, offset, res, extra_doc=""):
     x1_c, x2_c = contrasts(res)
+    int_se, x1_se, x2_se = standard_errors(res)
     mu = res.fittedvalues
     off = offset if offset is not None else np.zeros(len(y))
 
@@ -135,7 +149,20 @@ def emit_case(name, x1, x2, y, weight, offset, res, extra_doc=""):
             "Level contrasts within table x1, relative to level 1 (which is 0.0)."),
         arr("X2_CONTRASTS", len(x2_c), rust_vec(x2_c),
             "Level contrasts within table x2, relative to level 1 (which is 0.0)."),
+        arr("X1_SE", len(x1_se), rust_vec(x1_se),
+            "Standard errors of the x1 contrasts; the base level is exactly 0."),
+        arr("X2_SE", len(x2_se), rust_vec(x2_se),
+            "Standard errors of the x2 contrasts; the base level is exactly 0."),
         f"    pub const DEVIANCE: f64 = {res.deviance:.17e};",
+        f"    pub const INTERCEPT_SE: f64 = {int_se:.17e};",
+        "    /// Dispersion statsmodels used: 1 for Poisson and Binomial, Pearson",
+        "    /// chi-squared over residual degrees of freedom otherwise.",
+        f"    pub const SCALE: f64 = {res.scale:.17e};",
+        f"    pub const DF_RESID: f64 = {res.df_resid:.17e};",
+        "    /// Log-likelihood. Meaningless for Tweedie, whose density has no closed",
+        "    /// form; statsmodels substitutes an approximation there and Avenue does not.",
+        f"    pub const LLF: f64 = {res.llf:.17e};",
+        f"    pub const AIC: f64 = {res.aic:.17e};",
         "}",
         "",
     ]

@@ -92,6 +92,47 @@ The fit stops when the *relative change in deviance* falls below `tolerance`
 iterations, whether it converged, final and null deviance, the full deviance history,
 and any table rows that received no exposure and so kept their starting factor.
 
+### Standard errors
+
+Also on `GLMDiagnostics`, unless `compute_standard_errors` is turned off.
+
+The full design — an intercept plus every level of every table — is rank deficient, so
+`X'WX` is singular and the individual factors have no standard error at all. What *is*
+estimable is any contrast invariant to shifting a constant between a table and the
+intercept. Inference therefore runs in a reduced, full-rank basis (an intercept plus
+every level except each table's reference row, i.e. treatment coding), and the standard
+error reported against each row is that of the contrast the row actually represents
+under the model's anchoring. Under the default `BaseLevel` anchoring the reported
+factors *are* the treatment contrasts, so the numbers line up directly with what
+statsmodels or R report.
+
+`standard_errors[t][r]` aligns index-for-index with `model_tables()`:
+
+| Row | Standard error |
+|-----|----------------|
+| The anchoring reference | exactly `0` — fixed by construction, not estimated |
+| No exposure | `NaN`; also listed in `unfitted_rows` |
+| Aliased | `NaN`; also listed in `aliased_rows` |
+| Anything else | the contrast's standard error |
+
+Rank deficiency is treated as information, not failure. Two tables keyed on the same
+feature are collinear; a completely separated level has zero IRLS weight and confounds
+with the intercept. Those parameters are set aside and listed in `aliased_rows`, and
+everything else keeps usable standard errors — the same convention as R marking a
+coefficient `NA`. Degrees of freedom spend the model's rank, not its nominal parameter
+count.
+
+Also reported: `dispersion` (1 for Poisson and Binomial, Pearson chi-squared over
+residual degrees of freedom otherwise), `pearson_chi2`, `df_residual`, `n_parameters`
+(the rank), `log_likelihood`, `aic` and `bic`.
+
+The log-likelihood, and so AIC and BIC, are `None` for Tweedie: its density is an
+infinite series with no closed form, and reporting a number would mean quietly
+substituting an approximation. For Gaussian the likelihood is evaluated at the ML
+variance `SSE/n`, not the Pearson estimate `SSE/(n-p)` used for standard errors — the
+same distinction statsmodels makes. AIC and BIC count the mean parameters only, again
+matching statsmodels.
+
 ## Python API
 
 ```python
@@ -120,8 +161,23 @@ fitted, diag = fit_glm_with_diagnostics(
     weight_col="exposure",
     options=options,
 )
-print(diag)          # iterations, converged, deviance, null_deviance, pseudo_r2
+print(diag)          # iterations, converged, deviance, pseudo_r2, dispersion, aic
 predictions = fitted.predict(test_data)
+```
+
+### Reading the standard errors
+
+`diag.standard_errors` lines up index-for-index with `model_tables()`:
+
+```python
+for t, table in enumerate(fitted.model_tables()):
+    for r, factor in enumerate(table["Rating_Factor"]):
+        se = diag.standard_errors[t][r]
+        z = diag.z_value(t, r, factor)          # None for reference/aliased rows
+        flag = " (base)"    if se == 0          else \
+               " (aliased)" if (t, r) in diag.aliased_rows else \
+               " (no data)" if (t, r) in diag.unfitted_rows else ""
+        print(f"table {t} row {r}: {factor:+.4f}  se={se:.4f}  z={z}{flag}")
 ```
 
 ### Exposure as an offset
@@ -206,9 +262,10 @@ cargo test --lib glm_correctness     # the correctness harness specifically
 2. **External reference.** Fits pinned from statsmodels in `glm_reference_data.rs`,
    covering all five families plus an offset case. Avenue's parameterisation carries
    an intercept *and* every level, so raw coefficients are not comparable to
-   statsmodels' treatment coding; the tests compare the two quantities that are
-   invariant to the parameterisation — fitted means per row, and level contrasts
-   within a table.
+   statsmodels' treatment coding; the tests compare quantities that are invariant to
+   the parameterisation — fitted means per row and level contrasts within a table —
+   along with deviance, dispersion, residual degrees of freedom, standard errors,
+   log-likelihood and AIC.
 
 Regenerate the reference fixtures (requires `numpy`, `scipy`, `statsmodels`):
 
@@ -235,20 +292,19 @@ hold rows fixed and sweep the level count to show that.
 src/glm/
 ├── mod.rs              # Public API exports
 ├── fitting.rs          # Coordinate descent, normalization, diagnostics
-├── loss.rs             # Families: links, variance functions, IRLS weights, deviance
+├── inference.rs        # Standard errors, dispersion, aliasing, AIC/BIC
+├── loss.rs             # Families: links, variance, IRLS weights, deviance, likelihood
 ├── matching.rs         # Observation-to-table-row matching
 └── utils.rs            # Helper functions (weighted means, etc.)
 ```
 
 ## Known gaps
 
-- No standard errors or covariance for the fitted factors — the largest remaining gap
-  for variable selection. The final `X'WX` is block-sparse in this representation, so
-  per-level standard errors are cheap once wired up.
-- No dispersion estimate, AIC or BIC.
 - Numeric tables are step functions only. Continuous and linear terms need knot
   semantics (interpolating between rows rather than stepping), which is the natural
   next extension.
+- Only Wald standard errors. No likelihood-ratio tests, profile intervals, or robust
+  / sandwich covariance.
 - No regularisation. For rating tables the high-value forms are credibility shrinkage
   of sparse levels and difference penalties on adjacent ordinal levels, more than L1
   variable selection.
