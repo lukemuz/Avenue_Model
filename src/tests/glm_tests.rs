@@ -44,6 +44,7 @@ mod glm_tests {
             tolerance: 1e-6,
             verbose: true,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let fitted_model = fit_glm(&model, &train_df, "y", None, None, options).unwrap();
@@ -101,6 +102,7 @@ mod glm_tests {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let fitted_model = fit_glm(&model, &train_df, "y", Some("weight"), None, options).unwrap();

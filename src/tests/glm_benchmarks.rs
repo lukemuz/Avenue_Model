@@ -15,7 +15,7 @@ mod glm_benchmarks {
         println!("{}", "=".repeat(60));
         println!("Total time:        {:.3} ms", total_ms);
         println!("Time per iter:     {:.3} ms", per_iter_ms);
-        println!("Time per row/iter: {:.3} µs", per_row_us);
+        println!("Time per row/iter: {:.3} Âµs", per_row_us);
         println!("Throughput:        {:.0} rows/sec", (n_rows as f64 * n_iterations as f64) / duration.as_secs_f64());
     }
 
@@ -68,7 +68,7 @@ mod glm_benchmarks {
         }
         let pred_duration = pred_start.elapsed();
         println!("\nPrediction (10x):  {:.3} ms", pred_duration.as_secs_f64() * 1000.0);
-        println!("Per prediction:    {:.3} µs", pred_duration.as_micros() as f64 / (n * 10) as f64);
+        println!("Per prediction:    {:.3} Âµs", pred_duration.as_micros() as f64 / (n * 10) as f64);
     }
 
     #[test]
@@ -109,6 +109,7 @@ mod glm_benchmarks {
             tolerance: 1e-8,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -122,7 +123,7 @@ mod glm_benchmarks {
         let _ = fitted_model.predict(&train_df).unwrap();
         let pred_duration = pred_start.elapsed();
         println!("\nPrediction:        {:.3} ms", pred_duration.as_secs_f64() * 1000.0);
-        println!("Per prediction:    {:.3} µs", pred_duration.as_micros() as f64 / n as f64);
+        println!("Per prediction:    {:.3} Âµs", pred_duration.as_micros() as f64 / n as f64);
     }
 
     #[test]
@@ -161,6 +162,7 @@ mod glm_benchmarks {
             tolerance: 1e-8,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -174,7 +176,7 @@ mod glm_benchmarks {
         let _ = fitted_model.predict(&train_df).unwrap();
         let pred_duration = pred_start.elapsed();
         println!("\nPrediction:        {:.3} ms", pred_duration.as_secs_f64() * 1000.0);
-        println!("Per prediction:    {:.3} µs", pred_duration.as_micros() as f64 / n as f64);
+        println!("Per prediction:    {:.3} Âµs", pred_duration.as_micros() as f64 / n as f64);
     }
 
     #[test]
@@ -240,7 +242,7 @@ mod glm_benchmarks {
         let _ = fitted_model.predict(&train_df).unwrap();
         let pred_duration = pred_start.elapsed();
         println!("\nPrediction:        {:.3} ms", pred_duration.as_secs_f64() * 1000.0);
-        println!("Per prediction:    {:.3} µs", pred_duration.as_micros() as f64 / n as f64);
+        println!("Per prediction:    {:.3} Âµs", pred_duration.as_micros() as f64 / n as f64);
     }
 
     #[test]
@@ -281,6 +283,7 @@ mod glm_benchmarks {
             tolerance: 1e-8,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -294,7 +297,7 @@ mod glm_benchmarks {
         let _ = fitted_model.predict(&train_df).unwrap();
         let pred_duration = pred_start.elapsed();
         println!("\nPrediction:        {:.3} ms", pred_duration.as_secs_f64() * 1000.0);
-        println!("Per prediction:    {:.3} µs", pred_duration.as_micros() as f64 / n as f64);
+        println!("Per prediction:    {:.3} Âµs", pred_duration.as_micros() as f64 / n as f64);
     }
 
     #[test]
@@ -346,13 +349,14 @@ mod glm_benchmarks {
                 tolerance: 1e-8,
                 verbose: false,
                 tweedie_power: 1.5,
+                ..Default::default()
             };
 
             let start = Instant::now();
             let _ = fit_glm(&model, &train_df, "y", None, None, options).unwrap();
             let duration = start.elapsed();
 
-            println!("\n{:12} | Fit: {:7.2} ms | Per iter: {:6.2} ms | Per row/iter: {:5.2} µs",
+            println!("\n{:12} | Fit: {:7.2} ms | Per iter: {:6.2} ms | Per row/iter: {:5.2} Âµs",
                 name,
                 duration.as_secs_f64() * 1000.0,
                 duration.as_secs_f64() * 1000.0 / 30.0,

@@ -27,7 +27,10 @@ Estimate generalized linear models without design matrix conversion:
 - Fit directly on rating table structures
 - No need to flatten multidimensional tables
 - Combine, adjust, and refine tables as native objects
-- Standard link functions: identity, logit, log
+- Gaussian, Poisson, Gamma, Tweedie and Binomial families
+- Prior weights, offset columns, offset tables and locked rows
+- Tables are anchored to a base level, so the same data always gives the same tables
+- Validated against statsmodels to 1e-7 on fitted means and level contrasts
 
 ### Native Table Operations
 Built-in support for insurance pricing workflows:
@@ -85,18 +88,30 @@ combined = lgbm_converted_model + manual_adjustments + territory_factors
 Fit generalized linear models without design matrices:
 
 ```python
-from avenue_model import RatingModel, fit_glm, GLMOptions
+from avenue_model import RatingModel, fit_glm_with_diagnostics, GLMOptions
+import polars as pl
 
 # Start with base rating tables (or converted LightGBM)
 model = RatingModel(base_tables, objective="poisson")
 
+# Frequency models normally carry exposure as an offset, not a weight
+training_df = training_df.with_columns(pl.col("exposure").log().alias("log_exposure"))
+
 # Fit GLM directly on tables (no flattening!)
-options = GLMOptions(objective="poisson", max_iterations=100)
-fitted_model = fit_glm(model, training_df, "target", "weight", options)
+options = GLMOptions(objective="poisson", max_iterations=100, tolerance=1e-8)
+fitted_model, diag = fit_glm_with_diagnostics(
+    model, training_df, "claim_count",
+    offset_col="log_exposure",
+    options=options,
+)
+print(diag)   # iterations, converged, deviance, null_deviance, pseudo_r2
 
 # Predictions and table inspection work the same
 predictions = fitted_model.predict(new_data)
 ```
+
+See [the GLM module docs](src/glm/README.md) for the update rules, the anchoring
+options, and what the fitter rejects rather than silently working around.
 
 ### Rust Example
 
@@ -133,7 +148,7 @@ let fitted = fit_glm(&model, &data, "target", Some("weight"), None, options)?;
 - Logit (Binary classification)
 - Log (Poisson, Gamma, Tweedie)
 
-**GLM Fitting** uses IRLS coordinate descent directly on factor tables — no flattening required.
+**GLM Fitting** uses coordinate descent directly on factor tables — no flattening required. Log-link families get an exact closed-form `ln(actual / expected)` update per level; other links take an IRLS step.
 
 **LightGBM Conversion** options:
 - `"max"` consolidation → Minimal tables (production-ready)
@@ -144,9 +159,13 @@ let fitted = fit_glm(&model, &data, "target", Some("weight"), None, options)?;
 
 ## Roadmap
 
-- Penalized regression (Elastic Net, Ridge, Lasso)
-- Easier specification of polynomials and splines
-- More flexible variate handling (offsets, exposure, categorical embeddings)
+- Standard errors and covariance for fitted factors; dispersion, AIC/BIC
+- Continuous and linear terms: knot semantics, interpolating between table rows
+  rather than stepping, so a 2-row table *is* a linear term
+- Release-mode benchmarks against glum, statsmodels and R `glm`
+- Penalized regression: credibility shrinkage for sparse levels, difference penalties
+  on adjacent ordinal levels, monotonicity constraints, Elastic Net
+- Faster matching: column indices and binary search instead of per-row hash maps
 
 ## Development
 

@@ -1,7 +1,37 @@
 use polars::prelude::*;
 use crate::rating_model::{RatingModel, RatingTable};
-use super::loss::LossFunction;
+use super::loss::{LossFunction, ETA_CLAMP};
 use super::matching::precompute_all_matches;
+
+/// How the fitted tables are anchored once the fit has converged.
+///
+/// A model carrying an intercept table *and* a free factor for every level of every
+/// table is over-parameterised: you can add a constant to one table and subtract it
+/// from the intercept without changing a single prediction. Backfitting will happily
+/// settle on any point along that flat direction, which makes the tables — the actual
+/// deliverable — depend on table order and starting values rather than on the data.
+///
+/// Normalising after every sweep pins the solution down, and as a side effect removes
+/// the null-space drift that otherwise slows convergence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Normalization {
+    /// Leave factors exactly where the fit put them. Predictions are still correct,
+    /// but the split between the intercept and the feature tables is arbitrary.
+    None,
+    /// Anchor each feature table's first row at zero, moving it into the intercept.
+    /// Every other level then reads directly as a relativity against that base level,
+    /// which is how rating tables are normally presented.
+    BaseLevel,
+    /// Anchor each feature table at its exposure-weighted mean, so the intercept
+    /// carries the overall average level and the factors sum to zero across exposure.
+    WeightedMean,
+}
+
+impl Default for Normalization {
+    fn default() -> Self {
+        Normalization::BaseLevel
+    }
+}
 
 /// Options for GLM fitting
 #[derive(Debug, Clone)]
@@ -9,21 +39,61 @@ pub struct GLMOptions {
     pub max_iterations: usize,
     pub tolerance: f64,
     pub verbose: bool,
-    pub objective: String, // Required: loss function (e.g., "poisson", "gamma", "tweedie", "gaussian", "binary")
-    pub tweedie_power: f64, // Power parameter for Tweedie (default 1.5)
+    /// Required: loss function ("poisson", "gamma", "tweedie", "gaussian", "binary")
+    pub objective: String,
+    /// Power parameter for Tweedie (default 1.5)
+    pub tweedie_power: f64,
+    /// How to anchor the over-parameterised tables. See [`Normalization`].
+    pub normalization: Normalization,
 }
 
 impl Default for GLMOptions {
     fn default() -> Self {
         Self {
             max_iterations: 100,
-            tolerance: 1e-6,
+            tolerance: 1e-8,
             verbose: false,
             objective: "gaussian".to_string(), // Default to Gaussian/regression
             tweedie_power: 1.5,
+            normalization: Normalization::default(),
         }
     }
 }
+
+/// What happened during a fit, alongside the fitted model.
+#[derive(Debug, Clone)]
+pub struct GLMDiagnostics {
+    /// Sweeps performed over the full set of tables.
+    pub iterations: usize,
+    /// Whether the relative deviance change fell below `tolerance`.
+    pub converged: bool,
+    /// Weighted deviance of the final fit.
+    pub deviance: f64,
+    /// Weighted deviance of the intercept-only fit, for reference.
+    pub null_deviance: f64,
+    /// Deviance after each sweep, in order.
+    pub deviance_history: Vec<f64>,
+    /// Table rows that received no exposure and so kept their starting factor,
+    /// as `(table_index, row_index)`.
+    pub unfitted_rows: Vec<(usize, usize)>,
+}
+
+impl GLMDiagnostics {
+    /// Fraction of the null deviance explained by the fit.
+    pub fn pseudo_r2(&self) -> f64 {
+        if self.null_deviance > 0.0 {
+            1.0 - self.deviance / self.null_deviance
+        } else {
+            0.0
+        }
+    }
+}
+
+/// Largest change permitted in a single rating factor in one sweep, on the link scale.
+///
+/// Only binds for the logit link, whose IRLS denominator collapses toward zero under
+/// separation. Large enough never to interfere with an ordinary fit.
+const MAX_STEP: f64 = 10.0;
 
 /// Fits a GLM by updating the rating factors in the provided RatingModel
 ///
@@ -45,7 +115,19 @@ pub fn fit_glm(
     offset_col: Option<&str>,
     options: GLMOptions,
 ) -> Result<RatingModel, PolarsError> {
-    // Validate inputs
+    fit_glm_with_diagnostics(model, df, target_col, weight_col, offset_col, options)
+        .map(|(m, _)| m)
+}
+
+/// As [`fit_glm`], but also returns convergence and deviance information.
+pub fn fit_glm_with_diagnostics(
+    model: &RatingModel,
+    df: &DataFrame,
+    target_col: &str,
+    weight_col: Option<&str>,
+    offset_col: Option<&str>,
+    options: GLMOptions,
+) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
     validate_inputs(model, df, target_col, weight_col, offset_col)?;
 
     // Initialize loss function from required objective
@@ -55,225 +137,481 @@ pub fn fit_glm(
         loss_fn = LossFunction::Tweedie(options.tweedie_power);
     }
 
-    // Extract target and weights
-    let target = df.column(target_col)?.f64()?;
-    let weights_owned;
-    let weights: &ChunkedArray<Float64Type> = match weight_col {
-        Some(col) => df.column(col)?.f64()?,
-        None => {
-            weights_owned = ChunkedArray::from_vec("weights".into(), vec![1.0; df.height()]);
-            &weights_owned
+    let n = df.height();
+    let target = read_f64_column(df, target_col, "target")?;
+    let weights = match weight_col {
+        Some(col) => {
+            let w = read_f64_column(df, col, "weight")?;
+            if let Some(bad) = w.iter().position(|v| *v < 0.0) {
+                return Err(PolarsError::ComputeError(
+                    format!("Weight column '{}' has a negative value at row {}", col, bad).into(),
+                ));
+            }
+            w
         }
+        None => vec![1.0; n],
+    };
+    let offset = match offset_col {
+        Some(col) => read_f64_column(df, col, "offset")?,
+        None => vec![0.0; n],
     };
 
-    // NEW: Extract offset column if provided
-    let offset: Vec<f64> = if let Some(col) = offset_col {
-        df.column(col)?
-            .f64()?
-            .into_iter()
-            .map(|v| v.unwrap_or(0.0))
-            .collect()
-    } else {
-        vec![0.0; df.height()]
-    };
-
-    // Clone the model to create our working copy
     let mut working_model = model.clone();
 
-    // 🚀 OPTIMIZATION: Pre-compute observation-to-table matches ONCE
-    // This avoids re-matching every iteration
     if options.verbose {
         println!("Pre-computing observation matches...");
     }
-    let precomputed_matches = precompute_all_matches(&working_model, df)?;
+    let matches = precompute_all_matches(&working_model, df)?;
+    validate_matches(&working_model, &matches, n)?;
     if options.verbose {
         println!("Matches computed. Starting iterations...");
     }
 
-    // Main coordinate descent loop
-    for iteration in 0..options.max_iterations {
-        let mut max_change: f64 = 0.0;
-
-        // Iterate over each table (skip the mean table at index 0)
-        for table_idx in 1..working_model.tables.len() {
-            // NEW: Skip offset tables (they are fixed, not updated)
-            if working_model.tables[table_idx].metadata.is_offset {
-                continue;
-            }
-
-            let change = update_table_factors_precomputed(
-                &mut working_model,
-                table_idx,
-                &precomputed_matches[table_idx],
-                &precomputed_matches,  // Pass all matches for prediction
-                &target,
-                &weights,
-                &offset,  // NEW: Pass offset
-                &loss_fn,
-                &options,
-            )?;
-
-            max_change = max_change.max(change);
-        }
-
-        if options.verbose {
-            println!("Iteration {}: max_change = {:.6e}", iteration + 1, max_change);
-        }
-
-        // Check convergence
-        if max_change < options.tolerance {
-            if options.verbose {
-                println!("Converged after {} iterations", iteration + 1);
-            }
-            break;
-        }
-    }
-
-    Ok(working_model)
-}
-
-/// Updates the rating factors for a single table using precomputed matches
-/// Returns the maximum absolute change in rating factors
-fn update_table_factors_precomputed(
-    model: &mut RatingModel,
-    table_idx: usize,
-    table_matches: &[Option<usize>],
-    all_matches: &[Vec<Option<usize>>],
-    target: &ChunkedArray<Float64Type>,
-    weights: &ChunkedArray<Float64Type>,
-    offset: &[f64],
-    loss_fn: &LossFunction,
-    options: &GLMOptions,
-) -> Result<f64, PolarsError> {
-    // 1. Compute predictions WITHOUT this table using precomputed matches
-    let partial_preds = predict_without_table_precomputed(model, table_idx, all_matches)?;
-
-    // 2. NEW: Add offset to partial predictions
-    let offset_adjusted_preds: Vec<f64> = partial_preds
+    // Work on plain Vecs during fitting; the DataFrames are rewritten once at the end.
+    // Keeps the hot loop away from Polars column lookups and DataFrame clones.
+    let n_tables = working_model.tables.len();
+    let mut factors: Vec<Vec<f64>> = working_model
+        .tables
         .iter()
-        .zip(offset.iter())
-        .map(|(p, o)| p + o)
-        .collect();
-
-    // 3. Compute working residuals (depends on link function)
-    let working_residuals = loss_fn.compute_working_residuals(target, &offset_adjusted_preds)?;
-
-    // 4. Aggregate by matched row to compute optimal factors (matches already precomputed!)
-    let new_factors = compute_optimal_factors(
-        table_matches,
-        &working_residuals,
-        weights,
-        &model.tables[table_idx],
-    )?;
-
-    // 5. Update the table and compute max change
-    let max_change = update_table_with_factors(&mut model.tables[table_idx], new_factors)?;
-
-    Ok(max_change)
-}
-
-/// Predicts using all tables except the one at table_idx, using precomputed matches
-fn predict_without_table_precomputed(
-    model: &RatingModel,
-    exclude_idx: usize,
-    all_matches: &[Vec<Option<usize>>],
-) -> Result<Vec<f64>, PolarsError> {
-    let n_rows = all_matches[0].len();
-    let mut predictions = vec![0.0; n_rows];
-
-    for (idx, table) in model.tables.iter().enumerate() {
-        if idx == exclude_idx {
-            continue;
-        }
-
-        // Use precomputed matches for this table
-        let matches = &all_matches[idx];
-        for (obs_idx, match_idx_opt) in matches.iter().enumerate() {
-            if let Some(match_idx) = match_idx_opt {
-                let factor = table.get_rating_factor(*match_idx);
-                predictions[obs_idx] += factor;
-            }
-        }
-    }
-
-    Ok(predictions)
-}
-
-/// Computes optimal rating factors for each row in the table
-/// by aggregating working residuals for observations that match that row
-/// 🚀 OPTIMIZED: Pre-allocated vector aggregation for zero-overhead performance
-fn compute_optimal_factors(
-    match_indices: &[Option<usize>],
-    working_residuals: &[f64],
-    weights: &ChunkedArray<Float64Type>,
-    table: &RatingTable,
-) -> Result<Vec<f64>, PolarsError> {
-    let n_table_rows = table.data.height();
-
-    // Pre-allocate accumulators (indexed by table row)
-    let mut sum_weighted = vec![0.0; n_table_rows];
-    let mut sum_weight = vec![0.0; n_table_rows];
-
-    // Single pass: direct vector indexing (cache-friendly, auto-vectorizable)
-    for (obs_idx, &match_idx_opt) in match_indices.iter().enumerate() {
-        if let Some(match_idx) = match_idx_opt {
-            let w = weights.get(obs_idx).unwrap_or(1.0);
-            sum_weighted[match_idx] += working_residuals[obs_idx] * w;
-            sum_weight[match_idx] += w;
-        }
-    }
-
-    // Compute factors as weighted mean (IRLS update)
-    let new_factors: Vec<f64> = (0..n_table_rows)
-        .map(|i| {
-            if sum_weight[i] > 0.0 {
-                sum_weighted[i] / sum_weight[i]
-            } else {
-                table.get_rating_factor(i)
-            }
+        .map(|t| {
+            let ca = t.data.column("Rating_Factor").unwrap().f64().unwrap();
+            (0..ca.len()).map(|i| ca.get(i).unwrap_or(0.0)).collect()
         })
         .collect();
 
-    Ok(new_factors)
+    // Which tables the sweep is allowed to touch.
+    let updatable: Vec<bool> = working_model
+        .tables
+        .iter()
+        .map(|t| !t.metadata.is_offset)
+        .collect();
+
+    // Exposure behind each table row, fixed for the whole fit. Used for the
+    // weighted-mean anchor and to report rows that never got any data.
+    let row_exposure: Vec<Vec<f64>> = (0..n_tables)
+        .map(|t| {
+            let mut e = vec![0.0; factors[t].len()];
+            for (i, m) in matches[t].iter().enumerate() {
+                if let Some(r) = m {
+                    e[*r] += weights[i];
+                }
+            }
+            e
+        })
+        .collect();
+
+    // Running linear predictor from the tables only; `offset` is added where used.
+    let mut eta = vec![0.0; n];
+    for t in 0..n_tables {
+        for (i, m) in matches[t].iter().enumerate() {
+            if let Some(r) = m {
+                eta[i] += factors[t][*r];
+            }
+        }
+    }
+
+    // Scratch buffers reused across every table and every sweep.
+    let mut means = vec![0.0; n];
+    let mut numer = Vec::new();
+    let mut denom = Vec::new();
+
+    let null_deviance = null_deviance(&loss_fn, &target, &weights, &offset);
+
+    let mut deviance_history: Vec<f64> = Vec::with_capacity(options.max_iterations);
+    let mut prev_deviance = f64::INFINITY;
+    let mut converged = false;
+    let mut iterations = 0usize;
+
+    for iteration in 0..options.max_iterations {
+        iterations = iteration + 1;
+
+        for t in 0..n_tables {
+            if !updatable[t] {
+                continue;
+            }
+            update_table(
+                t,
+                &mut factors,
+                &mut eta,
+                &matches[t],
+                &target,
+                &weights,
+                &offset,
+                &row_exposure[t],
+                &working_model.tables[t],
+                &loss_fn,
+                &mut numer,
+                &mut denom,
+            );
+        }
+
+        if options.normalization != Normalization::None {
+            normalize(
+                &mut factors,
+                &row_exposure,
+                &working_model.tables,
+                &updatable,
+                options.normalization,
+            );
+        }
+
+        // Deviance of the current fit.
+        for i in 0..n {
+            means[i] = loss_fn.inverse_link(eta[i] + offset[i]);
+        }
+        let deviance = loss_fn.total_deviance(&target, &means, &weights);
+        deviance_history.push(deviance);
+
+        let rel_change = if prev_deviance.is_finite() && prev_deviance.abs() > 0.0 {
+            (prev_deviance - deviance).abs() / (prev_deviance.abs() + 1e-12)
+        } else {
+            f64::INFINITY
+        };
+
+        if options.verbose {
+            println!(
+                "Iteration {}: deviance = {:.10e}, rel change = {:.3e}",
+                iterations, deviance, rel_change
+            );
+        }
+
+        if rel_change < options.tolerance {
+            converged = true;
+            if options.verbose {
+                println!("Converged after {} iterations", iterations);
+            }
+            break;
+        }
+        prev_deviance = deviance;
+    }
+
+    if options.verbose && !converged {
+        println!(
+            "WARNING: did not converge in {} iterations (tolerance {:.1e})",
+            options.max_iterations, options.tolerance
+        );
+    }
+
+    // Write the fitted factors back into the model's DataFrames.
+    for t in 0..n_tables {
+        write_back_factors(&mut working_model.tables[t], &factors[t])?;
+    }
+
+    let mut unfitted_rows = Vec::new();
+    for t in 0..n_tables {
+        if !updatable[t] {
+            continue;
+        }
+        for (r, e) in row_exposure[t].iter().enumerate() {
+            if *e <= 0.0 {
+                unfitted_rows.push((t, r));
+            }
+        }
+    }
+
+    let diagnostics = GLMDiagnostics {
+        iterations,
+        converged,
+        deviance: *deviance_history.last().unwrap_or(&f64::NAN),
+        null_deviance,
+        deviance_history,
+        unfitted_rows,
+    };
+
+    Ok((working_model, diagnostics))
 }
 
-/// Updates a table's Rating_Factor column with new factors
-/// Returns the maximum absolute change
-fn update_table_with_factors(
-    table: &mut RatingTable,
-    new_factors: Vec<f64>,
-) -> Result<f64, PolarsError> {
-    let mut max_change: f64 = 0.0;
-    let n_rows = table.data.height();
+/// Updates every row of one table, holding all other tables fixed, and folds the
+/// change straight into the running linear predictor.
+///
+/// Two update rules, both exact minimisers of the deviance for this table given the
+/// others, except for the logit case which takes a single IRLS step:
+///
+/// * **Log link.** With `mu_i = c_i * exp(beta_r)` the score equation solves in closed
+///   form to `beta_r <- beta_r + ln(A / E)`, where `A = sum(a * mu^(1-p) * y)` and
+///   `E = sum(a * mu^(2-p))`. For Poisson (`p = 1`) that is literally
+///   `ln(actual / expected)`. Writing it as an increment on the current factor keeps
+///   every quantity scaled by `mu`, which tracks `y` — far better conditioned than
+///   solving for the level from scratch.
+///
+/// * **Otherwise.** The IRLS step `beta_r <- beta_r + sum(a*w*r) / sum(a*w)`, with the
+///   weight and link-scale residual supplied by the family.
+fn update_table(
+    t: usize,
+    factors: &mut [Vec<f64>],
+    eta: &mut [f64],
+    table_matches: &[Option<usize>],
+    target: &[f64],
+    weights: &[f64],
+    offset: &[f64],
+    row_exposure: &[f64],
+    table: &RatingTable,
+    loss_fn: &LossFunction,
+    numer: &mut Vec<f64>,
+    denom: &mut Vec<f64>,
+) {
+    let n_rows = factors[t].len();
+    numer.clear();
+    numer.resize(n_rows, 0.0);
+    denom.clear();
+    denom.resize(n_rows, 0.0);
 
-    // Create final factors, respecting row-level offsets
-    let mut final_factors = new_factors.clone();
+    let power = loss_fn.log_link_variance_power();
 
-    // Compute max change and preserve offset rows
-    for row_idx in 0..n_rows {
-        // NEW: Skip offset rows (keep their original values)
-        if table.is_row_offset(row_idx) {
-            final_factors[row_idx] = table.get_rating_factor(row_idx);
+    for (i, m) in table_matches.iter().enumerate() {
+        let Some(r) = *m else { continue };
+        let a = weights[i];
+        if a == 0.0 {
+            continue;
+        }
+        let mu = loss_fn.inverse_link(eta[i] + offset[i]);
+        match power {
+            // A = sum(a * mu^(1-p) * y), E = sum(a * mu^(2-p))
+            Some(p) => {
+                let base = mu.powf(1.0 - p);
+                numer[r] += a * base * target[i];
+                denom[r] += a * base * mu;
+            }
+            // sum(a * w * r) and sum(a * w)
+            None => {
+                numer[r] += a * loss_fn.weighted_link_residual(target[i], mu);
+                denom[r] += a * loss_fn.irls_weight(mu);
+            }
+        }
+    }
+
+    for r in 0..n_rows {
+        // Rows with no exposure, locked rows, and degenerate denominators keep
+        // whatever factor they started with.
+        if row_exposure[r] <= 0.0 || table.is_row_offset(r) {
+            continue;
+        }
+        if !(denom[r] > 0.0) || !denom[r].is_finite() {
             continue;
         }
 
-        let old_factor = table.get_rating_factor(row_idx);
-        let new_factor = final_factors[row_idx];
-        let change = (new_factor - old_factor).abs();
-        max_change = max_change.max(change);
+        let step = match power {
+            Some(_) => {
+                // ln(A / E); A <= 0 means the level has no positive response at all,
+                // whose MLE is -inf. Fall back to the largest downward step allowed.
+                if numer[r] > 0.0 {
+                    (numer[r] / denom[r]).ln()
+                } else {
+                    -MAX_STEP
+                }
+            }
+            None => numer[r] / denom[r],
+        };
+
+        if !step.is_finite() {
+            continue;
+        }
+
+        let old = factors[t][r];
+        let new = (old + step.clamp(-MAX_STEP, MAX_STEP)).clamp(-ETA_CLAMP, ETA_CLAMP);
+        factors[t][r] = new;
+        numer[r] = new - old; // reuse as the delta to apply to eta
     }
 
-    // Update the Rating_Factor column and recreate RatingTable to update metadata
-    let new_factor_series = Series::new("Rating_Factor".into(), final_factors);
+    // Fold the changes into the running linear predictor. Reusing `numer` as the
+    // per-row delta keeps this to a single pass with no extra allocation.
+    for r in 0..n_rows {
+        if row_exposure[r] <= 0.0 || table.is_row_offset(r) || !(denom[r] > 0.0) || !denom[r].is_finite() {
+            numer[r] = 0.0;
+        }
+    }
+    for (i, m) in table_matches.iter().enumerate() {
+        if let Some(r) = m {
+            eta[i] += numer[*r];
+        }
+    }
+}
 
-    // Clone existing data and update Rating_Factor column
-    let mut updated_data = table.data.clone();
-    updated_data.with_column(new_factor_series)?;
+/// Shifts a constant out of each feature table and into the intercept table, leaving
+/// every prediction unchanged. See [`Normalization`].
+fn normalize(
+    factors: &mut [Vec<f64>],
+    row_exposure: &[Vec<f64>],
+    tables: &[RatingTable],
+    updatable: &[bool],
+    mode: Normalization,
+) {
+    // Nothing to anchor against if the intercept itself is locked.
+    if factors.is_empty() || !updatable[0] || factors[0].len() != 1 || tables[0].is_row_offset(0) {
+        return;
+    }
 
-    // Recreate RatingTable with updated data
-    *table = RatingTable::new(updated_data, None);
+    let mut shift_into_intercept = 0.0;
 
-    Ok(max_change)
+    for t in 1..factors.len() {
+        if !updatable[t] {
+            continue;
+        }
+        // A table with locked rows cannot be shifted wholesale — moving the free rows
+        // alone would change predictions.
+        if (0..factors[t].len()).any(|r| tables[t].is_row_offset(r)) {
+            continue;
+        }
+
+        let anchor = match mode {
+            Normalization::None => continue,
+            Normalization::BaseLevel => factors[t][0],
+            Normalization::WeightedMean => {
+                let total: f64 = row_exposure[t].iter().sum();
+                if !(total > 0.0) {
+                    continue;
+                }
+                factors[t]
+                    .iter()
+                    .zip(row_exposure[t].iter())
+                    .map(|(f, e)| f * e)
+                    .sum::<f64>()
+                    / total
+            }
+        };
+
+        if anchor == 0.0 || !anchor.is_finite() {
+            continue;
+        }
+        for f in factors[t].iter_mut() {
+            *f -= anchor;
+        }
+        shift_into_intercept += anchor;
+    }
+
+    factors[0][0] = (factors[0][0] + shift_into_intercept).clamp(-ETA_CLAMP, ETA_CLAMP);
+}
+
+/// Deviance of the best intercept-only fit, used as the reference for `pseudo_r2`.
+fn null_deviance(loss_fn: &LossFunction, target: &[f64], weights: &[f64], offset: &[f64]) -> f64 {
+    let mut beta = 0.0f64;
+    // Same coordinate update as the fitter, applied to a single global level.
+    for _ in 0..200 {
+        let mut numer = 0.0;
+        let mut denom = 0.0;
+        for i in 0..target.len() {
+            let a = weights[i];
+            if a == 0.0 {
+                continue;
+            }
+            let mu = loss_fn.inverse_link(beta + offset[i]);
+            match loss_fn.log_link_variance_power() {
+                Some(p) => {
+                    let base = mu.powf(1.0 - p);
+                    numer += a * base * target[i];
+                    denom += a * base * mu;
+                }
+                None => {
+                    numer += a * loss_fn.weighted_link_residual(target[i], mu);
+                    denom += a * loss_fn.irls_weight(mu);
+                }
+            }
+        }
+        if !(denom > 0.0) || !denom.is_finite() {
+            break;
+        }
+        let step = match loss_fn.log_link_variance_power() {
+            Some(_) => {
+                if numer > 0.0 {
+                    (numer / denom).ln()
+                } else {
+                    -MAX_STEP
+                }
+            }
+            None => numer / denom,
+        };
+        if !step.is_finite() {
+            break;
+        }
+        let next = (beta + step.clamp(-MAX_STEP, MAX_STEP)).clamp(-ETA_CLAMP, ETA_CLAMP);
+        if (next - beta).abs() < 1e-14 {
+            beta = next;
+            break;
+        }
+        beta = next;
+    }
+
+    let means: Vec<f64> = offset.iter().map(|o| loss_fn.inverse_link(beta + o)).collect();
+    loss_fn.total_deviance(target, &means, weights)
+}
+
+/// Writes fitted factors back into a table's DataFrame, preserving its metadata.
+fn write_back_factors(table: &mut RatingTable, factors: &[f64]) -> Result<(), PolarsError> {
+    let metadata = table.metadata.clone();
+    let row_metadata = table.row_metadata.clone();
+
+    let mut data = table.data.clone();
+    data.with_column(Series::new("Rating_Factor".into(), factors.to_vec()))?;
+
+    let mut rebuilt = RatingTable::new(data, None);
+    rebuilt.metadata = metadata;
+    rebuilt.row_metadata = row_metadata;
+    *table = rebuilt;
+    Ok(())
+}
+
+/// Reads a column as `f64`, rejecting nulls and non-finite values.
+fn read_f64_column(df: &DataFrame, name: &str, role: &str) -> Result<Vec<f64>, PolarsError> {
+    let ca = df.column(name)?.f64().map_err(|_| {
+        PolarsError::ComputeError(
+            format!("{} column '{}' must be Float64, found {:?}", role, name, df.column(name).unwrap().dtype()).into(),
+        )
+    })?;
+
+    let mut out = Vec::with_capacity(ca.len());
+    for i in 0..ca.len() {
+        match ca.get(i) {
+            Some(v) if v.is_finite() => out.push(v),
+            Some(v) => {
+                return Err(PolarsError::ComputeError(
+                    format!("{} column '{}' has a non-finite value ({}) at row {}", role, name, v, i).into(),
+                ))
+            }
+            None => {
+                return Err(PolarsError::ComputeError(
+                    format!("{} column '{}' has a null at row {}", role, name, i).into(),
+                ))
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Every observation must land on a row of every table.
+///
+/// An unmatched observation silently contributes nothing to that table's linear
+/// predictor and is silently excluded from the table's update, so a missing feature
+/// column or an uncovered value would otherwise produce a plausible-looking fit from
+/// a model that quietly dropped a term.
+fn validate_matches(
+    model: &RatingModel,
+    matches: &[Vec<Option<usize>>],
+    n_rows: usize,
+) -> Result<(), PolarsError> {
+    for (t, table_matches) in matches.iter().enumerate() {
+        let unmatched = table_matches.iter().filter(|m| m.is_none()).count();
+        if unmatched == 0 {
+            continue;
+        }
+        let first = table_matches.iter().position(|m| m.is_none()).unwrap();
+        let features: Vec<String> = model.tables[t]
+            .get_feature_info()
+            .keys()
+            .cloned()
+            .collect();
+        return Err(PolarsError::ComputeError(
+            format!(
+                "Table {} matched no row for {} of {} observations (first at row {}). \
+                 Table features: [{}]. Every observation must fall in some row: check that \
+                 those columns are present with the expected dtype, that numeric tables have \
+                 a final unbounded (inf) row, and that categorical tables cover every level \
+                 or carry a -999 wildcard.",
+                t, unmatched, n_rows, first, features.join(", ")
+            )
+            .into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Validates inputs for GLM fitting
@@ -284,6 +622,10 @@ fn validate_inputs(
     weight_col: Option<&str>,
     offset_col: Option<&str>,
 ) -> Result<(), PolarsError> {
+    if df.height() == 0 {
+        return Err(PolarsError::ComputeError("Training data has no rows".into()));
+    }
+
     // Check target column exists
     if df.column(target_col).is_err() {
         return Err(PolarsError::ColumnNotFound(
@@ -300,7 +642,7 @@ fn validate_inputs(
         }
     }
 
-    // NEW: Check offset column exists if specified
+    // Check offset column exists if specified
     if let Some(ocol) = offset_col {
         if df.column(ocol).is_err() {
             return Err(PolarsError::ColumnNotFound(
@@ -313,6 +655,17 @@ fn validate_inputs(
     if model.tables.len() < 2 {
         return Err(PolarsError::ComputeError(
             "Model must have at least 2 tables (mean + feature tables)".into()
+        ));
+    }
+
+    // The intercept table must be a single row for normalization to be meaningful.
+    if model.tables[0].data.height() != 1 {
+        return Err(PolarsError::ComputeError(
+            format!(
+                "Table 0 is the intercept and must have exactly 1 row, found {}",
+                model.tables[0].data.height()
+            )
+            .into(),
         ));
     }
 

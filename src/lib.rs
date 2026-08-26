@@ -188,6 +188,17 @@ struct PyGLMOptions {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyGLMOptions {
+    /// Args:
+    ///     objective: Distribution family — "gaussian", "poisson", "gamma",
+    ///         "tweedie" or "binary".
+    ///     max_iterations: Maximum coordinate-descent sweeps over the tables.
+    ///     tolerance: Stop once the relative change in deviance falls below this.
+    ///     verbose: Print deviance each sweep.
+    ///     tweedie_power: Variance power, Tweedie only. 1 = Poisson, 2 = Gamma.
+    ///     normalization: How to anchor the over-parameterised tables —
+    ///         "base_level" (default) puts each table's first row at zero,
+    ///         "weighted_mean" centres each table on its exposure-weighted mean,
+    ///         "none" leaves factors wherever the fit put them.
     #[new]
     fn new(
         objective: String, // Required parameter
@@ -195,7 +206,8 @@ impl PyGLMOptions {
         tolerance: Option<f64>,
         verbose: Option<bool>,
         tweedie_power: Option<f64>,
-    ) -> Self {
+        normalization: Option<&str>,
+    ) -> PyResult<Self> {
         let mut options = glm::GLMOptions::default();
 
         options.objective = objective;
@@ -212,25 +224,132 @@ impl PyGLMOptions {
         if let Some(p) = tweedie_power {
             options.tweedie_power = p;
         }
+        if let Some(n) = normalization {
+            options.normalization = match n.to_lowercase().as_str() {
+                "base_level" | "base" => glm::Normalization::BaseLevel,
+                "weighted_mean" | "mean" => glm::Normalization::WeightedMean,
+                "none" => glm::Normalization::None,
+                other => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "Unknown normalization '{}'. Expected 'base_level', 'weighted_mean' or 'none'.",
+                        other
+                    )))
+                }
+            };
+        }
 
-        PyGLMOptions { inner: options }
+        Ok(PyGLMOptions { inner: options })
+    }
+}
+
+/// Convergence and deviance information from a GLM fit.
+#[cfg(feature = "python")]
+#[pyclass(name = "GLMDiagnostics")]
+#[derive(Clone)]
+struct PyGLMDiagnostics {
+    #[pyo3(get)]
+    iterations: usize,
+    #[pyo3(get)]
+    converged: bool,
+    #[pyo3(get)]
+    deviance: f64,
+    #[pyo3(get)]
+    null_deviance: f64,
+    #[pyo3(get)]
+    deviance_history: Vec<f64>,
+    /// Table rows that received no exposure and kept their starting factor,
+    /// as (table_index, row_index) pairs.
+    #[pyo3(get)]
+    unfitted_rows: Vec<(usize, usize)>,
+    /// Fraction of the null deviance explained by the fit.
+    #[pyo3(get)]
+    pseudo_r2: f64,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PyGLMDiagnostics {
+    fn __repr__(&self) -> String {
+        format!(
+            "GLMDiagnostics(iterations={}, converged={}, deviance={:.6}, null_deviance={:.6}, pseudo_r2={:.4})",
+            self.iterations, self.converged, self.deviance, self.null_deviance, self.pseudo_r2
+        )
     }
 }
 
 #[cfg(feature = "python")]
+impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
+    fn from(d: glm::GLMDiagnostics) -> Self {
+        let pseudo_r2 = d.pseudo_r2();
+        PyGLMDiagnostics {
+            iterations: d.iterations,
+            converged: d.converged,
+            deviance: d.deviance,
+            null_deviance: d.null_deviance,
+            deviance_history: d.deviance_history,
+            unfitted_rows: d.unfitted_rows,
+            pseudo_r2,
+        }
+    }
+}
+
+/// Fit a GLM directly on the model's rating tables.
+///
+/// Args:
+///     model: RatingModel supplying the table structure. Its factors are the
+///         starting values; the structure is preserved.
+///     df: Training data.
+///     target_col: Column holding the response.
+///     weight_col: Optional prior weight column (exposure, claim counts, ...).
+///     offset_col: Optional column added to the linear predictor and held fixed.
+///         For Poisson frequency this is normally log(exposure).
+///     options: GLMOptions. Defaults to Gaussian if omitted.
+///
+/// Returns:
+///     The fitted RatingModel.
+#[cfg(feature = "python")]
 #[pyfunction]
+#[pyo3(signature = (model, df, target_col, weight_col=None, offset_col=None, options=None))]
 fn fit_glm(
     model: &PyRatingModel,
     df: PyDataFrame,
     target_col: &str,
     weight_col: Option<&str>,
+    offset_col: Option<&str>,
     options: Option<PyGLMOptions>,
 ) -> PyResult<PyRatingModel> {
     let df: DataFrame = df.0;
     let glm_options = options.map(|o| o.inner).unwrap_or_default();
 
-    glm::fit_glm(&model.inner, &df, target_col, weight_col, None, glm_options)  // None for offset_col for now
+    glm::fit_glm(&model.inner, &df, target_col, weight_col, offset_col, glm_options)
         .map(|fitted_model| PyRatingModel { inner: fitted_model })
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            format!("GLM fitting failed: {}", e)
+        ))
+}
+
+/// As `fit_glm`, but also returns convergence and deviance information.
+///
+/// Returns:
+///     (RatingModel, GLMDiagnostics)
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(signature = (model, df, target_col, weight_col=None, offset_col=None, options=None))]
+fn fit_glm_with_diagnostics(
+    model: &PyRatingModel,
+    df: PyDataFrame,
+    target_col: &str,
+    weight_col: Option<&str>,
+    offset_col: Option<&str>,
+    options: Option<PyGLMOptions>,
+) -> PyResult<(PyRatingModel, PyGLMDiagnostics)> {
+    let df: DataFrame = df.0;
+    let glm_options = options.map(|o| o.inner).unwrap_or_default();
+
+    glm::fit_glm_with_diagnostics(&model.inner, &df, target_col, weight_col, offset_col, glm_options)
+        .map(|(fitted_model, diagnostics)| {
+            (PyRatingModel { inner: fitted_model }, diagnostics.into())
+        })
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
             format!("GLM fitting failed: {}", e)
         ))
@@ -241,8 +360,10 @@ fn fit_glm(
 fn avenue_model(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRatingModel>()?;
     m.add_class::<PyGLMOptions>()?;
+    m.add_class::<PyGLMDiagnostics>()?;
     m.add_function(wrap_pyfunction!(estimate_num_tables, m)?)?;
     m.add_function(wrap_pyfunction!(fit_glm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_glm_with_diagnostics, m)?)?;
     Ok(())
 }
 

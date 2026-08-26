@@ -95,6 +95,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -105,10 +106,10 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 1,000 records, 4 features, 27 total bins");
+        println!("\nðŸ“Š Realistic Dataset: 1,000 records, 4 features, 27 total bins");
         println!("   Fit time:   {:.2} ms", fit_time.as_secs_f64() * 1000.0);
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 1_000.0);
+        println!("   Per pred:   {:.2} Âµs", pred_time.as_micros() as f64 / 1_000.0);
     }
 
     #[test]
@@ -121,6 +122,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -131,10 +133,10 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 5,000 records, 4 features, 27 total bins");
+        println!("\nðŸ“Š Realistic Dataset: 5,000 records, 4 features, 27 total bins");
         println!("   Fit time:   {:.2} ms", fit_time.as_secs_f64() * 1000.0);
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 5_000.0);
+        println!("   Per pred:   {:.2} Âµs", pred_time.as_micros() as f64 / 5_000.0);
     }
 
     #[test]
@@ -147,6 +149,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -157,10 +160,10 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 10,000 records, 4 features, 27 total bins");
+        println!("\nðŸ“Š Realistic Dataset: 10,000 records, 4 features, 27 total bins");
         println!("   Fit time:   {:.2} ms", fit_time.as_secs_f64() * 1000.0);
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 10_000.0);
+        println!("   Per pred:   {:.2} Âµs", pred_time.as_micros() as f64 / 10_000.0);
     }
 
     #[test]
@@ -173,6 +176,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -183,10 +187,10 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 50,000 records, 4 features, 27 total bins");
+        println!("\nðŸ“Š Realistic Dataset: 50,000 records, 4 features, 27 total bins");
         println!("   Fit time:   {:.2} ms ({:.2} sec)", fit_time.as_secs_f64() * 1000.0, fit_time.as_secs_f64());
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 50_000.0);
+        println!("   Per pred:   {:.2} Âµs", pred_time.as_micros() as f64 / 50_000.0);
     }
 
     #[test]
@@ -199,6 +203,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -209,10 +214,10 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 100,000 records, 4 features, 27 total bins");
+        println!("\nðŸ“Š Realistic Dataset: 100,000 records, 4 features, 27 total bins");
         println!("   Fit time:   {:.2} ms ({:.2} sec)", fit_time.as_secs_f64() * 1000.0, fit_time.as_secs_f64());
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 100_000.0);
+        println!("   Per pred:   {:.2} Âµs", pred_time.as_micros() as f64 / 100_000.0);
     }
 
     #[test]
@@ -225,6 +230,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -235,10 +241,10 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 1,000,000 records, 4 features, 27 total bins");
+        println!("\nðŸ“Š Realistic Dataset: 1,000,000 records, 4 features, 27 total bins");
         println!("   Fit time:   {:.2} ms ({:.2} sec)", fit_time.as_secs_f64() * 1000.0, fit_time.as_secs_f64());
         println!("   Pred time:  {:.2} ms ({:.2} sec)", pred_time.as_secs_f64() * 1000.0, pred_time.as_secs_f64());
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 1_000_000.0);
+        println!("   Per pred:   {:.2} Âµs", pred_time.as_micros() as f64 / 1_000_000.0);
     }
 
     #[test]
@@ -258,6 +264,7 @@ mod realistic_benchmarks {
                 tolerance: 1e-6,
                 verbose: false,
                 tweedie_power: 1.5,
+                ..Default::default()
             };
 
             let start = Instant::now();
@@ -268,7 +275,7 @@ mod realistic_benchmarks {
             let _ = fitted.predict(&df).unwrap();
             let pred_time = pred_start.elapsed();
 
-            println!("{:>7} records | Fit: {:>8.2} ms | Predict: {:>7.2} ms | Per-pred: {:>6.2} µs",
+            println!("{:>7} records | Fit: {:>8.2} ms | Predict: {:>7.2} ms | Per-pred: {:>6.2} Âµs",
                 n,
                 fit_time.as_secs_f64() * 1000.0,
                 pred_time.as_secs_f64() * 1000.0,

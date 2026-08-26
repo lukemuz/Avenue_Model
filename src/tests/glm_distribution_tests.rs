@@ -48,6 +48,7 @@ mod distribution_tests {
             tolerance: 1e-6,
             verbose: true,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -91,6 +92,7 @@ mod distribution_tests {
             tolerance: 1e-6,
             verbose: true,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -133,6 +135,7 @@ mod distribution_tests {
             tolerance: 1e-6,
             verbose: true,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -175,6 +178,7 @@ mod distribution_tests {
             tolerance: 1e-6,
             verbose: true,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -242,6 +246,7 @@ mod distribution_tests {
             tolerance: 1e-6,
             verbose: true,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         println!("\n=== LARGE DATASET PERFORMANCE TEST ===");
