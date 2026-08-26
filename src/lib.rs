@@ -29,6 +29,50 @@ struct PyRatingModel {
 }
 
 #[cfg(feature = "python")]
+/// Reports how much information each pair of rating tables shares.
+///
+/// Returns a list of (first_table, second_table, correlation) sorted worst first, where
+/// the correlation is the first canonical correlation between the two tables' levels.
+/// It is exactly the factor by which the shared direction survives each fitting sweep,
+/// so a pair near 1.0 both fits slowly and cannot be interpreted level by level.
+#[pyfunction]
+#[pyo3(signature = (model, df, weight_col=None))]
+fn table_correlations(
+    model: &PyRatingModel,
+    df: PyDataFrame,
+    weight_col: Option<&str>,
+) -> PyResult<Vec<(usize, usize, f64)>> {
+    let df: DataFrame = df.into();
+    let inner = &model.inner;
+
+    let matches = glm::matching::precompute_all_matches(inner, &df)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+
+    let weights = match weight_col {
+        Some(col) => {
+            let ca = df
+                .column(col)
+                .and_then(|c| c.f64().cloned())
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+            (0..ca.len()).map(|i| ca.get(i).unwrap_or(0.0)).collect()
+        }
+        None => vec![1.0; df.height()],
+    };
+
+    let shapes: Vec<usize> = inner.tables.iter().map(|t| t.data.height()).collect();
+    let eligible: Vec<bool> = inner
+        .tables
+        .iter()
+        .map(|t| !t.metadata.is_offset && t.variate_values().is_none())
+        .collect();
+
+    Ok(glm::table_correlations(&matches, &weights, &shapes, &eligible)
+        .into_iter()
+        .map(|p| (p.first, p.second, p.correlation))
+        .collect())
+}
+
+#[cfg(feature = "python")]
 #[pyfunction]
 fn estimate_num_tables(model_json: &str) -> PyResult<usize> {
     estimate_number_of_tables(model_json)
@@ -306,6 +350,11 @@ impl PyGLMOptions {
     ///         True. Costs three parameter vectors of memory and pays for itself
     ///         many times over when tables are correlated. Turn it off only to
     ///         reproduce the unaccelerated sequence exactly.
+    ///     solve_aliased_pairs_jointly: Update near-aliased table pairs as one
+    ///         block rather than one at a time. Default True. Costs a sampled pass
+    ///         over the data to measure how much information each pair of tables
+    ///         shares; worth it whenever a plan carries two tables describing the
+    ///         same thing, which otherwise converges at a crawl.
     #[new]
     #[pyo3(signature = (
         objective,
@@ -316,6 +365,7 @@ impl PyGLMOptions {
         normalization=None,
         compute_standard_errors=None,
         accelerate=None,
+        solve_aliased_pairs_jointly=None,
     ))]
     fn new(
         objective: String, // Required parameter
@@ -326,6 +376,7 @@ impl PyGLMOptions {
         normalization: Option<&str>,
         compute_standard_errors: Option<bool>,
         accelerate: Option<bool>,
+        solve_aliased_pairs_jointly: Option<bool>,
     ) -> PyResult<Self> {
         let mut options = glm::GLMOptions::default();
 
@@ -363,6 +414,10 @@ impl PyGLMOptions {
 
         if let Some(a) = accelerate {
             options.accelerate = a;
+        }
+
+        if let Some(j) = solve_aliased_pairs_jointly {
+            options.solve_aliased_pairs_jointly = j;
         }
 
         Ok(PyGLMOptions { inner: options })
@@ -599,6 +654,7 @@ fn avenue_model(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(estimate_num_tables, m)?)?;
     m.add_function(wrap_pyfunction!(fit_glm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_glm_with_diagnostics, m)?)?;
+    m.add_function(wrap_pyfunction!(table_correlations, m)?)?;
     Ok(())
 }
 

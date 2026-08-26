@@ -142,6 +142,46 @@ mod glm_correctness_tests {
         ).unwrap()
     }
 
+    /// A pair that trips the near-alias detector: `x2` repeats `x1` except that every
+    /// twentieth row is misfiled.
+    ///
+    /// This is the `Area` / `Density` relationship in miniature — one driver recorded
+    /// twice, imperfectly. The misfiling matters: an *exactly* aliased pair is a much
+    /// easier problem, because the first table's closed-form update satisfies it outright
+    /// and leaves the second nothing to do. It is the near miss that makes backfitting
+    /// crawl, so that is what has to be reproduced here.
+    fn strongly_aliased_df() -> DataFrame {
+        let n = 400usize;
+        let (mut x1, mut x2, mut y, mut w) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for i in 0..n {
+            let a = (i % 5) as f64 + 1.0;
+            let b = if i % 20 == 0 { (a as usize % 5) as f64 + 1.0 } else { a };
+            x1.push(a);
+            x2.push(b);
+            // Real signal in both, plus a deterministic wobble so the fit is not exact.
+            y.push(2.0 + 1.5 * a + 0.8 * b + 0.3 * ((i % 7) as f64));
+            w.push(1.0 + 0.5 * ((i % 3) as f64));
+        }
+        DataFrame::new(vec![
+            Series::new("x1".into(), x1).into(),
+            Series::new("x2".into(), x2).into(),
+            Series::new("y".into(), y).into(),
+            Series::new("w".into(), w).into(),
+        ]).unwrap()
+    }
+
+    fn strongly_aliased_model() -> RatingModel {
+        let bounds = [1.0, 2.0, 3.0, 4.0, f64::INFINITY];
+        RatingModel::from_dataframes(
+            vec![
+                intercept_table(),
+                factor_table("x1", &bounds),
+                factor_table("x2", &bounds),
+            ],
+            "poisson", None, None,
+        ).unwrap()
+    }
+
     // ------------------------------------------------- 1. closed-form checks
 
     /// For ANY exponential-family GLM, a saturated one-factor model must reproduce
@@ -424,6 +464,44 @@ mod glm_correctness_tests {
             "predictions went bad: {:?}", preds);
         assert!(preds[19] < 1e-12,
             "the dead level should predict essentially zero, got {}", preds[19]);
+    }
+
+    /// Two near-aliased tables solved as one block must land on the same *predictions*
+    /// as solving them one at a time, and get there in fewer sweeps.
+    ///
+    /// Predictions, not factors: when two tables carry nearly the same information the
+    /// split between them is barely determined by the data, so the two methods are free
+    /// to divide the shared effect differently. That is the whole difficulty, and it is
+    /// why the fit is compared on what it predicts rather than on what it attributes.
+    #[test]
+    fn a_joint_block_matches_the_sequential_fit_in_fewer_sweeps() {
+        let df = strongly_aliased_df();
+        let fit = |jointly: bool| {
+            let mut o = options("poisson", 1.5);
+            o.tolerance = 1e-12;
+            o.max_iterations = 100_000;
+            o.accelerate = false; // isolate the block solve from the accelerator
+            o.solve_aliased_pairs_jointly = jointly;
+            crate::glm::fit_glm_with_diagnostics(
+                &strongly_aliased_model(), &df, "y", Some("w"), None, o).unwrap()
+        };
+
+        let (sequential, seq_diag) = fit(false);
+        let (blocked, block_diag) = fit(true);
+
+        assert!(seq_diag.converged && block_diag.converged,
+            "both fits must converge (sequential {}, blocked {})",
+            seq_diag.converged, block_diag.converged);
+
+        // The fixture has to actually trip the detector, or this tests nothing.
+        assert!(block_diag.iterations < seq_diag.iterations,
+            "blocked took {} sweeps against {} sequential - the pair was not detected,              or the block solve did not help",
+            block_diag.iterations, seq_diag.iterations);
+
+        assert_all_close(
+            &predictions(&blocked, &df), &predictions(&sequential, &df), 1e-8,
+            "a jointly solved pair must predict what the sequential fit predicts",
+        );
     }
 
     #[test]

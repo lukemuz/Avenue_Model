@@ -6,6 +6,8 @@ pub mod inference;
 pub mod loss;
 pub mod utils;
 pub mod matching;
+pub mod redundancy;
 
 pub use fitting::{fit_glm, fit_glm_with_diagnostics, GLMDiagnostics, GLMOptions, Normalization};
 pub use inference::{solve_spd, GLMInference, VariateTerms};
+pub use redundancy::{table_correlations, TablePair, NEAR_ALIAS};

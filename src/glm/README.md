@@ -472,7 +472,7 @@ The French motor data is close to a worst case: `Area` is a six-band rebanding o
 
 | real data, unpenalised, fit seconds | Avenue | glum `irls-ls` | glum `irls-cd` |
 |-------------------------------------|-------:|---------------:|---------------:|
-| freMTPL2, 678k rows, 79 params, Poisson | 1.40 (66 sweeps) | **0.44** (5) | 0.52 (6) |
+| freMTPL2, 678k rows, 79 params, Poisson | 0.72 (15 sweeps) | **0.45** (5) | 0.54 (6) |
 | house_sales, 21.6k rows, 92 params, Gamma | **0.049** (50) | 0.051 (6) | 0.755 (9) |
 | house_sales, Gaussian | 0.039 (53) | **0.011** (1) | 0.334 (1) |
 
@@ -490,10 +490,24 @@ is spread across the drivers and costs proportionately less. So the insurance re
 tail case rather than the typical one, and `scripts/bench_housing.py --diagnose` runs the
 drop-one sweep that tells the two apart.
 
-The accelerator ([`squarem_steplength`]) takes the French motor fit from 254 sweeps to 66
-and the housing fit from 79 to 50. A clean geometric decay is exactly what three-point
-extrapolation annihilates, and it needs no detection heuristic — it reads the dominant
-mode off the iterates themselves.
+Two things close that gap. The accelerator ([`squarem_steplength`]) takes the French
+motor fit from 254 sweeps to 66 and the housing fit from 79 to 50; a clean geometric decay
+is exactly what three-point extrapolation annihilates, and it needs no detection heuristic
+because it reads the dominant mode off the iterates themselves.
+
+Then [`update_pair`] takes the French motor fit from 66 sweeps to **15**, by solving the
+offending pair as one block instead of one table at a time. `redundancy.rs` finds it: the
+first canonical correlation between two tables is *exactly* the factor by which their
+shared direction survives each sweep, and it comes from a weighted contingency table
+rather than anything the size of the design. On the French motor data it reads
+`Density`/`Area` at **0.9713**, whose square — 0.9434 — is the 0.9431 tail rate the fit
+actually exhibits. It predicts the convergence rate before fitting anything, in 13 ms over
+36 pairs.
+
+It is free when there is nothing to find. Measured on independent synthetic factors,
+where no pair qualifies, turning detection on costs between -0.3% and +4.9% — inside
+run-to-run noise, because the correlations are estimated from a sample rather than every
+row.
 
 Note that glum's own coordinate-descent solver, `irls-cd`, is 8-15x slower than Avenue on
 the housing data and is the only engine that fails the agreement check on any of these
@@ -556,19 +570,22 @@ src/glm/
 - No regularisation. For rating tables the high-value forms are credibility shrinkage
   of sparse levels and difference penalties on adjacent ordinal levels, more than L1
   variable selection.
-- **Near-aliased tables still converge slowly**, just less so. SQUAREM takes the French
-  motor fit from 254 sweeps to 66 against glum's 5, so a 3x gap remains there — though on
-  the housing data, where nothing is aliased, the gap is gone. Closing the remainder means
-  changing the algorithm rather than tuning it: assemble `X'WX` from the tables and take a
-  real Newton step. Its diagonal blocks are diagonal — each observation hits exactly one
+- **A 1.6x gap to glum remains on near-aliased models.** SQUAREM and the paired block
+  solve take the French motor fit from 254 sweeps to 15 against glum's 5. Closing the rest
+  means assembling the *full* `X'WX` rather than one pair's block — worth remembering that
+  it would cost `T(T+1)/2` scatter-adds per row against a pair's one, so it would make the
+  independent-factor cases slower unless gated on the measured convergence rate. Its diagonal blocks are diagonal — each observation hits exactly one
   level of its own table — and its off-diagonal blocks are weighted contingency tables,
   so it costs `O(p²)` memory rather than `O(np)`, with accelerated coordinate descent as
   the fallback when `p` is too large for that.
-- **Nothing reports near-aliased tables.** The fit slows to a crawl and the standard
-  errors go wide, but neither says *which* pair is redundant, and on this data the answer
-  was worth knowing on its own terms: `Area` carries almost no information that `Density`
-  does not. The weighted contingency table that would detect it is the same one the
-  Newton step above needs.
+- **No per-table credibility.** A near-aliased pair is solved jointly, which settles how
+  fast the fit runs but not *which* of the two tables should carry the shared signal — the
+  data barely distinguishes the split, so something else has to. The block solve currently
+  breaks the tie with a ridge too small to express a view (see `PAIR_RIDGE`). What is
+  missing is a per-table penalty large enough to mean something, so a plan can keep both
+  tables and still say "let `Density` carry the geography, and let `Area` keep only what
+  `Density` cannot explain". That is the same machinery as credibility shrinkage of sparse
+  levels, which is the other thing this list has always wanted.
 
 ## References
 
