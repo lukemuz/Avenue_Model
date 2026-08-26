@@ -1,3 +1,7 @@
 /target
 /WIP
 license_key.txt
+__pycache__/
+
+# Benchmark dataset cache, downloaded from OpenML on first run (~55 MB).
+scripts/.fremtpl2freq.parquet
