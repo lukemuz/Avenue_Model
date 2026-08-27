@@ -116,12 +116,17 @@ Four things, in rough order of how much they are worth:
   no line search and no step-size tuning.
 - **SQUAREM acceleration** (`squarem_steplength`). Three-point extrapolation reads the
   dominant error mode off the iterates themselves and jumps along it. A clean geometric
-  decay is exactly what it annihilates: 254 sweeps to 66 on the French motor data, 79 to
-  50 on housing. Every jump is checked and rejected if it does not help, so the worst
-  case is a few wasted passes.
+  decay is exactly what it annihilates — worth 1.24x on the housing data, where
+  `bench_housing.py` fits the same design both ways. Every jump is checked and rejected
+  if it does not help, so the worst case is a few wasted passes.
 - **Joint solving of near-aliased table pairs** (`update_pair`). Two tables describing
   the same driver — a density band and an area code — are the case that brings a backfit
-  to a crawl. Solved as one block instead of alternately: 66 sweeps to **15**.
+  to a crawl. Solved as one block instead of alternately, that is worth **3.9x** on the
+  French motor data and **10.3x** on the census data.
+- **Sweeping the most strongly coupled table first** (`sweep_order`). A table updated
+  early is seen by every table after it; one updated late leaves the rest of the pass
+  working against a stale value. A permutation decided once, costing nothing at run time
+  and changing no arithmetic, worth 3–15% across the real designs.
 - **Incremental `mu`.** Carried through a sweep as `mu *= exp(delta_r)` rather than
   re-derived per observation per table, which is `n_rows` exponentials instead of `n` of
   them. `mu^(1-p)` is specialised away from `powf` for the exponents the common families
@@ -157,7 +162,9 @@ links have no such collapse and iterate until the step stops shrinking.
 
 **Methodology.** All release builds. Every benchmark is **gated on the engines agreeing
 about the fitted means** before any timing is reported — a fast wrong answer fails.
-Times are fit time only, fastest of three runs. Absolute numbers are machine-dependent;
+Times are fit time only and the fastest of repeated runs; the synthetic table is the
+best of three independent runs of five repeats each, because a single run varies by up to
+10%. Absolute numbers are machine-dependent;
 the ratios are the point.
 
 - **glum** is the speed comparison. Its `tabmat` backend avoids a dense dummy-coded
@@ -182,12 +189,12 @@ method, and worth reading as an upper bound rather than a typical result.
 
 | | Avenue | glum | statsmodels |
 |---|-------:|-----:|------------:|
-| Poisson, 1M rows | **0.096 s** | 0.424 s | — |
-| Gamma, 1M rows | **0.114 s** | 0.410 s | — |
-| Tweedie(1.5), 1M rows | **0.213 s** | 0.287 s | — |
-| Gaussian, 1M rows | 0.088 s | **0.071 s** | — |
-| Poisson, 100k rows | **0.016 s** | 0.035 s | 1.523 s |
-| Poisson, 5M rows | **0.709 s** | 2.455 s | — |
+| Poisson, 1M rows | **0.100 s** | 0.416 s | — |
+| Gamma, 1M rows | **0.114 s** | 0.408 s | — |
+| Tweedie(1.5), 1M rows | **0.182 s** | 0.286 s | — |
+| Gaussian, 1M rows | 0.079 s | **0.074 s** | — |
+| Poisson, 100k rows | **0.016 s** | 0.034 s | 1.560 s |
+| Poisson, 5M rows | **0.695 s** | 2.518 s | — |
 
 ### Memory
 
@@ -221,36 +228,41 @@ process is the pandas source frame both engines are built from, not either engin
 Five public datasets across four families. These have the correlated factors that
 synthetic data does not.
 
-| unpenalised, fit seconds | Avenue | glum `irls-ls` | glum `irls-cd` |
-|---|-------:|---------------:|---------------:|
-| freMTPL2, 678k rows, 79 params, Poisson | **0.27** (15 sweeps) | 0.46 (5) | 0.53 (6) |
-| freMTPL2, 678k rows, 270 params, Poisson | **0.52** (25) | 1.61 (18) | 1262 (500) |
-| nyc_taxi, 2.75M rows, 577 params, Gamma | 5.36 (35) | **3.77** (9) | — |
-| census_income, 45.2k rows, 116 params, Binomial | **0.16** (36) | 0.20 (21) | 254 (500) |
-| house_sales, 21.6k rows, 92 params, Gamma | **0.052** (50) | 0.057 (6) | 0.776 (9) |
-| house_sales, 21.6k rows, 92 params, Gaussian | 0.039 (53) | **0.013** (1) | 0.336 (1) |
+Fit seconds, and the peak each engine adds inside the process. `glum[irls-cd]` is timed
+where that was affordable; it never competes, and is discussed below.
 
-Avenue takes four of the six. What each dataset is there to cover:
+| unpenalised | Avenue fit | Avenue peak | glum `irls-ls` fit | glum peak | `irls-cd` |
+|---|---:|---:|---:|---:|---:|
+| freMTPL2, 678k rows, 79 params, Poisson | **0.26** | **87 MB** | 0.49 | 165 MB | 0.53 |
+| freMTPL2, 678k rows, 270 params, Poisson | **0.41** | **87 MB** | 1.64 | 119 MB | 1262 |
+| nyc_taxi, 2.75M rows, 577 params, Gamma | 5.22 | **272 MB** | **3.82** | 479 MB | — |
+| census_income, 45.2k rows, 116 params, Binomial | **0.15** | **6 MB** | 0.21 | 11 MB | 254 |
+| house_sales, 21.6k rows, 92 params, Gamma | **0.046** | **9 MB** | 0.055 | 81 MB | 0.776 |
+| house_sales, 21.6k rows, 92 params, Gaussian | 0.034 | 1 MB | **0.012** | 0 MB | 0.336 |
+
+Avenue takes four of the six on speed and five of six on memory. What each dataset is
+there to cover:
 
 - **freMTPL2** is close to a worst case for a backfit: `Area` is a six-band rebanding of
   `Density`, correlated at 0.972. It is the dataset glum builds its own `wide-insurance`
   benchmark from, and it appears at two band widths.
 - **nyc_taxi** is the largest *real* problem here and the only one with credible
   high-cardinality geography — 252 pickup and 261 dropoff zones. **glum wins it
-  outright**, 9 IRLS iterations against 35 sweeps: the expected outcome wherever the
-  sweep count climbs but the table count stays too small for `O(n·T²)` to bite.
+  outright**: the expected outcome wherever the plan is hard enough to need many passes
+  but narrow enough that `O(n·T²)` never bites. Avenue still fits it in 57% of the
+  memory.
 - **census_income** is the only real Binomial, the one link whose coordinate update is a
   Newton step rather than an exact `ln(A/E)` minimiser.
 - **house_sales** is the ordinary case: correlated (`sqft_living` against `grade` at
   0.76) with nothing aliased. Its Gaussian fit goes to glum by 3x for a structural
   reason — under an identity link a single IRLS step *is* the exact answer for a linear
-  model. One iteration against 53 sweeps is not a contest. **For an unpenalised Gaussian
-  model, use a direct solver.**
+  model, and no number of cheaper passes beats being finished after one. **For an
+  unpenalised Gaussian model, use a direct solver.**
 
 `glum[irls-cd]`, its own coordinate-descent solver, is 8–15x slower than Avenue on the
 housing data and is the only engine that fails the agreement check on any of these
 problems. On the 270-parameter design it takes 21 minutes to reach its 500-iteration cap,
-still `1.5e-3` from the answer, against Avenue's 0.52 s — so `bench_fremtpl.py` runs it
+still `1.5e-3` from the answer, against Avenue's 0.41 s — so `bench_fremtpl.py` runs it
 only under `--solver-sweep`. The comparison worth making is against `irls-ls`.
 
 Both new datasets needed complete cases rather than a missing-value level, for the same
@@ -262,25 +274,19 @@ the taxi data, read rho = 1.0000 that way, and glum refuses such a design with
 #### What the two accelerants are worth
 
 Backfitting's rate is set by the canonical correlation between blocks, and the two
-best-understood datasets differ in exactly that:
+best-understood datasets differ in exactly that. On the French motor data one
+near-duplicate pair — `Density`/`Area` at 0.972 — is the *entire* problem for a plain
+sweep, and every other table is irrelevant to the rate. On the housing data the worst pair
+is 0.765 and no single table dominates. So the insurance result is a tail case rather than
+the typical one, and `bench_housing.py --diagnose` runs the drop-one comparison that tells
+the two apart.
 
-| | tail `rho` | sweeps per decade | worst single table |
-|--|-----------:|------------------:|--------------------|
-| freMTPL2 | 0.943 | 39 | drop `Area` **or** `Density`: 254 sweeps → 20 |
-| house_sales | 0.765 | 8.6 | drop `sqft_living`: 79 → 54 |
-
-On the French motor data one near-duplicate pair is the *entire* problem for a plain
-sweep — every other table is irrelevant to the rate. On the housing data no table
-dominates. So the insurance result is a tail case rather than the typical one, and
-`bench_housing.py --diagnose` runs the drop-one sweep that tells the two apart.
-
-SQUAREM takes freMTPL2 from 254 sweeps to 66; the joint pair solve takes it from 66 to
-**15**. Between them they leave little for a modeller to recover by hand: `Area` is a
-table someone reviewing this plan would drop, and `bench_fremtpl.py --drop area` fits it
-both ways — dropping it moves 15 sweeps to 14 and 0.27 s to 0.21 s. Most of that 1.2x is
-the five parameters no longer being carried, and glum gains the same 1.2x from the same
-drop while being indifferent to the redundancy by construction. **The 254-sweep figure is
-what the aliasing costs an unaccelerated backfit, not what it costs this one.**
+**Between them the accelerants leave almost nothing for a modeller to recover by hand.**
+`Area` is a table someone reviewing this plan would drop, and `bench_fremtpl.py
+--drop area` fits it both ways: dropping it now changes the fit by 1.00x on the tutorial
+bands and 1.01x on the wide ones, against 1.19x and 1.14x for glum, which is indifferent
+to the redundancy by construction. Carrying a redundant table used to be the dominant cost
+of this design; solved as one block, it costs nothing worth measuring.
 
 ### At twenty million rows
 
@@ -290,9 +296,9 @@ with an exposure offset, one engine per process because the two representations 
 in memory together.
 
 | 20M rows, 501 parameters | Avenue | glum `irls-ls` | per iteration |
-|---|-------:|---------------:|--------------:|
-| 100 tables of 6 levels | **39.3 s** (4 sweeps, 10.8 GB) | 865.9 s (5, 21.1 GB) | 9.8 s vs 173 s |
-| 5 tables of 101 levels | **3.1 s** (4 sweeps, 1.2 GB) | 16.5 s (8, 3.6 GB) | 0.8 s vs 2.1 s |
+|---|---:|---:|---:|
+| 100 tables of 6 levels | **39.3 s**, 10.8 GB | 865.9 s, 21.1 GB | 9.8 s vs 173 s |
+| 5 tables of 101 levels | **3.1 s**, 1.2 GB | 16.5 s, 3.6 GB | 0.8 s vs 2.1 s |
 
 Fitted means agree to `5.6e-09` and `3.2e-09`.
 
@@ -325,34 +331,35 @@ The factors above are independent, so the shape that produces the largest advant
 also the one most exposed to correlation. Loading every factor on a shared latent driver
 (`bench_large.py --correlation`), at 1M rows and 100 tables:
 
-| pairwise `rho` | `table_conditioning` | sweeps | Avenue | glum | |
-|---:|---:|---:|---:|---:|--|
-| 0.00 | 1.8 | 5 | **4.3 s** | 35.6 s | 8.2x faster |
-| 0.10 | 10.1 | 121 | 29.6 s | 31.2 s | parity |
-| 0.20 | 19.2 | 494 | 95.8 s | 31.2 s | 3.2x slower |
-| 0.30 | 28.4 | 1,124 | 240.6 s | 30.9 s | 7.8x slower |
+| pairwise `rho` | `table_conditioning` | Avenue | glum | |
+|---:|---:|---:|---:|--|
+| 0.00 | 1.8 | **4.3 s** | 35.6 s | 8.2x faster |
+| 0.10 | 10.1 | 29.6 s | 31.2 s | parity |
+| 0.20 | 19.2 | 95.8 s | 31.2 s | 3.2x slower |
+| 0.30 | 28.4 | 240.6 s | 30.9 s | 7.8x slower |
 
-Avenue is 8.2x faster **per iteration** in every one of those rows — 0.9 s against 7.1 s.
-The entire swing is the sweep count, because a factorisation is indifferent to
-conditioning and glum sits at five iterations throughout. Hence the rule worth
-remembering: **this fitter wins while the plan needs fewer than about forty sweeps.**
+Avenue does the same work 8.2x faster in every one of those rows — 0.9 s a pass against
+7.1 s. The entire swing is how many passes it needs, because a factorisation is
+indifferent to conditioning and glum's cost is flat throughout. Hence the rule worth
+remembering, and the reason the measure is reported: **this fitter wins while
+`table_conditioning` stays under about 10**, which is where the two engines cross above.
 
 #### A pairwise measure cannot see it
 
-A pairwise correlation of 0.10 already costs 121 sweeps — two orders of magnitude below
-the `NEAR_ALIAS` threshold, so the pair detector sees nothing and the joint solve never
-fires. That is not a badly chosen threshold. **The count of correlated tables matters more
-than the correlation itself.** Holding the pairwise figure at 0.28 and varying only how
-many tables share the driver, at 200k rows:
+A pairwise correlation of 0.10 already puts the fit at parity with glum — two orders of
+magnitude below the `NEAR_ALIAS` threshold, so the pair detector sees nothing and the
+joint solve never fires. That is not a badly chosen threshold. **The count of correlated
+tables matters more than the correlation itself.** Holding the pairwise figure at 0.28 and
+varying only how many tables share the driver, at 200k rows:
 
-| tables | worst pair | `table_conditioning` | sweeps to converge |
-|-------:|-----------:|---------------------:|-------------------:|
-| 5 | 0.280 | 2.11 | 14 |
-| 25 | 0.282 | 7.65 | ~101 |
-| 50 | 0.284 | 14.57 | 248 |
-| 100 | 0.284 | 28.45 | 1,119 |
+| tables | worst pair | `table_conditioning` | relative cost |
+|-------:|-----------:|---------------------:|--------------:|
+| 5 | 0.280 | 2.11 | 1x |
+| 25 | 0.282 | 7.65 | 7x |
+| 50 | 0.284 | 14.57 | 18x |
+| 100 | 0.284 | 28.45 | 80x |
 
-The pairwise column is constant; the sweep count moves eighty-fold. What governs the rate
+The pairwise column is constant; the cost moves eighty-fold. What governs the rate
 is the canonical correlation between one block and the **span of all the others**, and a
 hundred tables on a common latent cover that shared direction almost exactly while every
 pair stays modest.
@@ -598,7 +605,8 @@ the optimum the deviance cannot distinguish a step that halves the remaining err
 one that doubles it. Requiring the score not to worsen costs nothing, because that score
 is already being computed. On 50 correlated tables the unguarded accelerator turned a
 248-sweep fit into one still unconverged after 5,000; guarded, it finishes in 253 and
-still earns its keep where a single mode dominates (`house_sales`, 79 sweeps to 53).
+still earns its keep where a single mode dominates — 1.24x on `house_sales`, which
+`bench_housing.py` fits both ways.
 
 **`converged` is the flag to check, and it means what it says.** Near-aliased tables are
 the usual cause of a false; a `gradient_history` that falls steeply and then crawls is

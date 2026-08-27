@@ -216,7 +216,9 @@ adds penalties that encourage the sparse, shallow trees this workflow wants.
 
 All benchmarks are release builds, and every one of them is **gated on the engines
 agreeing about the fitted means** before any timing is reported — a fast wrong answer
-fails the benchmark. Times are fit time only, fastest of three runs. **glum** is the
+fails the benchmark. Times are fit time only and the fastest of repeated runs; the
+synthetic table is the best of three independent runs of five repeats each, because a
+single run varies by up to 10%. **glum** is the
 speed comparison; **statsmodels** is the correctness oracle. Absolute numbers are
 machine-dependent; the ratios are the point.
 
@@ -230,12 +232,12 @@ Five tables, 81 parameters, factors drawn independently.
 
 | | Avenue | glum | statsmodels |
 |---|-------:|-----:|------------:|
-| Poisson, 1M rows | **0.096 s** | 0.424 s | — |
-| Gamma, 1M rows | **0.114 s** | 0.410 s | — |
-| Tweedie(1.5), 1M rows | **0.213 s** | 0.287 s | — |
-| Gaussian, 1M rows | 0.088 s | **0.071 s** | — |
-| Poisson, 100k rows | **0.016 s** | 0.035 s | 1.523 s |
-| Poisson, 5M rows | **0.709 s** | 2.455 s | — |
+| Poisson, 1M rows | **0.100 s** | 0.416 s | — |
+| Gamma, 1M rows | **0.114 s** | 0.408 s | — |
+| Tweedie(1.5), 1M rows | **0.182 s** | 0.286 s | — |
+| Gaussian, 1M rows | 0.079 s | **0.074 s** | — |
+| Poisson, 100k rows | **0.016 s** | 0.034 s | 1.560 s |
+| Poisson, 5M rows | **0.695 s** | 2.518 s | — |
 
 Peak memory is measured with one engine per process, so each figure is that whole
 process's high-water mark — data, design matrix, solver and interpreter together.
@@ -264,31 +266,36 @@ process is the pandas source frame both engines are built from, not either engin
 Five public datasets across four families, all with the correlated factors that synthetic
 data does not have.
 
-| | Avenue | glum `irls-ls` |
-|---|-------:|---------------:|
-| freMTPL2, 678k rows, 79 params, Poisson | **0.27 s** (15 sweeps) | 0.46 s (5 iter) |
-| freMTPL2, 678k rows, 270 params, Poisson | **0.52 s** (25) | 1.61 s (18) |
-| nyc_taxi, 2.75M rows, 577 params, Gamma | 5.36 s (35) | **3.77 s** (9) |
-| census_income, 45.2k rows, 116 params, Binomial | **0.16 s** (36) | 0.20 s (21) |
-| house_sales, 21.6k rows, 92 params, Gamma | **0.052 s** (50) | 0.057 s (6) |
-| house_sales, 21.6k rows, 92 params, Gaussian | 0.039 s (53) | **0.013 s** (1) |
+| | Avenue fit | Avenue peak | glum fit | glum peak |
+|---|---:|---:|---:|---:|
+| freMTPL2, 678k rows, 79 params, Poisson | **0.26 s** | **87 MB** | 0.49 s | 165 MB |
+| freMTPL2, 678k rows, 270 params, Poisson | **0.41 s** | **87 MB** | 1.64 s | 119 MB |
+| nyc_taxi, 2.75M rows, 577 params, Gamma | 5.22 s | **272 MB** | **3.82 s** | 479 MB |
+| census_income, 45.2k rows, 116 params, Binomial | **0.15 s** | **6 MB** | 0.21 s | 11 MB |
+| house_sales, 21.6k rows, 92 params, Gamma | **0.046 s** | **9 MB** | 0.055 s | 81 MB |
+| house_sales, 21.6k rows, 92 params, Gaussian | 0.034 s | 1 MB | **0.012 s** | 0 MB |
 
-Avenue takes four of the six rows. The two it loses are informative:
+Peak here is what each engine adds inside one process, which is why the figures are far
+below the whole-process numbers above; both are measured, they answer different questions.
+Avenue takes four of the six rows on speed and five of six on memory. The two speed losses
+are informative:
 
 - **nyc_taxi** is the largest real problem here and the only one with high-cardinality
-  geography (252 pickup and 261 dropoff zones). glum wins it on 9 IRLS iterations against
-  35 sweeps — the expected outcome wherever the sweep count climbs but the table count is
-  too small for `O(n·T²)` to bite.
+  geography (252 pickup and 261 dropoff zones). It is the case where a factorisation wins:
+  the plan is hard enough that Avenue needs many passes, and narrow enough that `O(n·T²)`
+  never bites. It still fits in 57% of glum's memory.
 - **Gaussian house_sales** goes to glum by 3x for a structural reason: under an identity
-  link a single IRLS step *is* the exact answer for a linear model. One iteration against
-  53 sweeps is not a contest. **If you are fitting an unpenalised Gaussian model, use a
-  direct solver.**
+  link a single IRLS step *is* the exact answer for a linear model, and no number of
+  cheaper passes beats being finished after one. **If you are fitting an unpenalised
+  Gaussian model, use a direct solver.**
 
 The French motor data is deliberately a hard case: `Area` is a six-band rebanding of
-`Density`, correlated at 0.972. Avenue detects that pair and solves it as one block, which
-is worth 3.4x here and 9.7x on the census data. It is close to free when there is nothing
-to find — on independent synthetic factors, enabling detection costs between −0.3% and
-+4.9%, inside run-to-run noise.
+`Density`, correlated at 0.972. Avenue detects that pair and solves it as one block —
+worth 3.9x here and 10.3x on the census data — and
+`scripts/bench_fremtpl.py --drop area` shows how well: dropping the redundant table
+outright — what a modeller who noticed it would do — now changes the fit time by 1.00x on
+the tutorial bands and 1.01x on the wide ones. The redundancy costs essentially nothing
+once the pair is solved together.
 
 ### At twenty million rows
 
@@ -296,10 +303,10 @@ Every case above finishes in under two seconds. A single fit at a size where the
 numbers stand on their own: 20M rows, 501 parameters, Poisson with an exposure offset, one
 engine per process because the two representations do not fit in memory together.
 
-| 20M rows, 501 parameters | Avenue | glum `irls-ls` | per iteration |
-|---|-------:|---------------:|--------------:|
-| 100 tables of 6 levels | **39.3 s** (4 sweeps, 10.8 GB) | 865.9 s (5 iter, 21.1 GB) | 9.8 s vs 173 s |
-| 5 tables of 101 levels | **3.1 s** (4 sweeps, 1.2 GB) | 16.5 s (8 iter, 3.6 GB) | 0.8 s vs 2.1 s |
+| 20M rows, 501 parameters | Avenue | glum `irls-ls` |
+|---|---:|---:|
+| 100 tables of 6 levels | **39.3 s**, 10.8 GB | 865.9 s, 21.1 GB |
+| 5 tables of 101 levels | **3.1 s**, 1.2 GB | 16.5 s, 3.6 GB |
 
 Fitted means agree to 5.6e-09 and 3.2e-09. Those two rows carry the *same* 501 parameters
 over the same data and differ only in how the parameters are laid out, which isolates what
@@ -327,25 +334,26 @@ solver.
 much information the tables share, and enough shared structure will make the sweep count
 dominate everything else. Loading 100 tables on a common latent driver, at 1M rows:
 
-| pairwise correlation | `table_conditioning` | sweeps | Avenue | glum | |
-|---:|---:|---:|---:|---:|--|
-| 0.00 | 1.8 | 5 | **4.3 s** | 35.6 s | 8.2x faster |
-| 0.10 | 10.1 | 121 | 29.6 s | 31.2 s | parity |
-| 0.20 | 19.2 | 494 | 95.8 s | 31.2 s | 3.2x slower |
-| 0.30 | 28.4 | 1,124 | 240.6 s | 30.9 s | 7.8x slower |
+| pairwise correlation | `table_conditioning` | Avenue | glum | |
+|---:|---:|---:|---:|--|
+| 0.00 | 1.8 | **4.3 s** | 35.6 s | 8.2x faster |
+| 0.10 | 10.1 | 29.6 s | 31.2 s | parity |
+| 0.20 | 19.2 | 95.8 s | 31.2 s | 3.2x slower |
+| 0.30 | 28.4 | 240.6 s | 30.9 s | 7.8x slower |
 
-Avenue is 8.2x faster *per iteration* in every one of those rows. The entire swing is the
-sweep count, because a factorisation is indifferent to conditioning and glum sits at five
-iterations throughout. Hence the rule worth remembering: **this fitter wins while the plan
-needs fewer than about forty sweeps.**
+Avenue does the same work 8.2x faster in every one of those rows; the entire swing is how
+many passes it needs, because a factorisation is indifferent to conditioning and glum's
+cost is flat throughout. Hence the rule worth remembering, and the reason the measure is
+reported: **this fitter wins while `table_conditioning` stays under about 10**, which is
+exactly where the two engines cross above.
 
-What decides that is *not* any pairwise correlation. At a fixed pairwise 0.28, five tables
-converge in 14 sweeps and a hundred take 1,124. What matters is how strongly the tables
-share one direction across all of them at once, and Avenue measures it and reports it as
-`table_conditioning`: 1.0 for orthogonal tables, rising to the table count when they all
-carry the same information. **Above roughly 10, expect hundreds of sweeps; above 25,
-thousands.** It costs nothing to compute and is available on the diagnostics before you
-commit to a long fit.
+What decides that is *not* any pairwise correlation. Holding the pairwise figure at 0.28
+and varying only how many tables share the driver, a hundred tables cost eighty times what
+five do. What matters is how strongly the tables share one direction across all of them at
+once, and Avenue measures it and reports it as `table_conditioning`: 1.0 for orthogonal
+tables, rising to the table count when they all carry the same information. **Above
+roughly 10 the fit slows sharply; above 25 this is the wrong tool.** It costs nothing to
+compute and is available on the diagnostics before you commit to a long fit.
 
 In practice this appears to be a synthetic pathology. Every real dataset in the suite:
 
