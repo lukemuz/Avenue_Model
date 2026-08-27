@@ -10,4 +10,4 @@ pub mod redundancy;
 
 pub use fitting::{fit_glm, fit_glm_with_diagnostics, GLMDiagnostics, GLMOptions, Normalization};
 pub use inference::{solve_spd, GLMInference, VariateTerms};
-pub use redundancy::{table_correlations, TablePair, NEAR_ALIAS};
+pub use redundancy::{collective_strength, table_correlations, TablePair, NEAR_ALIAS};

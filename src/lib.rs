@@ -452,6 +452,15 @@ struct PyGLMDiagnostics {
     /// as (table_index, row_index) pairs.
     #[pyo3(get)]
     unfitted_rows: Vec<(usize, usize)>,
+    /// How strongly the tables share a single common direction: 1.0 when they are
+    /// orthogonal, up to the number of tables when they all carry the same
+    /// information. This is what sets the sweep count on a correlated plan, and no
+    /// pairwise correlation substitutes for it - a hundred tables pairwise-correlated
+    /// at only 0.28 score 28.5 here and need about a thousand sweeps. Above roughly 10
+    /// expect hundreds of sweeps; above 25, thousands. None when
+    /// solve_aliased_pairs_jointly is off.
+    #[pyo3(get)]
+    table_conditioning: Option<f64>,
     /// Extrapolation steps the accelerator accepted. A large count next to a small
     /// `iterations` is SQUAREM earning its keep; zero means the fit converged
     /// before it was needed, or that acceleration is off.
@@ -531,10 +540,14 @@ impl PyGLMDiagnostics {
             ),
             None => String::new(),
         };
+        let conditioning = match self.table_conditioning {
+            Some(c) => format!(", table_conditioning={:.1}", c),
+            None => String::new(),
+        };
         format!(
-            "GLMDiagnostics(iterations={}, converged={}, max_gradient={:.2e}, deviance={:.6}, null_deviance={:.6}, pseudo_r2={:.4}{})",
+            "GLMDiagnostics(iterations={}, converged={}, max_gradient={:.2e}, deviance={:.6}, null_deviance={:.6}, pseudo_r2={:.4}{}{})",
             self.iterations, self.converged, self.max_gradient, self.deviance,
-            self.null_deviance, self.pseudo_r2, inference
+            self.null_deviance, self.pseudo_r2, conditioning, inference
         )
     }
 }
@@ -553,6 +566,7 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
             null_deviance: d.null_deviance,
             deviance_history: d.deviance_history,
             unfitted_rows: d.unfitted_rows,
+            table_conditioning: d.table_conditioning,
             accelerated_steps: d.accelerated_steps,
             pseudo_r2,
             standard_errors: inf.as_ref().map(|i| i.standard_errors.clone()),

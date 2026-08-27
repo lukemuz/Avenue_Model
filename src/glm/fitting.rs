@@ -4,7 +4,7 @@ use crate::rating_model::{variate_basis_params, RatingModel, RatingTable, TableS
 use super::inference::{compute_inference, solve_spd, GLMInference};
 use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
-use super::redundancy::{table_correlations, TablePair};
+use super::redundancy::{collective_strength, table_correlations, TablePair};
 
 /// How the fitted tables are anchored once the fit has converged.
 ///
@@ -125,6 +125,17 @@ pub struct GLMDiagnostics {
     /// Table rows that received no exposure and so kept their starting factor,
     /// as `(table_index, row_index)`.
     pub unfitted_rows: Vec<(usize, usize)>,
+    /// How strongly the tables share a single common direction: 1.0 when they are
+    /// orthogonal, rising to the number of tables when they all carry the same
+    /// information.
+    ///
+    /// This is what sets the sweep count on a correlated plan, and no pairwise
+    /// correlation substitutes for it - a hundred tables pairwise-correlated at only
+    /// 0.28 score 28.5 here and need about a thousand sweeps. Above roughly 10 expect
+    /// hundreds of sweeps; above 25, thousands. `None` when
+    /// [`GLMOptions::solve_aliased_pairs_jointly`] is off, since the pairwise
+    /// correlations it is built from are not computed.
+    pub table_conditioning: Option<f64>,
     /// Extrapolation steps that were accepted, out of the cycles attempted.
     ///
     /// Zero on a fit that converges before the accelerator gets a chance, and zero when
@@ -410,7 +421,6 @@ struct Progress {
     converged: bool,
     max_gradient: f64,
     deviance: f64,
-    best_gradient: f64,
     sweeps_without_progress: usize,
     deviance_history: Vec<f64>,
     gradient_history: Vec<f64>,
@@ -441,24 +451,39 @@ impl Progress {
 
         // A fit can run out of reachable precision above the tolerance - two near-aliased
         // tables trading a constant back and forth, or a threshold set below the noise
-        // floor of the sums involved. Continuing cannot help, so stop; but the test is on
-        // the score itself, not on the deviance. Stalling the deviance means only that
-        // the parameters are within about sqrt(eps) of the optimum, which is exactly the
-        // weak signal this criterion exists to replace.
-        if gradient < self.best_gradient * (1.0 - STALL_IMPROVEMENT) {
-            self.best_gradient = gradient;
-            self.sweeps_without_progress = 0;
-        } else {
-            self.sweeps_without_progress += 1;
-            if self.sweeps_without_progress >= STALL_SWEEPS {
-                if options.verbose {
-                    println!(
-                        "Stopping after {} iterations: max |score| = {:.3e} has not \
-                         improved in {} sweeps and is above the tolerance of {:.1e}",
-                        self.iterations, gradient, STALL_SWEEPS, options.tolerance
-                    );
+        // floor of the sums involved. Continuing cannot help, so stop.
+        //
+        // The test is on the deviance rather than on the score, because the score
+        // *oscillates*: the error rotates as it decays, so the score can climb for many
+        // sweeps while the fit improves throughout. On a hundred correlated tables it
+        // bottoms at 7.2e-04 on sweep 34, is climbing again by sweep 46, and reaches the
+        // tolerance on sweep 1119 - so any patience window shorter than that period
+        // abandons a converging fit, and the period is a property of the data rather
+        // than something that can be tuned for. Judging progress on the deviance has no
+        // period to be shorter than.
+        //
+        // Convergence is still decided by the score, above; the deviance is far too weak
+        // for that, being quadratic in the parameter error. This asks only whether there
+        // is anything left to gain, and for that the two regimes are nine orders apart:
+        // on the fit above the smallest real per-sweep improvement is 4.8e-06, while a
+        // fit sitting on its rounding floor moves by about 5e-15.
+        if let Some(&previous) = self.deviance_history.iter().rev().nth(1) {
+            let scale = previous.abs().max(f64::MIN_POSITIVE);
+            if (previous - deviance) / scale < DEVIANCE_STALL {
+                self.sweeps_without_progress += 1;
+                if self.sweeps_without_progress >= STALL_SWEEPS {
+                    if options.verbose {
+                        println!(
+                            "Stopping after {} iterations: the deviance has not improved \
+                             in {} sweeps and max |score| = {:.3e} is above the tolerance \
+                             of {:.1e}",
+                            self.iterations, STALL_SWEEPS, gradient, options.tolerance
+                        );
+                    }
+                    return Status::Stop;
                 }
-                return Status::Stop;
+            } else {
+                self.sweeps_without_progress = 0;
             }
         }
 
@@ -625,7 +650,30 @@ pub fn fit_glm_with_diagnostics(
     };
     let joint_pairs = choose_joint_pairs(&correlations, &table_shapes);
 
+    // Free, given the correlations: it is an eigenvalue of a matrix the size of the
+    // table count. Reported whether or not any pair crossed the joint-solve threshold,
+    // because the case it warns about is precisely the one where none of them does - a
+    // plan whose tables are individually only mildly correlated but collectively cover
+    // one shared direction converges at a crawl with nothing for the pair solve to find.
+    let table_conditioning = if options.solve_aliased_pairs_jointly {
+        Some(collective_strength(&correlations))
+    } else {
+        None
+    };
+
     if options.verbose {
+        if let Some(strength) = table_conditioning {
+            println!(
+                "Tables share a common direction at {:.2} of a possible {}{}",
+                strength,
+                table_shapes.iter().filter(|k| **k > 1).count(),
+                if strength > 10.0 {
+                    " - expect this fit to need hundreds of sweeps"
+                } else {
+                    ""
+                }
+            );
+        }
         for pair in correlations.iter().filter(|p| p.is_near_aliased()) {
             println!(
                 "Tables {} and {} share {:.1}% of their information (first canonical \
@@ -657,7 +705,6 @@ pub fn fit_glm_with_diagnostics(
         converged: false,
         max_gradient: f64::INFINITY,
         deviance: f64::INFINITY,
-        best_gradient: f64::INFINITY,
         sweeps_without_progress: 0,
         deviance_history: Vec::with_capacity(options.max_iterations),
         gradient_history: Vec::with_capacity(options.max_iterations),
@@ -696,9 +743,10 @@ pub fn fit_glm_with_diagnostics(
         flatten_factors(&factors, &mut theta1);
         ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
         let deviance2 = ctx.deviance(&means);
-        if let Status::Stop =
-            progress.record(deviance2, ctx.max_score(&means, &mut score_scratch), &options)
-        {
+        // What plain iteration achieved. An extrapolated jump has to beat this on the
+        // same quantity the fit converges on, or it is not worth taking.
+        let score2 = ctx.max_score(&means, &mut score_scratch);
+        if let Status::Stop = progress.record(deviance2, score2, &options) {
             break 'fitting;
         }
         flatten_factors(&factors, &mut theta2);
@@ -747,13 +795,20 @@ pub fn fit_glm_with_diagnostics(
         // A sweep from the extrapolated point, both to stabilise it and because an
         // accepted jump is only worth keeping if the map still improves on it.
         //
-        // For the log-link families the check below can only fail on rounding: their
-        // update is an exact coordinate minimiser, so the deviance cannot rise from a
-        // point already known to be good enough. It is a real guard for the logit link,
-        // whose update is a Newton step and can overshoot.
+        // **Judged on the score, not the deviance.** Deviance is quadratic in the
+        // parameter error near the optimum, so once the fit is close it cannot tell a
+        // jump that halves the remaining error from one that doubles it - the same
+        // reason the convergence test is on the score. Guarding here on deviance let
+        // SQUAREM accept steps that raised the score, which both slowed the fit and
+        // made the score sequence non-monotone, tripping the stall rule below. On 50
+        // correlated tables that turned a 248-sweep fit into one that had not converged
+        // after 5,000.
+        //
+        // `score3` is computed either way, to hand to `record` - so this costs nothing.
         ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
         let deviance3 = ctx.deviance(&means);
-        if !(deviance3.is_finite() && deviance3 <= accept_at) {
+        let score3 = ctx.max_score(&means, &mut score_scratch);
+        if !(deviance3.is_finite() && deviance3 <= accept_at) || !(score3 <= score2) {
             unflatten_factors(&theta2, &mut factors);
             ctx.refresh(&factors, &mut eta, &mut means);
             consecutive_failures = (consecutive_failures + 1).min(SQUAREM_MAX_BACKOFF);
@@ -763,11 +818,7 @@ pub fn fit_glm_with_diagnostics(
 
         consecutive_failures = 0;
         accelerated_steps += 1;
-        if let Status::Stop = progress.record(
-            deviance3,
-            ctx.max_score(&means, &mut score_scratch),
-            &options,
-        ) {
+        if let Status::Stop = progress.record(deviance3, score3, &options) {
             break 'fitting;
         }
     }
@@ -854,6 +905,7 @@ pub fn fit_glm_with_diagnostics(
         null_deviance,
         deviance_history,
         unfitted_rows,
+        table_conditioning,
         accelerated_steps,
         inference,
         inference_error,
@@ -1693,8 +1745,21 @@ fn score_row(
     s.abs()
 }
 
-/// Relative improvement in the score that counts as progress.
-const STALL_IMPROVEMENT: f64 = 1e-3;
+/// Relative improvement in the deviance, per sweep, below which a sweep counts as having
+/// made no progress.
+///
+/// Set at the deviance's own rounding floor, which is where it stops carrying any
+/// information - a fit sitting on that floor moves by about 5e-15 relative, in either
+/// direction. It cannot be set any higher: the deviance is *quadratic* in the parameter
+/// error, so on the final approach to a tight score tolerance its improvements are
+/// legitimately tiny, and a threshold of 1e-12 stops fits that are still converging
+/// perfectly well (it cut one off at `max|score| = 4.4e-09` against a 1e-9 tolerance).
+///
+/// The consequence is deliberate: past a score of roughly 1e-8 the deviance can no
+/// longer certify that anything is happening, so a fit that truly stalls beyond that
+/// point runs to `max_iterations` instead of stopping early. Wasting sweeps is a much
+/// smaller failure than abandoning a converging fit and returning the iterate.
+const DEVIANCE_STALL: f64 = 1e-15;
 
 /// Sweeps without progress before giving up. Backfitting can converge genuinely
 /// slowly, so this has to be loose enough not to cut off a fit that is still working.
@@ -1845,10 +1910,78 @@ fn max_abs_score(
 
 /// Deviance of the best intercept-only fit, used as the reference for `pseudo_r2`.
 fn null_deviance(loss_fn: &LossFunction, target: &[f64], weights: &[f64], offset: &[f64]) -> f64 {
+    let beta = null_intercept(loss_fn, target, weights, offset);
+    let means: Vec<f64> = offset.iter().map(|o| loss_fn.inverse_link(beta + o)).collect();
+    loss_fn.total_deviance(target, &means, weights)
+}
+
+/// Iteration cap for the links that have no closed form. Reached only by a fit that is
+/// not converging at all; the ordinary exit is the noise-floor test below.
+const MAX_NULL_ITERATIONS: usize = 50;
+
+/// The intercept-only fit the null deviance is measured at: the fitter's own coordinate
+/// update applied to a single global level.
+///
+/// **Under a log link this is one pass, not an iteration.** Write `A` for
+/// `sum a·e^((1-p)·o)·y` and `B` for `sum a·e^((2-p)·o)`. With `mu = e^(beta + o)` the
+/// update from any starting `beta` is
+///
+/// ```text
+/// step(beta) = ln( e^((1-p)·beta)·A / e^((2-p)·beta)·B ) = ln(A / B) - beta
+/// ```
+///
+/// so `beta + step(beta) = ln(A / B)` regardless of where it started. The first pass
+/// lands on the answer and every later one only re-derives it.
+///
+/// This used to iterate to a fixed point instead, and the cost was not small: the exit
+/// test compared a step that jitters at the rounding noise of an `n`-term sequential sum
+/// (~1e-13 over 678k rows) against a threshold of `1e-14`, so it usually ran its full
+/// 200 passes. On freMTPL2 that was ~490 ms of a ~750 ms fit — twice what the sweeps
+/// themselves cost — to compute a statistic that is only reported.
+fn null_intercept(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    offset: &[f64],
+) -> f64 {
+    let eta_limit = loss_fn.eta_limit();
+
+    if let Some(p) = loss_fn.log_link_variance_power() {
+        let mut numer = 0.0;
+        let mut denom = 0.0;
+        for i in 0..target.len() {
+            let a = weights[i];
+            if a == 0.0 {
+                continue;
+            }
+            // `beta = 0`, so this is exactly the first pass of the old loop.
+            let mu = loss_fn.inverse_link(offset[i]);
+            let base = pow_special(mu, 1.0 - p);
+            numer += a * base * target[i];
+            denom += a * base * mu;
+        }
+        if !(denom > 0.0) || !denom.is_finite() {
+            return 0.0;
+        }
+        if !(numer > 0.0) {
+            // Nothing positive to explain. The likelihood drives the mean to zero and
+            // the link's bound is as far down as the linear predictor goes.
+            return -eta_limit;
+        }
+        let beta = (numer / denom).ln();
+        if !beta.is_finite() {
+            // An overflowed or underflowed ratio says nothing about where the intercept
+            // belongs. The old loop stopped on the same condition and kept its start.
+            return 0.0;
+        }
+        return beta.clamp(-eta_limit, eta_limit);
+    }
+
+    // Identity and logit links have no such collapse, so iterate. The identity link is
+    // exact in one step; the logit takes a handful.
     let mut beta = 0.0f64;
-    let power = loss_fn.log_link_variance_power();
-    // Same coordinate update as the fitter, applied to a single global level.
-    for _ in 0..200 {
+    let mut last_delta = f64::INFINITY;
+    for _ in 0..MAX_NULL_ITERATIONS {
         let mut numer = 0.0;
         let mut denom = 0.0;
         for i in 0..target.len() {
@@ -1857,46 +1990,29 @@ fn null_deviance(loss_fn: &LossFunction, target: &[f64], weights: &[f64], offset
                 continue;
             }
             let mu = loss_fn.inverse_link(beta + offset[i]);
-            match power {
-                Some(p) => {
-                    let base = pow_special(mu, 1.0 - p);
-                    numer += a * base * target[i];
-                    denom += a * base * mu;
-                }
-                None => {
-                    numer += a * loss_fn.weighted_link_residual(target[i], mu);
-                    denom += a * loss_fn.irls_weight(mu);
-                }
-            }
+            numer += a * loss_fn.weighted_link_residual(target[i], mu);
+            denom += a * loss_fn.irls_weight(mu);
         }
         if !(denom > 0.0) || !denom.is_finite() {
             break;
         }
-        let step = match power {
-            Some(_) => {
-                if numer > 0.0 {
-                    (numer / denom).ln()
-                } else {
-                    -MAX_STEP
-                }
-            }
-            None => numer / denom,
-        };
+        let step = numer / denom;
         if !step.is_finite() {
             break;
         }
-        let step_limit = loss_fn.step_limit();
-        let eta_limit = loss_fn.eta_limit();
-        let next = (beta + step.clamp(-step_limit, step_limit)).clamp(-eta_limit, eta_limit);
-        if (next - beta).abs() < 1e-14 * beta.abs().max(1.0) {
-            beta = next;
+        let next = (beta + step.clamp(-loss_fn.step_limit(), loss_fn.step_limit()))
+            .clamp(-eta_limit, eta_limit);
+        let delta = (next - beta).abs();
+        beta = next;
+        // Converged, or as close as this many summands can resolve: once the step stops
+        // shrinking it is rounding noise, and further passes only re-measure it.
+        if delta < 1e-14 * beta.abs().max(1.0) || delta >= last_delta {
             break;
         }
-        beta = next;
+        last_delta = delta;
     }
 
-    let means: Vec<f64> = offset.iter().map(|o| loss_fn.inverse_link(beta + o)).collect();
-    loss_fn.total_deviance(target, &means, weights)
+    beta
 }
 
 /// Writes fitted factors back into a table's DataFrame, preserving its metadata.
@@ -2058,6 +2174,152 @@ fn validate_inputs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fresh_progress(capacity: usize) -> Progress {
+        Progress {
+            iterations: 0,
+            converged: false,
+            max_gradient: f64::INFINITY,
+            deviance: f64::INFINITY,
+            sweeps_without_progress: 0,
+            deviance_history: Vec::with_capacity(capacity),
+            gradient_history: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// The defect the give-up rule was rewritten for.
+    ///
+    /// On a badly conditioned fit the error rotates as it decays, so `max|score|` rises
+    /// and falls with a period of tens of sweeps while the fit improves throughout. A
+    /// rule that asks the score whether progress is being made abandons that fit - on a
+    /// hundred correlated tables it quit at sweep 42 and returned a model 95% wrong,
+    /// where the same fit reaches the tolerance at sweep 1119. The deviance cannot
+    /// behave that way, because every coordinate update is an exact minimiser along its
+    /// own coordinate.
+    #[test]
+    fn an_oscillating_score_does_not_abandon_a_converging_fit() {
+        let options = GLMOptions {
+            tolerance: 1e-12,
+            max_iterations: 10_000,
+            ..Default::default()
+        };
+        let mut progress = fresh_progress(300);
+
+        let mut deviance = 1_000.0f64;
+        for sweep in 0..300 {
+            // Falling every sweep, but slowly - this is what a badly conditioned fit
+            // that is nonetheless converging looks like.
+            deviance -= deviance * 1e-7;
+            // Trending down over a period far longer than STALL_SWEEPS, exactly as
+            // measured on the correlated case.
+            let phase = (sweep as f64) / 5.0;
+            let score = 1e-3 * (1.0 - sweep as f64 / 600.0) * (1.5 + phase.sin());
+            assert!(
+                matches!(progress.record(deviance, score, &options), Status::Continue),
+                "gave up at sweep {} with the deviance still falling",
+                sweep
+            );
+        }
+    }
+
+    /// The case the rule does exist for: nothing further is reachable, so stop.
+    #[test]
+    fn a_deviance_at_its_rounding_floor_ends_the_fit() {
+        let options = GLMOptions {
+            tolerance: 1e-12,
+            max_iterations: 10_000,
+            ..Default::default()
+        };
+        let mut progress = fresh_progress(64);
+
+        let mut deviance = 1_000.0f64;
+        let mut stopped_at = None;
+        for sweep in 0..(4 * STALL_SWEEPS) {
+            // Moving only by rounding, which carries no information either way.
+            deviance -= deviance * 1e-16;
+            if let Status::Stop = progress.record(deviance, 1e-6, &options) {
+                stopped_at = Some(sweep);
+                break;
+            }
+        }
+        let stopped_at = stopped_at.expect("a fit on its floor has to stop");
+        assert!(
+            stopped_at <= STALL_SWEEPS + 2,
+            "took {} sweeps to notice a fit that cannot move",
+            stopped_at
+        );
+        assert!(!progress.converged, "stopping short is not convergence");
+    }
+
+    /// The log-link null intercept is the one that reproduces the weighted total, and
+    /// it is reached in a single pass whatever the offsets are.
+    #[test]
+    fn poisson_null_intercept_matches_the_closed_form() {
+        let target: [f64; 6] = [0.0, 3.0, 1.0, 0.0, 7.0, 2.0];
+        let weights: [f64; 6] = [1.0, 2.0, 1.0, 0.5, 1.0, 3.0];
+        let offset: [f64; 6] = [-0.4, 0.9, 0.0, 1.7, -2.1, 0.3];
+
+        // Poisson has variance power 1, so the weights on both sums are the prior
+        // weights alone: beta = ln( sum a·y / sum a·e^o ).
+        let a_y: f64 = target.iter().zip(weights).map(|(y, a)| a * y).sum();
+        let a_e: f64 = offset.iter().zip(weights).map(|(o, a)| a * o.exp()).sum();
+
+        let beta = null_intercept(&LossFunction::Poisson, &target, &weights, &offset);
+        assert!(
+            (beta - (a_y / a_e).ln()).abs() < 1e-12,
+            "beta {beta} is not ln(A/E) = {}",
+            (a_y / a_e).ln()
+        );
+    }
+
+    /// The claim the one-pass form rests on: the update's fixed point does not depend on
+    /// where it starts, so re-applying it cannot move the answer. Checked on Gamma,
+    /// whose variance power puts a non-trivial weight on both sums.
+    #[test]
+    fn log_link_null_intercept_is_a_fixed_point() {
+        let target = [2.0, 11.0, 0.5, 4.0, 30.0];
+        let weights = [1.0, 1.0, 2.0, 1.0, 0.5];
+        let offset = [0.2, -1.1, 0.0, 3.0, 0.7];
+        let loss = LossFunction::Gamma;
+        let p = loss.log_link_variance_power().expect("gamma has a variance power");
+
+        let beta = null_intercept(&loss, &target, &weights, &offset);
+
+        // One more turn of the same coordinate update, by hand.
+        let mut numer = 0.0;
+        let mut denom = 0.0;
+        for i in 0..target.len() {
+            let mu = loss.inverse_link(beta + offset[i]);
+            let base = pow_special(mu, 1.0 - p);
+            numer += weights[i] * base * target[i];
+            denom += weights[i] * base * mu;
+        }
+        let step = (numer / denom).ln();
+        assert!(step.abs() < 1e-12, "step {step} should be zero at the fixed point");
+    }
+
+    /// A response with no positive part has no finite log-link mean to fit; the answer
+    /// is the bound rather than a walk towards it.
+    #[test]
+    fn log_link_null_intercept_bottoms_out_on_an_all_zero_response() {
+        let target = [0.0, 0.0, 0.0];
+        let weights = [1.0, 1.0, 1.0];
+        let offset = [0.0, 0.5, -0.5];
+        let beta = null_intercept(&LossFunction::Poisson, &target, &weights, &offset);
+        assert_eq!(beta, -LossFunction::Poisson.eta_limit());
+    }
+
+    /// The identity link is exact in one step, and the loop must not spin past it.
+    #[test]
+    fn gaussian_null_intercept_is_the_weighted_mean() {
+        let target = [1.0, 2.0, 3.0, 10.0];
+        let weights = [1.0, 1.0, 2.0, 1.0];
+        let offset = [0.0, 0.0, 0.0, 0.0];
+        let mean: f64 = target.iter().zip(weights).map(|(y, a)| a * y).sum::<f64>()
+            / weights.iter().sum::<f64>();
+        let beta = null_intercept(&LossFunction::Gaussian, &target, &weights, &offset);
+        assert!((beta - mean).abs() < 1e-12, "beta {beta} is not the weighted mean {mean}");
+    }
 
     /// The property the accelerator is built on: when the error really is a single
     /// geometric mode, three iterates identify the fixed point exactly.

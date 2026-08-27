@@ -60,10 +60,93 @@ impl TablePair {
 /// than it needs to be settled, and on a five-million-row fit this turns a pass that cost
 /// most of a sweep into one that costs a twentieth of one.
 ///
-/// Sampling can only ever mislead the *heuristic*: a pair wrongly grouped is solved
-/// jointly and a pair wrongly missed is solved singly, and both produce the same fit.
-/// Only the number of sweeps it takes can change.
+/// **Sampling is not harmless, and a pair that crosses [`NEAR_ALIAS`] is re-measured on
+/// every row before it is acted on.** This comment used to claim the opposite - that a
+/// pair wrongly grouped and a pair wrongly missed both produce the same fit, and only the
+/// sweep count changes. The second half is true; the first is not. A wrongly grouped pair
+/// is handed to [`update_pair`], which on the NYC taxi data diverged to fitted means
+/// 3.2e21 out.
+///
+/// The error is one-directional, which is why a plain sample cannot be trusted here: a
+/// contingency table with more cells than sampled rows is mostly empty, and
+/// correspondence analysis on a table that sparse saturates at 1.0 regardless of the
+/// data. The taxi `pickup_zone`/`dropoff_zone` pair - 252 by 261 levels, 65,772 cells -
+/// reads 1.0000 from a 200k sample and 0.5788 from all 2.75M rows.
 const SAMPLE_ROWS: usize = 200_000;
+
+/// Power iterations for [`collective_strength`]. The matrix is tiny and the dominant
+/// eigenvalue is well separated whenever the answer matters, so this is never the
+/// binding cost; it exists only to bound a pathological input.
+const POWER_ITERATIONS: usize = 500;
+
+/// How strongly the tables share **one common direction**, across all of them at once.
+///
+/// The largest eigenvalue of the matrix of pairwise first canonical correlations, ones on
+/// the diagonal. It runs from `1.0`, when no table says anything about any other, up to
+/// `T`, when they are all the same table; a set that shares a single driver equally sits
+/// at `1 + (T - 1) * rho`.
+///
+/// **This, rather than any pairwise figure, is what governs how many sweeps a correlated
+/// plan needs.** A hundred tables at a pairwise 0.28 score 28.5 here and take about a
+/// thousand sweeps to converge; five tables at that same pairwise 0.28 score 2.1 and take
+/// fourteen. Nothing in the pairwise list tells those two apart — [`NEAR_ALIAS`] is a
+/// long way above 0.28 either way — which is why a plan can be slow to fit with no pair
+/// that looks the least bit suspicious.
+///
+/// Costs nothing worth measuring: the correlations are already in hand and this is a
+/// power iteration on a matrix whose size is the number of tables, not the data.
+pub fn collective_strength(pairs: &[TablePair]) -> f64 {
+    if pairs.is_empty() {
+        return 1.0;
+    }
+
+    // Compact the table indices these pairs refer to. Tables skipped as ineligible - the
+    // intercept, offsets, variates - never appear in a pair and must not take up a row.
+    let mut indices: Vec<usize> = pairs.iter().flat_map(|p| [p.first, p.second]).collect();
+    indices.sort_unstable();
+    indices.dedup();
+    let t = indices.len();
+
+    let mut m = vec![0.0f64; t * t];
+    for i in 0..t {
+        m[i * t + i] = 1.0;
+    }
+    for pair in pairs {
+        let (Ok(i), Ok(j)) = (
+            indices.binary_search(&pair.first),
+            indices.binary_search(&pair.second),
+        ) else {
+            continue;
+        };
+        m[i * t + j] = pair.correlation;
+        m[j * t + i] = pair.correlation;
+    }
+
+    // Power iteration. Every entry is a correlation and so non-negative, which by
+    // Perron-Frobenius puts the dominant eigenvector in the positive orthant - a
+    // positive start converges to it without any of the care a general matrix needs.
+    let mut v = vec![1.0 / (t as f64).sqrt(); t];
+    let mut next = vec![0.0f64; t];
+    let mut lambda = 1.0;
+    for _ in 0..POWER_ITERATIONS {
+        for i in 0..t {
+            next[i] = (0..t).map(|j| m[i * t + j] * v[j]).sum();
+        }
+        let norm = next.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if !(norm > 0.0) || !norm.is_finite() {
+            break;
+        }
+        let previous = lambda;
+        lambda = norm;
+        for (slot, x) in v.iter_mut().zip(next.iter()) {
+            *slot = x / norm;
+        }
+        if (lambda - previous).abs() <= 1e-12 * lambda {
+            break;
+        }
+    }
+    lambda
+}
 
 /// The first canonical correlation between every pair of updatable step tables.
 ///
@@ -95,17 +178,56 @@ pub fn table_correlations(
         .flat_map(|(i, a)| considered[i + 1..].iter().map(move |b| (*a, *b)))
         .collect();
 
-    let tables = contingency_tables(matches, weights, shapes, &pairs);
+    // Visit every `stride`th row rather than all of them. Regular spacing could in
+    // principle line up with an ordering in the data; if it did, the cost is a misjudged
+    // heuristic rather than a wrong answer - see `SAMPLE_ROWS`.
+    let stride = (matches[considered[0]].len() / SAMPLE_ROWS).max(1);
+    let tables = contingency_tables(matches, weights, shapes, &pairs, stride);
 
+    // Each pair's correspondence analysis is independent and reads only its own
+    // contingency table, so the pairs go out to the pool. This is where the survey's
+    // time goes once the tables are wide: the work per pair is `O(k_a * k_b)` per power
+    // iteration, so a plan of 250-level tables spends longer deciding whether to use the
+    // joint solve than it does fitting.
     let mut out: Vec<TablePair> = pairs
-        .iter()
-        .zip(tables.iter())
+        .par_iter()
+        .zip(tables.par_iter())
         .map(|((a, b), counts)| TablePair {
             first: *a,
             second: *b,
             correlation: first_canonical_correlation(counts, shapes[*a], shapes[*b]),
         })
         .collect();
+
+    // **A pair that reads as near-aliased gets checked against every row before anyone
+    // acts on it.** Sampling is fine for a survey but not for this decision, because it
+    // fails in one direction only and that direction is the dangerous one: a contingency
+    // table with more cells than sampled rows is mostly empty, and correspondence
+    // analysis on a table that sparse saturates at 1.0 whatever the data says. On 2.75M
+    // NYC taxi trips the `pickup_zone`/`dropoff_zone` pair - 252 by 261 levels, 65,772
+    // cells against a 200k sample - reads **1.0000** sampled and **0.5788** from every
+    // row. Two tables sharing nothing much were grouped on the strength of that, and the
+    // joint solve diverged.
+    //
+    // Only the candidates are re-measured, and there are rarely more than a couple, so
+    // this costs one pass over the data in the case where a pass is about to be worth
+    // hundreds of sweeps either way.
+    if stride > 1 {
+        let suspects: Vec<(usize, usize)> = out
+            .iter()
+            .filter(|p| p.is_near_aliased())
+            .map(|p| (p.first, p.second))
+            .collect();
+        if !suspects.is_empty() {
+            let exact = contingency_tables(matches, weights, shapes, &suspects, 1);
+            for ((a, b), counts) in suspects.iter().zip(exact.iter()) {
+                let correlation = first_canonical_correlation(counts, shapes[*a], shapes[*b]);
+                if let Some(pair) = out.iter_mut().find(|p| p.first == *a && p.second == *b) {
+                    pair.correlation = correlation;
+                }
+            }
+        }
+    }
 
     // Worst first: this is read as "which pair is the problem", and the answer is the
     // top row.
@@ -119,6 +241,7 @@ fn contingency_tables(
     weights: &[f64],
     shapes: &[usize],
     pairs: &[(usize, usize)],
+    stride: usize,
 ) -> Vec<Vec<f64>> {
     let sizes: Vec<usize> = pairs.iter().map(|(a, b)| shapes[*a] * shapes[*b]).collect();
     let fresh = || sizes.iter().map(|s| vec![0.0f64; *s]).collect::<Vec<_>>();
@@ -126,11 +249,7 @@ fn contingency_tables(
     let n = weights.len();
     let total: usize = sizes.iter().sum();
     let workers = rayon::current_num_threads().max(1);
-
-    // Visit every `stride`th row rather than all of them. Regular spacing could in
-    // principle line up with an ordering in the data; if it did, the cost is a
-    // misjudged heuristic rather than a wrong answer - see `SAMPLE_ROWS`.
-    let stride = (n / SAMPLE_ROWS).max(1);
+    let stride = stride.max(1);
     let sampled = n.div_ceil(stride);
 
     // The same trade as the fitting sweep: replicate the small per-pair tables across
@@ -299,6 +418,114 @@ fn normalise(v: &mut [f64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Independent-looking codes, from a hash rather than modular arithmetic.
+    ///
+    /// `(c1 * i) % levels` and `(c2 * i) % levels` are *perfectly* aliased whenever `c1`
+    /// is invertible mod `levels`, because `i` is then recoverable from the first - an
+    /// easy way to write a test that proves nothing.
+    fn spread(i: usize, salt: u64, levels: u32) -> u32 {
+        let mut z = (i as u64).wrapping_add(salt).wrapping_add(0x9E37_79B9_7F4A_7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) % levels as u64) as u32
+    }
+
+    /// The failure that made the verification pass necessary.
+    ///
+    /// One row pairs a level of each table that appears nowhere else, and a second row
+    /// gives the first of those levels another partner. Seen whole, that is a correlation
+    /// of about 0.71 - not aliased. Seen through a sample that keeps every other row, the
+    /// second row disappears, the two rare levels occur only with each other, and
+    /// correspondence analysis calls it 1.0.
+    ///
+    /// That is how the NYC taxi `pickup_zone`/`dropoff_zone` pair read 1.0000 against a
+    /// true 0.5788 over all 2.75M rows. A pair read as aliased is handed to
+    /// `update_pair`, which diverged on it - so this reading has to be the honest one.
+    #[test]
+    fn a_rare_pairing_lost_to_sampling_is_not_reported_as_aliased() {
+        // Over SAMPLE_ROWS, so the survey samples and the verification pass has to undo
+        // it: it keeps rows 0, 2, 4, ...
+        let rows = 2 * SAMPLE_ROWS;
+        let common = 200u32;
+        let levels = common + 1; // the last level of each table is the rare one.
+
+        let mut a: Vec<u32> = (0..rows).map(|i| spread(i, 0, common)).collect();
+        let mut b: Vec<u32> = (0..rows).map(|i| spread(i, 0xABCD_EF01, common)).collect();
+
+        a[0] = common;
+        b[0] = common; // seen only with each other...
+        a[1] = common;
+        b[1] = 0; // ...until this row, which the sample drops.
+
+        let weights = vec![1.0; rows];
+        let shapes = vec![1, levels as usize, levels as usize];
+        let matches = vec![vec![0u32; rows], a, b];
+        let eligible = vec![false, true, true];
+
+        let pairs = table_correlations(&matches, &weights, &shapes, &eligible);
+        assert_eq!(pairs.len(), 1);
+        assert!(
+            !pairs[0].is_near_aliased(),
+            "a pair that is not aliased over all rows was reported at rho = {:.4}",
+            pairs[0].correlation
+        );
+    }
+
+    fn equicorrelated(n_tables: usize, rho: f64) -> Vec<TablePair> {
+        let mut pairs = Vec::new();
+        for first in 1..=n_tables {
+            for second in (first + 1)..=n_tables {
+                pairs.push(TablePair { first, second, correlation: rho });
+            }
+        }
+        pairs
+    }
+
+    /// The identity the diagnostic rests on: tables sharing one driver equally sit at
+    /// `1 + (T - 1) * rho`, so the figure grows with the *number* of correlated tables
+    /// while every pairwise correlation stays put. Measured on real fits, 5 tables at
+    /// 0.28 converge in 14 sweeps and 100 tables at that same 0.28 take about 1100.
+    #[test]
+    fn a_shared_driver_scales_with_the_number_of_tables() {
+        for n_tables in [2usize, 5, 25, 100] {
+            let strength = collective_strength(&equicorrelated(n_tables, 0.28));
+            let expected = 1.0 + (n_tables as f64 - 1.0) * 0.28;
+            assert!(
+                (strength - expected).abs() < 1e-9,
+                "{} tables: got {}, expected {}",
+                n_tables, strength, expected
+            );
+        }
+    }
+
+    /// Orthogonal tables share nothing and cost the sweep nothing.
+    #[test]
+    fn orthogonal_tables_sit_at_one() {
+        assert!((collective_strength(&equicorrelated(50, 0.0)) - 1.0).abs() < 1e-9);
+        assert_eq!(collective_strength(&[]), 1.0);
+    }
+
+    /// Perfectly aliased tables are one table repeated, and the figure says so.
+    #[test]
+    fn identical_tables_sit_at_the_table_count() {
+        let strength = collective_strength(&equicorrelated(7, 1.0));
+        assert!((strength - 7.0).abs() < 1e-6, "got {}", strength);
+    }
+
+    /// A single bad pair among otherwise unrelated tables must not read as a plan-wide
+    /// problem - that is the case `update_pair` already handles.
+    #[test]
+    fn one_aliased_pair_does_not_look_like_a_shared_driver() {
+        let mut pairs = equicorrelated(20, 0.0);
+        for pair in pairs.iter_mut() {
+            if pair.first == 1 && pair.second == 2 {
+                pair.correlation = 0.99;
+            }
+        }
+        let strength = collective_strength(&pairs);
+        assert!(strength < 2.0, "one pair should stay near 1+rho, got {}", strength);
+    }
 
     /// Two tables that are the same partition relabelled carry identical information, so
     /// knowing one determines the other exactly and the correlation is 1.

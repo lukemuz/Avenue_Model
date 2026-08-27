@@ -589,6 +589,20 @@ fn reference_row(row_exposure: &[f64]) -> Option<usize> {
     row_exposure.iter().position(|e| *e > 0.0)
 }
 
+/// How far a pivot may fall below the parameter's **own** information before the
+/// parameter counts as a linear combination of earlier ones.
+const ALIAS_SELF_TOL: f64 = 1e-10;
+
+/// How far a parameter's information may fall below the **largest** in the design before
+/// it counts as carrying none at all.
+///
+/// Deliberately far more permissive than [`ALIAS_SELF_TOL`], because a rating table
+/// legitimately holds levels with very little exposure and those still have honest, if
+/// wide, standard errors. At `1e-12` a level would need a millionth of a millionth of the
+/// information behind the largest level to be dropped; the cases this catches sit at
+/// `1e-15` and `1e-111`, which are not small but collapsed.
+const ALIAS_DESIGN_TOL: f64 = 1e-12;
+
 /// Finds parameters that are linear combinations of earlier ones.
 ///
 /// A rank-deficient `X'WX` is not an error condition here — it is a statement about
@@ -604,11 +618,31 @@ fn find_aliased(a: &[f64], n: usize) -> Vec<bool> {
     let mut aliased = vec![false; n];
     let mut l = vec![0.0f64; n * n];
 
+    // The most information any one parameter carries, which sets the scale the design as
+    // a whole is judged against.
+    let largest = (0..n).map(|i| a[i * n + i].abs()).fold(0.0f64, f64::max);
+
     for i in 0..n {
-        // Relative to this parameter's own information, so the threshold means the
-        // same thing whether weights are exposure-years or fractions.
-        let scale = a[i * n + i].abs();
-        let tol = 1e-10 * scale.max(f64::MIN_POSITIVE);
+        // Two thresholds, because there are two ways for a parameter to be unestimable
+        // and neither test sees the other's case.
+        //
+        // **Against its own information** catches a parameter that is a linear
+        // combination of earlier ones: its pivot collapses from wherever its diagonal
+        // said it would be. That comparison is scale free, so it means the same thing
+        // whether the weights are exposure-years or fractions.
+        //
+        // **Against the largest information in the design** catches a parameter that
+        // never had any information to begin with — a separated logistic level, whose
+        // IRLS weight `mu(1-mu)` goes to zero, or a Poisson band with no claims, whose
+        // weight `a*mu` underflows once the factor is driven to the clamp. The
+        // self-relative test is blind to those by construction: a column whose diagonal
+        // is `1e-111` gets a tolerance of `1e-121` and looks perfectly healthy against
+        // itself, passes, and then detonates in the Cholesky that follows against a
+        // design whose other diagonals are `1e5`. That is what left the census income
+        // and wide freMTPL2 fits with no standard errors at all rather than with the
+        // handful of `NA`s this function exists to produce.
+        let self_tol = ALIAS_SELF_TOL * a[i * n + i].abs().max(f64::MIN_POSITIVE);
+        let tol = self_tol.max(ALIAS_DESIGN_TOL * largest);
 
         for j in 0..=i {
             if aliased[j] {
@@ -809,5 +843,37 @@ mod tests {
         // A parameter with no weight behind it at all.
         let a = vec![4.0, 0.0, 0.0, 0.0];
         assert_eq!(find_aliased(&a, 2), vec![false, true]);
+    }
+
+    /// The case the self-relative test alone cannot see, and the reason for
+    /// [`ALIAS_DESIGN_TOL`].
+    ///
+    /// A column whose information has collapsed but not quite to zero looks perfectly
+    /// healthy measured against itself — a diagonal of `1e-15` gets a tolerance of
+    /// `1e-25` — so it passes, and then fails the Cholesky that follows against a design
+    /// whose other diagonals are `1e5`. Real fits produce exactly this: a separated
+    /// logistic level whose IRLS weight goes to zero (census income, pivot `1.7e-15`)
+    /// and a Poisson band with no claims whose weight underflows (wide freMTPL2, pivot
+    /// `1.7e-111`).
+    #[test]
+    fn a_collapsed_information_column_is_aliased() {
+        for tiny in [1e-15, 1e-111, 0.0] {
+            let a = vec![1e5, 0.0, 0.0, tiny];
+            assert_eq!(
+                find_aliased(&a, 2),
+                vec![false, true],
+                "a column carrying {tiny:e} against a design at 1e5 is not estimable"
+            );
+        }
+    }
+
+    /// The other side of it: a level with genuinely little exposure is estimable, and
+    /// deserves a wide standard error rather than none. [`ALIAS_DESIGN_TOL`] has to be
+    /// permissive enough to leave it alone.
+    #[test]
+    fn a_thinly_exposed_level_keeps_its_standard_error() {
+        // A millionth of the information behind the largest level - small, not collapsed.
+        let a = vec![1e5, 0.0, 0.0, 0.1];
+        assert_eq!(find_aliased(&a, 2), vec![false, false]);
     }
 }
