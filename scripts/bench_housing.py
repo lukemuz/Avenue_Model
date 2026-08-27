@@ -32,12 +32,17 @@ The dataset is downloaded once from OpenML and cached next to this script.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import sys
 import time
 
 import numpy as np
 import pandas as pd
 import polars as pl
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bench_memory import measured  # noqa: E402
 
 CACHE = os.path.join(os.path.dirname(__file__), ".house_sales.parquet")
 
@@ -186,17 +191,61 @@ def run_glum(codes, y, family, repeats, solver):
     )
 
 
+def run_statsmodels(codes, levels, y, family, repeats):
+    """The independent oracle. Only affordable because this dataset is small.
+
+    statsmodels densifies the design matrix and takes a pseudo-inverse of it on every
+    IRLS iteration. At 21,613 rows that is cheap enough to run, which makes this the one
+    place a third implementation can arbitrate between Avenue and glum on real data.
+    """
+    import statsmodels.api as sm
+
+    families = {
+        "gamma": sm.families.Gamma(link=sm.families.links.Log()),
+        "gaussian": sm.families.Gaussian(),
+    }
+
+    def prep():
+        blocks = [np.ones((len(y), 1))]
+        for name, k in levels.items():
+            c = codes[name]
+            block = np.zeros((len(y), k - 1))
+            mask = c > 0
+            block[np.flatnonzero(mask), c[mask] - 1] = 1.0
+            blocks.append(block)
+        return np.hstack(blocks)
+
+    prep_seconds, X = best_of(prep, repeats)
+
+    def fit():
+        return sm.GLM(y, X, family=families[family]).fit(maxiter=MAX_ITER, tol=1e-10)
+
+    fit_seconds, result = best_of(fit, repeats)
+    return dict(
+        engine="statsmodels", prep=prep_seconds, fit=fit_seconds,
+        iters=int(result.fit_history["iteration"]), converged=bool(result.converged),
+        mu=np.asarray(result.fittedvalues, dtype=float), note=None,
+    )
+
+
 def report(label, n_rows, n_params, results):
     print(f"\n  {label}  ({n_rows:,} rows, {n_params:,} parameters)")
-    print(f"  {'engine':<16}{'prep':>9}{'fit':>9}{'total':>9}{'iters':>7}{'vs reference':>15}")
-    print(f"  {'-' * 66}")
+    print(f"  {'engine':<16}{'prep':>9}{'fit':>9}{'total':>9}{'peak MB':>10}{'iters':>7}"
+          f"{'vs reference':>15}")
+    print(f"  {'-' * 76}")
 
-    reference = next((r for r in results if r["engine"].startswith("glum")), results[0])
+    # statsmodels first where it ran: a third implementation is the only reference that
+    # is neither of the two engines being compared.
+    reference = next((r for r in results if r["engine"] == "statsmodels"), None)
+    if reference is None:
+        reference = next(
+            (r for r in results if r["engine"].startswith("glum")), results[0])
     rms = float(np.sqrt(np.mean(reference["mu"] ** 2)))
 
     problems = []
     for r in results:
         d = float(np.max(np.abs(r["mu"] - reference["mu"])) / rms)
+        r["disagreement"] = None if r is reference else d
         agreement = "reference" if r is reference else f"{d:.1e}"
         flag = ""
         if r is not reference and d > AGREEMENT_TOL:
@@ -207,9 +256,22 @@ def report(label, n_rows, n_params, results):
             problems.append(f"{label}: {r['engine']} did not converge")
         if r["note"]:
             flag += f"  [{r['note']}]"
+        memory = f"{r['peak_mb']:.0f}" if r.get("peak_mb") is not None else "-"
         print(f"  {r['engine']:<16}{r['prep']:>9.3f}{r['fit']:>9.3f}"
-              f"{r['prep'] + r['fit']:>9.3f}{r['iters']:>7}{agreement:>15}{flag}")
+              f"{r['prep'] + r['fit']:>9.3f}{memory:>10}{r['iters']:>7}"
+              f"{agreement:>15}{flag}")
     return problems
+
+
+def to_json(family, n_rows, n_params, results):
+    return {
+        "dataset": "house_sales",
+        "variant": "banded",
+        "family": family,
+        "n_rows": n_rows,
+        "n_parameters": n_params,
+        "engines": [{k: v for k, v in r.items() if k != "mu"} for r in results],
+    }
 
 
 def tail_rate(history) -> float:
@@ -262,6 +324,7 @@ def main() -> int:
                         help="oversample to this many rows, as glum's suite does")
     parser.add_argument("--diagnose", action="store_true",
                         help="report the convergence rate and a drop-one table sweep")
+    parser.add_argument("--json", type=str, default=None)
     args = parser.parse_args()
 
     raw = load_housing()
@@ -277,17 +340,32 @@ def main() -> int:
         return 0
 
     problems = []
+    collected = []
     for family in ("gamma", "gaussian"):
         results = [
-            run_avenue(codes, levels, y, family, args.repeats, accelerate=True),
-            run_avenue(codes, levels, y, family, args.repeats, accelerate=False),
+            measured(lambda: run_avenue(codes, levels, y, family, args.repeats,
+                                        accelerate=True)),
+            measured(lambda: run_avenue(codes, levels, y, family, args.repeats,
+                                        accelerate=False)),
         ]
         for solver in ("irls-ls", "irls-cd"):
             try:
-                results.append(run_glum(codes, y, family, args.repeats, solver))
+                results.append(measured(
+                    lambda s=solver: run_glum(codes, y, family, args.repeats, s)))
             except Exception as exc:
                 print(f"  glum[{solver}] failed: {type(exc).__name__}: {exc}")
+        try:
+            results.append(measured(
+                lambda: run_statsmodels(codes, levels, y, family, args.repeats)))
+        except Exception as exc:
+            print(f"  statsmodels failed: {type(exc).__name__}: {exc}")
         problems += report(f"{family} / price", len(y), n_params, results)
+        collected.append(to_json(family, len(y), n_params, results))
+
+    if args.json:
+        with open(args.json, "w") as fh:
+            json.dump(collected, fh, indent=2)
+        print(f"\nWrote {args.json}")
 
     if problems:
         print("\nPROBLEMS:")

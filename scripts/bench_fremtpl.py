@@ -16,9 +16,21 @@ exposure, then band the continuous drivers. Banding is not a concession made for
 Avenue's benefit; it is what a rating plan does, and both engines fit the same banded
 design.
 
+`Area` and `Density` are the same geography banded twice, and their first canonical
+correlation is high enough that backfitting between them crawls. Someone building this
+plan would notice and drop one, so every design is run twice: as the tutorial writes it,
+and again with `Area` removed. The two rows together separate Avenue's aliasing penalty
+from its baseline speed, and say what the comparison looks like on a plan that has been
+through review. glum's factorisation is indifferent to the redundancy, so the reduced
+design should cost it only the parameters it no longer carries.
+
 Usage:
-    python scripts/bench_fremtpl.py            # tutorial-scale and wide variants
-    python scripts/bench_fremtpl.py --solver-sweep   # also test glum's other solvers
+    python scripts/bench_fremtpl.py            # tutorial and wide bands, each with
+                                               # and without the redundant Area table
+    python scripts/bench_fremtpl.py --drop ""  # keep every table
+    python scripts/bench_fremtpl.py --solver-sweep   # add glum's irls-cd solver, which
+                                               # is worth seeing on the tutorial design
+                                               # and painfully slow on the wide one
 
 The dataset is downloaded once from OpenML and cached next to this script.
 """
@@ -26,12 +38,17 @@ The dataset is downloaded once from OpenML and cached next to this script.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import sys
 import time
 
 import numpy as np
 import pandas as pd
 import polars as pl
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bench_memory import measured  # noqa: E402
 
 CACHE = os.path.join(os.path.dirname(__file__), ".fremtpl2freq.parquet")
 
@@ -43,6 +60,10 @@ MAX_ITER = 500
 AVENUE_TOL = 1e-10
 GLUM_TOL = 1e-10
 AGREEMENT_TOL = 1e-7
+
+# Avenue's threshold for updating two tables as one block, mirrored from
+# `glm::redundancy::NEAR_ALIAS`. Used here only to annotate the correlation report.
+NEAR_ALIAS = 0.9
 
 
 def load_fremtpl() -> pd.DataFrame:
@@ -60,12 +81,15 @@ def load_fremtpl() -> pd.DataFrame:
     return df
 
 
-def prepare(df: pd.DataFrame, wide: bool) -> tuple[dict[str, np.ndarray], dict[str, int], np.ndarray, np.ndarray]:
+def prepare(
+    df: pd.DataFrame, wide: bool, drop: tuple[str, ...] = ()
+) -> tuple[dict[str, np.ndarray], dict[str, int], np.ndarray, np.ndarray]:
     """Bands and codes, following glum's tutorial preprocessing.
 
     Returns (codes, levels, claim_count, exposure). `wide` bands the continuous
     drivers far more finely, which is how a real plan with credible geography and
-    a full bonus-malus scale ends up several hundred parameters wide.
+    a full bonus-malus scale ends up several hundred parameters wide. `drop` removes
+    tables by name before coding, for the redundancy variants.
     """
     df = df.copy()
 
@@ -104,6 +128,11 @@ def prepare(df: pd.DataFrame, wide: bool) -> tuple[dict[str, np.ndarray], dict[s
         "region": categorical(df["Region"]),
     }
 
+    for name in drop:
+        if name not in codes:
+            raise ValueError(f"unknown table {name!r}; have {sorted(codes)}")
+        del codes[name]
+
     # Compact each factor's codes to 0..k-1 so a table row exists for every value
     # and no row is left with zero exposure.
     levels = {}
@@ -131,24 +160,55 @@ def best_of(fn, repeats: int):
     return best, payload
 
 
+# Factors that are labels rather than bands of a continuous driver. Avenue reads the
+# distinction off the dtype: `Int32` is a category code matched exactly, `Float64` is a
+# band's upper bound matched by binary search. Same fit either way on data compacted to
+# `0..k-1`; the code is half the width, which is the point.
+CATEGORICAL = {"area", "veh_brand", "veh_gas", "region"}
+
+
+def build_avenue(codes, levels, y, exposure):
+    """The frame and rating model Avenue fits: an intercept table plus one per factor."""
+    from avenue_model import RatingModel
+
+    def dtype_of(name):
+        return np.int32 if name in CATEGORICAL else np.float64
+
+    frame = {n: codes[n].astype(dtype_of(n)) for n in levels}
+    frame["y"] = y
+    frame["log_exposure"] = np.log(exposure)
+    tables = [pl.DataFrame({"Rating_Factor": [0.0]})]
+    for name, k in levels.items():
+        tables.append(pl.DataFrame({
+            name: np.arange(k, dtype=dtype_of(name)),
+            "Rating_Factor": np.zeros(k),
+        }))
+    return pl.DataFrame(frame), RatingModel(tables, "poisson")
+
+
+def report_correlations(codes, levels, y, exposure, top: int = 3) -> None:
+    """The table pairs that share the most information, worst first.
+
+    This is what identifies `Area` as the table to drop, rather than it being asserted:
+    the figure is the first canonical correlation between two tables' levels, which is
+    also the factor by which the direction they share survives each fitting sweep.
+    """
+    from avenue_model import table_correlations
+
+    df, model = build_avenue(codes, levels, y, exposure)
+    names = ["intercept"] + list(levels)
+    print(f"  most shared information between tables"
+          f" (Avenue solves a pair jointly above {NEAR_ALIAS}):")
+    for first, second, rho in table_correlations(model, df)[:top]:
+        flag = "  near-aliased" if rho >= NEAR_ALIAS else ""
+        print(f"    {names[first]:>13} / {names[second]:<13} rho = {rho:.3f}{flag}")
+
+
 def run_avenue(codes, levels, y, exposure, repeats, standard_errors):
-    from avenue_model import RatingModel, fit_glm_with_diagnostics, GLMOptions
+    from avenue_model import fit_glm_with_diagnostics, GLMOptions
 
-    log_exposure = np.log(exposure)
-
-    def prep():
-        frame = {n: c.astype(np.float64) for n, c in codes.items()}
-        frame["y"] = y
-        frame["log_exposure"] = log_exposure
-        tables = [pl.DataFrame({"Rating_Factor": [0.0]})]
-        for name, k in levels.items():
-            tables.append(pl.DataFrame({
-                name: np.arange(k, dtype=np.float64),
-                "Rating_Factor": np.zeros(k),
-            }))
-        return pl.DataFrame(frame), RatingModel(tables, "poisson")
-
-    prep_seconds, (df, model) = best_of(prep, repeats)
+    prep_seconds, (df, model) = best_of(
+        lambda: build_avenue(codes, levels, y, exposure), repeats)
 
     options = GLMOptions(
         objective="poisson", max_iterations=MAX_ITER, tolerance=AVENUE_TOL,
@@ -201,9 +261,9 @@ def run_glum(codes, y, exposure, repeats, solver):
 
 def report(label, n_rows, n_params, results):
     print(f"\n  {label}  ({n_rows:,} rows, {n_params:,} parameters)")
-    print(f"  {'engine':<16}{'prep':>9}{'fit':>9}{'total':>9}{'iters':>7}"
+    print(f"  {'engine':<16}{'prep':>9}{'fit':>9}{'total':>9}{'peak MB':>10}{'iters':>7}"
           f"{'vs reference':>15}")
-    print(f"  {'-' * 66}")
+    print(f"  {'-' * 76}")
 
     reference = next((r for r in results if r["engine"].startswith("glum")), results[0])
     rms = float(np.sqrt(np.mean(reference["mu"] ** 2)))
@@ -211,6 +271,7 @@ def report(label, n_rows, n_params, results):
     problems = []
     for r in results:
         d = float(np.max(np.abs(r["mu"] - reference["mu"])) / rms)
+        r["disagreement"] = None if r is reference else d
         agreement = "reference" if r is reference else f"{d:.1e}"
         flag = ""
         if r is not reference and d > AGREEMENT_TOL:
@@ -221,9 +282,45 @@ def report(label, n_rows, n_params, results):
             problems.append(f"{label}: {r['engine']} did not converge")
         if r["note"]:
             flag += f"  [{r['note']}]"
+        memory = f"{r['peak_mb']:.0f}" if r.get("peak_mb") is not None else "-"
         print(f"  {r['engine']:<16}{r['prep']:>9.3f}{r['fit']:>9.3f}"
-              f"{r['prep'] + r['fit']:>9.3f}{r['iters']:>7}{agreement:>15}{flag}")
+              f"{r['prep'] + r['fit']:>9.3f}{memory:>10}{r['iters']:>7}"
+              f"{agreement:>15}{flag}")
     return problems
+
+
+def to_json(label, n_rows, n_params, dropped, results):
+    return {
+        "dataset": "freMTPL2freq",
+        "variant": label.strip(),
+        "family": "poisson",
+        "dropped_tables": list(dropped),
+        "n_rows": n_rows,
+        "n_parameters": n_params,
+        "engines": [
+            {k: v for k, v in r.items() if k != "mu"} for r in results
+        ],
+    }
+
+
+def report_drop_effect(label, dropped, full, reduced) -> None:
+    """Side by side: the same engines on the design with and without the extra table.
+
+    The reduced design is a different model, so this is not a like-for-like accuracy
+    comparison and the fitted means are not expected to match. What it measures is what
+    the redundancy costs each engine - which for a factorising solver should be about
+    the parameters it saves, and for a coordinate method can be most of the fit.
+    """
+    print(f"\n  {label}: cost of carrying {', '.join(dropped)}")
+    print(f"  {'engine':<16}{'with':>9}{'without':>9}{'saved':>9}{'iterations':>18}")
+    print(f"  {'-' * 61}")
+    for r in full:
+        m = next((x for x in reduced if x["engine"] == r["engine"]), None)
+        if m is None or not m["fit"]:
+            continue
+        iters = f"{r['iters']} -> {m['iters']}"
+        print(f"  {r['engine']:<16}{r['fit']:>9.3f}{m['fit']:>9.3f}"
+              f"{r['fit'] / m['fit']:>8.2f}x{iters:>18}")
 
 
 def main() -> int:
@@ -233,32 +330,69 @@ def main() -> int:
                         help="time every glum solver, not just its default choice")
     parser.add_argument("--tutorial-only", action="store_true",
                         help="skip the wide-band variant, which is slow for glum")
+    parser.add_argument("--drop", default="area",
+                        help="comma-separated tables to remove in the reduced variant "
+                             "of each design; empty keeps every table")
+    parser.add_argument("--json", type=str, default=None)
     args = parser.parse_args()
 
     raw = load_fremtpl()
     print(f"\nfreMTPL2freq: {len(raw):,} policies")
 
-    # glum picks irls-ls for an unpenalised fit. irls-cd is the same family of
-    # algorithm Avenue uses, so timing only against irls-ls would compare
-    # algorithms and call the difference an implementation win.
-    solvers = ["irls-ls", "irls-cd"] if args.solver_sweep else ["irls-ls", "irls-cd"]
+    # glum picks irls-ls for an unpenalised fit, so that is the default comparison.
+    # irls-cd is the same family of algorithm Avenue uses and is worth seeing - timing
+    # only against irls-ls compares algorithms and calls the difference an
+    # implementation win - but on the wide design it takes 21 minutes to hit its
+    # iteration cap and still miss by 1.5e-3, so it is opt-in rather than automatic.
+    solvers = ["irls-ls", "irls-cd"] if args.solver_sweep else ["irls-ls"]
+
+    dropped = tuple(n for n in (x.strip() for x in args.drop.split(",")) if n)
+    widths = [False] if args.tutorial_only else [False, True]
 
     problems = []
-    variants = [False] if args.tutorial_only else [False, True]
-    for wide in variants:
-        codes, levels, y, exposure = prepare(raw, wide)
-        n_params = 1 + sum(k - 1 for k in levels.values())
-        label = "wide bands   " if wide else "tutorial bands"
+    collected = []
+    for wide in widths:
+        # Same design twice: as the tutorial writes it, then without the redundant
+        # table. Both are fitted by every engine, so each row is internally
+        # like-for-like even though the two rows are different models.
+        by_design = {}
+        for drop in ([(), dropped] if dropped else [()]):
+            codes, levels, y, exposure = prepare(raw, wide, drop)
+            n_params = 1 + sum(k - 1 for k in levels.values())
+            label = ("wide bands" if wide else "tutorial bands")
+            label += f" - {','.join(drop)}" if drop else ""
+            label = label.ljust(16)
 
-        results = [run_avenue(codes, levels, y, exposure, args.repeats, False)]
-        for solver in solvers:
-            try:
-                results.append(run_glum(codes, y, exposure, args.repeats, solver))
-            except Exception as exc:
-                print(f"  glum[{solver}] failed: {type(exc).__name__}: {exc}")
-        results.append(run_avenue(codes, levels, y, exposure, args.repeats, True))
+            if not drop:
+                print(f"\n{label.strip()}:")
+                try:
+                    report_correlations(codes, levels, y, exposure)
+                except Exception as exc:  # a diagnostic must not stop the benchmark
+                    print(f"  correlations unavailable: {type(exc).__name__}: {exc}")
 
-        problems += report(label, len(y), n_params, results)
+            results = [measured(
+                lambda: run_avenue(codes, levels, y, exposure, args.repeats, False))]
+            for solver in solvers:
+                try:
+                    results.append(measured(
+                        lambda s=solver: run_glum(codes, y, exposure, args.repeats, s)))
+                except Exception as exc:
+                    print(f"  glum[{solver}] failed: {type(exc).__name__}: {exc}")
+            results.append(measured(
+                lambda: run_avenue(codes, levels, y, exposure, args.repeats, True)))
+
+            problems += report(label, len(y), n_params, results)
+            collected.append(to_json(label, len(y), n_params, drop, results))
+            by_design[drop] = results
+
+        if dropped:
+            report_drop_effect("wide bands" if wide else "tutorial bands", dropped,
+                               by_design[()], by_design[dropped])
+
+    if args.json:
+        with open(args.json, "w") as fh:
+            json.dump(collected, fh, indent=2)
+        print(f"\nWrote {args.json}")
 
     if problems:
         print("\nPROBLEMS:")

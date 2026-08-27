@@ -50,18 +50,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
 import json
 import os
 import platform
 import sys
-import threading
 import time
 from dataclasses import dataclass, field, asdict
 
 import numpy as np
 import pandas as pd
 import polars as pl
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bench_memory import PeakMemory  # noqa: E402
 
 SEED = 20260826
 
@@ -257,53 +258,6 @@ class Timing:
         return d
 
 
-class PeakMemory:
-    """Peak resident memory an engine adds, over the baseline when it started.
-
-    Sampled from a background thread rather than read before and after, because the
-    interesting number is the high-water mark - a design matrix that is built, used and
-    freed still has to fit in RAM.
-
-    Two caveats worth knowing when reading the result. CPython does not always return
-    freed memory to the OS, so an engine that runs after a greedy one can show a
-    smaller figure than it would alone; and the shared dataset is allocated before any
-    of this, so it is excluded from every engine's total.
-    """
-
-    INTERVAL_SECONDS = 0.002
-
-    def __init__(self) -> None:
-        import psutil
-
-        self._process = psutil.Process()
-        self.peak_mb = 0.0
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._baseline = 0.0
-        self._peak_bytes = 0
-
-    def _sample(self) -> None:
-        while not self._stop.is_set():
-            rss = self._process.memory_info().rss
-            if rss > self._peak_bytes:
-                self._peak_bytes = rss
-            self._stop.wait(self.INTERVAL_SECONDS)
-
-    def __enter__(self) -> "PeakMemory":
-        gc.collect()
-        self._baseline = self._process.memory_info().rss
-        self._peak_bytes = self._baseline
-        self._thread = threading.Thread(target=self._sample, daemon=True)
-        self._thread.start()
-        return self
-
-    def __exit__(self, *exc) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=1.0)
-        self.peak_mb = max(0.0, (self._peak_bytes - self._baseline) / 1e6)
-
-
 def best_of(fn, repeats: int):
     """Run `fn` `repeats` times and keep the fastest.
 
@@ -330,7 +284,11 @@ def run_avenue(data: Dataset, case: Case, repeats: int, standard_errors: bool) -
     name = "avenue+se" if standard_errors else "avenue"
 
     def prep():
-        frame = {name: codes.astype(np.float64) for name, codes in data.codes.items()}
+        # Int32, because these factors are unordered draws — `rng.integers` over a
+        # level count, with no continuous driver behind them. Avenue reads an Int32
+        # column as a category code and a Float64 one as a band's upper bound; both fit
+        # identically on codes compacted to `0..k-1`, and the code is half the width.
+        frame = {name: codes.astype(np.int32) for name, codes in data.codes.items()}
         frame["y"] = data.y
         if case.use_weight:
             frame["w"] = data.exposure
@@ -343,7 +301,7 @@ def run_avenue(data: Dataset, case: Case, repeats: int, standard_errors: bool) -
         tables = [pl.DataFrame({"Rating_Factor": [0.0]})]
         for factor, levels in data.factors.items():
             tables.append(pl.DataFrame({
-                factor: np.arange(levels, dtype=np.float64),
+                factor: np.arange(levels, dtype=np.int32),
                 "Rating_Factor": np.zeros(levels),
             }))
         return df, RatingModel(tables, objective)
