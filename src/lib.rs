@@ -355,6 +355,33 @@ impl PyGLMOptions {
     ///         over the data to measure how much information each pair of tables
     ///         shares; worth it whenever a plan carries two tables describing the
     ///         same thing, which otherwise converges at a crawl.
+    ///     alpha: Penalty strength. Default 0.0, which fits the unpenalised model.
+    ///         Scaled to mean the same thing as glum's alpha, so the two are
+    ///         directly comparable.
+    ///
+    ///         Each level is shrunk toward **its table's first row**, not toward
+    ///         zero, which is the same thing one-hot dummy coding with a dropped
+    ///         reference level does elsewhere. Two consequences: the intercept is
+    ///         never penalised, and the choice of base level now changes the fit,
+    ///         so a table anchored on a thin or extreme level will shrink toward a
+    ///         bad reference. Variate tables are not penalised - a low-degree
+    ///         polynomial is already the constraint a penalty would impose.
+    ///
+    ///         Requires normalization="base_level", the default.
+    ///     l1_ratio: How much of alpha is spent on the L1 term. 0.0 (default) is a
+    ///         pure ridge, 1.0 a pure lasso, anything between an elastic net.
+    ///
+    ///         An L1 component costs nothing extra to fit, since a soft threshold
+    ///         replaces a division in a step the sweep already takes per level. It
+    ///         does turn off the joint solve for near-aliased table pairs, which
+    ///         has no proximal form, so a plan carrying two tables that describe
+    ///         the same driver will need more sweeps under a lasso than under a
+    ///         ridge.
+    ///
+    ///         Standard errors are not reported under any L1 penalty: a lasso
+    ///         chooses its levels from the same data it estimates them on, and a
+    ///         Wald interval that ignores that is the wrong quantity rather than
+    ///         a wide one.
     #[new]
     #[pyo3(signature = (
         objective,
@@ -366,6 +393,8 @@ impl PyGLMOptions {
         compute_standard_errors=None,
         accelerate=None,
         solve_aliased_pairs_jointly=None,
+        alpha=None,
+        l1_ratio=None,
     ))]
     fn new(
         objective: String, // Required parameter
@@ -377,6 +406,8 @@ impl PyGLMOptions {
         compute_standard_errors: Option<bool>,
         accelerate: Option<bool>,
         solve_aliased_pairs_jointly: Option<bool>,
+        alpha: Option<f64>,
+        l1_ratio: Option<f64>,
     ) -> PyResult<Self> {
         let mut options = glm::GLMOptions::default();
 
@@ -418,6 +449,26 @@ impl PyGLMOptions {
 
         if let Some(j) = solve_aliased_pairs_jointly {
             options.solve_aliased_pairs_jointly = j;
+        }
+
+        if let Some(a) = alpha {
+            if !(a >= 0.0) || !a.is_finite() {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "alpha must be finite and not negative, got {}",
+                    a
+                )));
+            }
+            options.alpha = a;
+        }
+
+        if let Some(r) = l1_ratio {
+            if !(0.0..=1.0).contains(&r) {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "l1_ratio must be between 0 (ridge) and 1 (lasso), got {}",
+                    r
+                )));
+            }
+            options.l1_ratio = r;
         }
 
         Ok(PyGLMOptions { inner: options })
@@ -488,6 +539,11 @@ struct PyGLMDiagnostics {
     /// Free parameters actually estimated, i.e. the model's rank.
     #[pyo3(get)]
     n_parameters: Option<usize>,
+    /// Effective parameters spent, which is what aic, bic and df_residual count.
+    /// Equal to n_parameters without a penalty; below it with one, because a
+    /// shrunk level costs less than a free one.
+    #[pyo3(get)]
+    effective_parameters: Option<f64>,
     #[pyo3(get)]
     df_residual: Option<f64>,
     #[pyo3(get)]
@@ -573,6 +629,7 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
             aliased_rows: inf.as_ref().map(|i| i.aliased_rows.clone()),
             dispersion: inf.as_ref().map(|i| i.dispersion),
             n_parameters: inf.as_ref().map(|i| i.n_parameters),
+            effective_parameters: inf.as_ref().map(|i| i.effective_parameters),
             df_residual: inf.as_ref().map(|i| i.df_residual),
             pearson_chi2: inf.as_ref().map(|i| i.pearson_chi2),
             log_likelihood: inf.as_ref().and_then(|i| i.log_likelihood),

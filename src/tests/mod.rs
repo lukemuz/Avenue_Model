@@ -3,6 +3,7 @@ mod weight_distribution_test;
 mod analysis_tests;
 mod glm_tests;
 mod glm_correctness_tests;
+mod glm_penalty_tests;
 mod glm_distribution_tests;
 mod glm_reference_data;
 mod glm_benchmarks;

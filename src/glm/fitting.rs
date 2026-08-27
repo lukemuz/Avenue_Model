@@ -4,6 +4,7 @@ use crate::rating_model::{variate_basis_params, RatingModel, RatingTable, TableS
 use super::inference::{compute_inference, solve_spd, GLMInference};
 use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
+use super::penalty::{PenaltyPlan, TablePenalty, ANCHOR_ROW};
 use super::redundancy::{collective_strength, table_correlations, TablePair};
 
 /// How the fitted tables are anchored once the fit has converged.
@@ -83,6 +84,25 @@ pub struct GLMOptions {
     /// a density band and an area code, an age band and a birth-year band — which
     /// otherwise converges at a crawl. See [`update_pair`].
     pub solve_aliased_pairs_jointly: bool,
+    /// Penalty strength. Zero - the default - fits the unpenalised model, on exactly the
+    /// code path it always did.
+    ///
+    /// Scaled to mean the same thing as glum's `alpha`: the objective is
+    /// `D / (2 * sum(w)) + alpha * (l1_ratio * |b|_1 + (1 - l1_ratio)/2 * |b|^2)`, where
+    /// `b` runs over each table's levels **measured against its base level**, and the
+    /// intercept is excluded. See [`crate::glm::penalty`] for why the base level rather
+    /// than zero, and what follows from it.
+    ///
+    /// Requires [`Normalization::BaseLevel`], which is the default.
+    pub alpha: f64,
+    /// The share of `alpha` spent on the L1 term: 0 is a pure ridge, 1 a pure lasso,
+    /// anything between an elastic net.
+    ///
+    /// An L1 component costs nothing extra to fit - a soft threshold replaces a division
+    /// in a step this fitter already takes per level - but it does turn the joint solve
+    /// for near-aliased pairs off, because that solve has no proximal form. See
+    /// [`update_pair`].
+    pub l1_ratio: f64,
 }
 
 impl Default for GLMOptions {
@@ -101,6 +121,8 @@ impl Default for GLMOptions {
             compute_standard_errors: true,
             accelerate: true,
             solve_aliased_pairs_jointly: true,
+            alpha: 0.0,
+            l1_ratio: 0.0,
         }
     }
 }
@@ -184,6 +206,9 @@ struct FitContext<'a> {
     /// The order tables are visited in, from [`sweep_order`]. A permutation of every
     /// table index, so the sweep still visits each exactly once.
     order: &'a [usize],
+    /// The penalty on the factors, or `None` for an unpenalised fit. `None` keeps every
+    /// update on the exact code path it took before penalties existed.
+    penalty: Option<&'a PenaltyPlan>,
 }
 
 impl<'a> FitContext<'a> {
@@ -214,6 +239,7 @@ impl<'a> FitContext<'a> {
                 self.row_exposure,
                 self.tables,
                 self.loss_fn,
+                self.penalty,
             );
             paired[*t] = true;
             paired[*u] = true;
@@ -235,6 +261,7 @@ impl<'a> FitContext<'a> {
                 &self.row_exposure[t],
                 &self.tables[t],
                 self.loss_fn,
+                self.penalty,
                 numer,
                 denom,
             );
@@ -285,7 +312,24 @@ impl<'a> FitContext<'a> {
         self.loss_fn.total_deviance(self.target, means, self.weights)
     }
 
-    fn max_score(&self, means: &[f64], scratch: &mut [Vec<f64>]) -> f64 {
+    /// What the fit actually minimises: the deviance plus the penalty, on the deviance
+    /// scale.
+    ///
+    /// The stall rule and the SQUAREM acceptance test both ask whether the objective
+    /// went down, and once a penalty is on, the objective is not the deviance. The
+    /// deviance is still what gets reported, because it is a goodness-of-fit statistic
+    /// measured against `null_deviance` and folding the penalty into it would quietly
+    /// break `pseudo_r2`.
+    fn objective(&self, factors: &[Vec<f64>], means: &[f64]) -> f64 {
+        self.deviance(means) + self.penalty.map_or(0.0, |p| p.total(factors))
+    }
+
+    fn max_score(
+        &self,
+        factors: &[Vec<f64>],
+        means: &[f64],
+        scratch: &mut [Vec<f64>],
+    ) -> f64 {
         max_abs_score(
             self.loss_fn,
             self.target,
@@ -296,6 +340,8 @@ impl<'a> FitContext<'a> {
             self.updatable,
             self.row_exposure,
             self.variate_values,
+            factors,
+            self.penalty,
             scratch,
         )
     }
@@ -432,14 +478,25 @@ struct Progress {
     sweeps_without_progress: usize,
     deviance_history: Vec<f64>,
     gradient_history: Vec<f64>,
+    /// What the fit is actually minimising: the deviance plus the penalty. Equal to
+    /// `deviance_history` for an unpenalised fit, and the series the stall rule reads,
+    /// because a penalised fit can trade deviance for penalty and still be improving.
+    objective_history: Vec<f64>,
 }
 
 impl Progress {
-    fn record(&mut self, deviance: f64, gradient: f64, options: &GLMOptions) -> Status {
+    fn record(
+        &mut self,
+        objective: f64,
+        deviance: f64,
+        gradient: f64,
+        options: &GLMOptions,
+    ) -> Status {
         self.iterations += 1;
         self.deviance = deviance;
         self.max_gradient = gradient;
         self.deviance_history.push(deviance);
+        self.objective_history.push(objective);
         self.gradient_history.push(gradient);
 
         if options.verbose {
@@ -475,9 +532,9 @@ impl Progress {
         // is anything left to gain, and for that the two regimes are nine orders apart:
         // on the fit above the smallest real per-sweep improvement is 4.8e-06, while a
         // fit sitting on its rounding floor moves by about 5e-15.
-        if let Some(&previous) = self.deviance_history.iter().rev().nth(1) {
+        if let Some(&previous) = self.objective_history.iter().rev().nth(1) {
             let scale = previous.abs().max(f64::MIN_POSITIVE);
-            if (previous - deviance) / scale < DEVIANCE_STALL {
+            if (previous - objective) / scale < DEVIANCE_STALL {
                 self.sweeps_without_progress += 1;
                 if self.sweeps_without_progress >= STALL_SWEEPS {
                     if options.verbose {
@@ -542,6 +599,35 @@ pub fn fit_glm_with_diagnostics(
     // Override Tweedie power if specified
     if let LossFunction::Tweedie(_) = loss_fn {
         loss_fn = LossFunction::Tweedie(options.tweedie_power);
+    }
+
+    // A penalty is defined on each level's contrast against its table's base level,
+    // which only means anything if something pins the base level down. `BaseLevel` is
+    // what does that, and it is the default; under the other two modes the penalty and
+    // the anchoring would be minimising different objectives every sweep. Refusing is
+    // better than fitting something nobody could interpret - see [`crate::glm::penalty`].
+    if options.alpha > 0.0 && options.normalization != Normalization::BaseLevel {
+        return Err(PolarsError::ComputeError(
+            format!(
+                "A penalty (alpha = {}) requires Normalization::BaseLevel, but this fit                  asked for {:?}. The penalty shrinks every level toward its table's base                  level, and the other modes do not hold a base level still, so the two                  would pull against each other every sweep.",
+                options.alpha, options.normalization
+            )
+            .into(),
+        ));
+    }
+    if options.alpha < 0.0 || !options.alpha.is_finite() {
+        return Err(PolarsError::ComputeError(
+            format!("alpha must be finite and not negative, got {}", options.alpha).into(),
+        ));
+    }
+    if !(0.0..=1.0).contains(&options.l1_ratio) {
+        return Err(PolarsError::ComputeError(
+            format!(
+                "l1_ratio must be between 0 (ridge) and 1 (lasso), got {}",
+                options.l1_ratio
+            )
+            .into(),
+        ));
     }
 
     let n = df.height();
@@ -648,6 +734,19 @@ pub fn fit_glm_with_diagnostics(
     // saves, and the correlations are reported either way — a plan whose two geography
     // tables are the same geography is worth telling someone about.
     let table_shapes: Vec<usize> = factors.iter().map(|f| f.len()).collect();
+
+    // The penalty, or `None` when `alpha` is zero. Built once: it is a pair of scalars
+    // and a flag per table, and it costs nothing per sweep beyond the arithmetic in
+    // [`next_factor`].
+    let is_variate: Vec<bool> = variate_values.iter().map(|v| v.is_some()).collect();
+    let penalty = PenaltyPlan::new(
+        options.alpha,
+        options.l1_ratio,
+        weights.iter().sum::<f64>(),
+        &table_shapes,
+        &is_variate,
+    );
+
     let pairable: Vec<bool> = (0..n_tables)
         .map(|t| updatable[t] && variate_values[t].is_none())
         .collect();
@@ -656,7 +755,22 @@ pub fn fit_glm_with_diagnostics(
     } else {
         Vec::new()
     };
-    let joint_pairs = choose_joint_pairs(&correlations, &table_shapes);
+    // The joint solve for a near-aliased pair is a Newton step on a dense block, and a
+    // Newton step has no proximal form - there is no way to soft-threshold two coupled
+    // coordinates at once and land on the right pair of zeros. Under an L1 penalty the
+    // pair falls back to being swept one table at a time, which is correct but gives up
+    // the acceleration; a pure ridge keeps it, because ridge is exact on the diagonal.
+    let joint_pairs = if penalty.as_ref().map_or(false, |p| p.selects()) {
+        if options.verbose && !correlations.is_empty() {
+            println!(
+                "L1 penalty active: near-aliased pairs will be swept separately rather \
+                 than solved as one block"
+            );
+        }
+        Vec::new()
+    } else {
+        choose_joint_pairs(&correlations, &table_shapes)
+    };
     let order = sweep_order(&correlations, n_tables);
 
     // Free, given the correlations: it is an eigenvalue of a matrix the size of the
@@ -708,6 +822,7 @@ pub fn fit_glm_with_diagnostics(
         normalization: options.normalization,
         joint_pairs: &joint_pairs,
         order: &order,
+        penalty: penalty.as_ref(),
     };
 
     let mut progress = Progress {
@@ -718,6 +833,7 @@ pub fn fit_glm_with_diagnostics(
         sweeps_without_progress: 0,
         deviance_history: Vec::with_capacity(options.max_iterations),
         gradient_history: Vec::with_capacity(options.max_iterations),
+        objective_history: Vec::with_capacity(options.max_iterations),
     };
     let mut accelerated_steps = 0usize;
 
@@ -739,8 +855,9 @@ pub fn fit_glm_with_diagnostics(
         }
         ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
         if let Status::Stop = progress.record(
+            ctx.objective(&factors, &means),
             ctx.deviance(&means),
-            ctx.max_score(&means, &mut score_scratch),
+            ctx.max_score(&factors, &means, &mut score_scratch),
             &options,
         ) {
             break 'fitting;
@@ -753,10 +870,13 @@ pub fn fit_glm_with_diagnostics(
         flatten_factors(&factors, &mut theta1);
         ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
         let deviance2 = ctx.deviance(&means);
+        // Judged on the penalised objective, which is what the sweep is descending.
+        // Equal to the deviance whenever no penalty is on.
+        let objective2 = ctx.objective(&factors, &means);
         // What plain iteration achieved. An extrapolated jump has to beat this on the
         // same quantity the fit converges on, or it is not worth taking.
-        let score2 = ctx.max_score(&means, &mut score_scratch);
-        if let Status::Stop = progress.record(deviance2, score2, &options) {
+        let score2 = ctx.max_score(&factors, &means, &mut score_scratch);
+        if let Status::Stop = progress.record(objective2, deviance2, score2, &options) {
             break 'fitting;
         }
         flatten_factors(&factors, &mut theta2);
@@ -770,7 +890,7 @@ pub fn fit_glm_with_diagnostics(
         let Some(mut alpha) = squarem_steplength(&theta0, &theta1, &theta2) else {
             continue;
         };
-        let accept_at = deviance2 + deviance2.abs() * SQUAREM_DEVIANCE_SLACK;
+        let accept_at = objective2 + objective2.abs() * SQUAREM_DEVIANCE_SLACK;
 
         // Pull the jump back toward plain iteration until it is at least not worse than
         // the point it started from. Each attempt costs a rebuild and a deviance, not a
@@ -781,7 +901,9 @@ pub fn fit_glm_with_diagnostics(
             squarem_extrapolate(&theta0, &theta1, &theta2, alpha, eta_limit, &mut candidate);
             unflatten_factors(&candidate, &mut factors);
             ctx.refresh(&factors, &mut eta, &mut means);
-            let d = ctx.deviance(&means);
+            // The extrapolated point is not normalised, which is exactly why the penalty
+            // reads its anchor out of the factors rather than assuming it is zero.
+            let d = ctx.objective(&factors, &means);
             if d.is_finite() && d <= accept_at {
                 landed = true;
                 break;
@@ -817,8 +939,9 @@ pub fn fit_glm_with_diagnostics(
         // `score3` is computed either way, to hand to `record` - so this costs nothing.
         ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
         let deviance3 = ctx.deviance(&means);
-        let score3 = ctx.max_score(&means, &mut score_scratch);
-        if !(deviance3.is_finite() && deviance3 <= accept_at) || !(score3 <= score2) {
+        let objective3 = ctx.objective(&factors, &means);
+        let score3 = ctx.max_score(&factors, &means, &mut score_scratch);
+        if !(objective3.is_finite() && objective3 <= accept_at) || !(score3 <= score2) {
             unflatten_factors(&theta2, &mut factors);
             ctx.refresh(&factors, &mut eta, &mut means);
             consecutive_failures = (consecutive_failures + 1).min(SQUAREM_MAX_BACKOFF);
@@ -828,7 +951,7 @@ pub fn fit_glm_with_diagnostics(
 
         consecutive_failures = 0;
         accelerated_steps += 1;
-        if let Status::Stop = progress.record(deviance3, score3, &options) {
+        if let Status::Stop = progress.record(objective3, deviance3, score3, &options) {
             break 'fitting;
         }
     }
@@ -872,6 +995,7 @@ pub fn fit_glm_with_diagnostics(
             &updatable,
             &variate_values,
             options.normalization,
+            penalty.as_ref(),
         ) {
             Ok(inf) => Some(inf),
             Err(e) => {
@@ -953,6 +1077,7 @@ fn update_table(
     row_exposure: &[f64],
     table: &RatingTable,
     loss_fn: &LossFunction,
+    penalty: Option<&PenaltyPlan>,
     numer: &mut Vec<f64>,
     denom: &mut Vec<f64>,
 ) {
@@ -1005,49 +1130,153 @@ fn update_table(
         );
     }
 
-    for r in 0..n_rows {
-        // Rows with no exposure, locked rows, and degenerate denominators keep
-        // whatever factor they started with.
-        if row_exposure[r] <= 0.0 || table.is_row_offset(r) {
-            continue;
-        }
-        if !(denom[r] > 0.0) || !denom[r].is_finite() {
-            continue;
-        }
+    let step_limit = loss_fn.step_limit();
+    let eta_limit = loss_fn.eta_limit();
 
-        let step = match power {
-            Some(_) => {
-                // ln(A / E); A <= 0 means the level has no positive response at all,
-                // whose MLE is -inf. Fall back to the largest downward step allowed.
-                if numer[r] > 0.0 {
-                    (numer[r] / denom[r]).ln()
-                } else {
-                    -MAX_STEP
-                }
-            }
-            None => numer[r] / denom[r],
+    // Every level of a penalised table is shrunk toward this one. Read from the factors
+    // rather than assumed to be zero, so the penalty stays invariant to the anchoring
+    // `normalize` performs - see [`crate::glm::penalty`].
+    let penalty = penalty.filter(|p| p.covers(t));
+
+    for r in 0..n_rows {
+        let old = factors[t][r];
+
+        // Read after the anchor row has had its own turn, not before the loop. The
+        // anchor row is row 0 and is never penalised, so it moves first and every other
+        // row is then shrunk toward where it actually is. Reading it up front instead
+        // lags the whole table one sweep behind its own base level, and the contrasts
+        // chase a reference that keeps moving: a lasso strong enough to drop every level
+        // settled at a contrast of 1.46 rather than at zero, and tight fits stopped
+        // converging at all. The cost is one array read per row.
+        let anchor = match penalty {
+            Some(_) => factors[t][ANCHOR_ROW],
+            None => 0.0,
         };
 
-        if !step.is_finite() {
-            continue;
-        }
+        // Rows with no exposure, locked rows, degenerate denominators, and a
+        // penalised table's base level all keep whatever factor they started with.
+        let new = if row_exposure[r] <= 0.0
+            || table.is_row_offset(r)
+            || penalty.is_some_and(|p| p.is_gauge(t, r))
+            || !(denom[r] > 0.0)
+            || !denom[r].is_finite()
+        {
+            old
+        } else {
+            next_factor(
+                old,
+                anchor,
+                numer[r],
+                denom[r],
+                power,
+                penalty.and_then(|p| p.row(t, r)),
+                step_limit,
+                eta_limit,
+            )
+            .unwrap_or(old)
+        };
 
-        let old = factors[t][r];
-        let step_limit = loss_fn.step_limit();
-        let eta_limit = loss_fn.eta_limit();
-        let new = (old + step.clamp(-step_limit, step_limit)).clamp(-eta_limit, eta_limit);
         factors[t][r] = new;
-        numer[r] = new - old; // reuse as the delta to apply to eta
+        // Reuse `numer` as the delta to fold into eta. Written on every path, including
+        // the ones that decline to move, so no row can carry its accumulated numerator
+        // through to `apply_row_deltas` as though it were a step.
+        numer[r] = new - old;
     }
 
     // Fold the changes into the running linear predictor and mean. Reusing `numer` as
     // the per-row delta keeps this to a single pass with no extra allocation.
-    for r in 0..n_rows {
-        if row_exposure[r] <= 0.0 || table.is_row_offset(r) || !(denom[r] > 0.0) || !denom[r].is_finite() {
-            numer[r] = 0.0;
-        }
-    }
     apply_row_deltas(loss_fn, table_matches, &numer[..n_rows], offset, eta, means);
+}
+
+/// Where one level of a step table moves to, or `None` if the step is unusable.
+///
+/// This is phase two of a table update - the `O(n_rows)` arithmetic between the two
+/// `O(n)` passes over the data - and it is the only phase a penalty touches. That is
+/// the whole reason regularisation is close to free here: `numer` and `denom` are built
+/// and applied by exactly the same code whether or not `penalty` is `Some`.
+///
+/// **Unpenalised**, the step is what it always was: `ln(A / E)` for a log link, where
+/// `A = numer` and `E = denom`, and `numer / denom` otherwise.
+///
+/// **Penalised**, the same two numbers become the score and curvature of a local
+/// quadratic model, and [`TablePenalty::solve`] returns the contrast that minimises it
+/// plus the penalty. The two agree in the limit: at zero penalty the solve returns
+/// `z + (A - E) / E`, so the raw step is `A / E - 1`, and the `ln(1 + .)` damping below
+/// turns that back into `ln(A / E)` exactly. The penalised path is a generalisation of
+/// the unpenalised one rather than a second algorithm - but it is still gated on
+/// `penalty` being `Some`, so an unpenalised fit runs the arithmetic it always ran and
+/// cannot drift by a rounding step.
+///
+/// The damping is the same trick [`update_pair`] uses, and for the same reason: a raw
+/// Newton step is the wrong size on a log link while the fit is far out. `ln(1 + d)`
+/// preserves sign, preserves zeros - so it moves neither the fixed point nor the local
+/// rate - and damps the overshoot.
+///
+/// One case is deliberately not damped. When the threshold sends a coefficient to
+/// exactly zero the level belongs exactly on the anchor, and landing anywhere near it
+/// instead would leave a lasso fit with levels that are almost but not quite dropped.
+/// So that step is taken whole, provided it is within the step limit; past the limit
+/// the coefficient walks in over the next few sweeps and arrives at zero when it gets
+/// there.
+#[inline]
+#[allow(clippy::too_many_arguments)]
+fn next_factor(
+    old: f64,
+    anchor: f64,
+    numer: f64,
+    denom: f64,
+    power: Option<f64>,
+    penalty: Option<TablePenalty>,
+    step_limit: f64,
+    eta_limit: f64,
+) -> Option<f64> {
+    let step = match penalty {
+        None => match power {
+            Some(_) => {
+                // ln(A / E); A <= 0 means the level has no positive response at all,
+                // whose MLE is -inf. Fall back to the largest downward step allowed.
+                if numer > 0.0 {
+                    (numer / denom).ln()
+                } else {
+                    -MAX_STEP
+                }
+            }
+            None => numer / denom,
+        },
+        Some(pen) => {
+            // The score and curvature of the local model. For a log link the score is
+            // `A - E` - the same quantity the convergence test scatters - and the
+            // curvature is `E`.
+            let (g, h) = match power {
+                Some(_) => (numer - denom, denom),
+                None => (numer, denom),
+            };
+            let z = old - anchor;
+            let theta = pen.solve(g, h, z);
+            if !theta.is_finite() {
+                return None;
+            }
+            let raw = theta - z;
+            if theta == 0.0 && raw.abs() <= step_limit {
+                return Some(anchor.clamp(-eta_limit, eta_limit));
+            }
+            match power {
+                Some(_) => {
+                    if raw > -1.0 {
+                        (1.0 + raw).ln()
+                    } else {
+                        -step_limit
+                    }
+                }
+                None => raw,
+            }
+        }
+    };
+
+    if !step.is_finite() {
+        return None;
+    }
+    Some((old + step.clamp(-step_limit, step_limit)).clamp(-eta_limit, eta_limit))
 }
 
 /// The order tables are swept in: most strongly coupled first.
@@ -1203,6 +1432,7 @@ fn update_pair(
     row_exposure: &[Vec<f64>],
     tables: &[RatingTable],
     loss_fn: &LossFunction,
+    penalty: Option<&PenaltyPlan>,
 ) {
     let (k_t, k_u) = (factors[t].len(), factors[u].len());
     let n = k_t + k_u;
@@ -1250,16 +1480,38 @@ fn update_pair(
     // A level that is locked, or that no observation reached, carries no free parameter.
     // Zeroing its row and column and pinning its diagonal leaves the rest of the system
     // untouched and its own step at zero.
+    // A penalised table's base level is pinned too - it is the gauge the contrasts are
+    // measured against, not a parameter. See [`PenaltyPlan::is_gauge`].
     let frozen_t: Vec<bool> = (0..k_t)
-        .map(|r| row_exposure[t][r] <= 0.0 || tables[t].is_row_offset(r) || !(d_t[r] > 0.0))
+        .map(|r| {
+            row_exposure[t][r] <= 0.0
+                || tables[t].is_row_offset(r)
+                || penalty.is_some_and(|p| p.is_gauge(t, r))
+                || !(d_t[r] > 0.0)
+        })
         .collect();
     let frozen_u: Vec<bool> = (0..k_u)
-        .map(|s| row_exposure[u][s] <= 0.0 || tables[u].is_row_offset(s) || !(d_u[s] > 0.0))
+        .map(|s| {
+            row_exposure[u][s] <= 0.0
+                || tables[u].is_row_offset(s)
+                || penalty.is_some_and(|p| p.is_gauge(u, s))
+                || !(d_u[s] > 0.0)
+        })
         .collect();
 
     // The secondary table takes the ridge, so the shared component lands on the primary.
     let scale: f64 = d_u.iter().sum::<f64>() / (k_u as f64).max(1.0);
     let ridge = PAIR_RIDGE * scale.max(f64::MIN_POSITIVE);
+
+    // An L2 penalty is exact here and costs two extra terms: it adds a constant to the
+    // curvature and a linear term to the score, and this system carries both already.
+    // An L1 penalty has no equivalent - there is no way to soft-threshold two coupled
+    // coordinates simultaneously and land on the right pair of zeros - so the caller
+    // empties `joint_pairs` when one is active, and these lambdas are then all zero.
+    let pen_t = penalty.filter(|p| p.covers(t));
+    let pen_u = penalty.filter(|p| p.covers(u));
+    let anchor_t = factors[t].get(ANCHOR_ROW).copied().unwrap_or(0.0);
+    let anchor_u = factors[u].get(ANCHOR_ROW).copied().unwrap_or(0.0);
 
     let mut a_mat = vec![0.0f64; n * n];
     let mut b_vec = vec![0.0f64; n];
@@ -1268,8 +1520,9 @@ fn update_pair(
             a_mat[r * n + r] = 1.0;
             continue;
         }
-        a_mat[r * n + r] = d_t[r];
-        b_vec[r] = g_t[r];
+        let l2 = pen_t.and_then(|p| p.row(t, r)).map_or(0.0, |q| q.l2);
+        a_mat[r * n + r] = d_t[r] + l2;
+        b_vec[r] = g_t[r] - l2 * (factors[t][r] - anchor_t);
         for s in 0..k_u {
             if frozen_u[s] {
                 continue;
@@ -1285,8 +1538,9 @@ fn update_pair(
             a_mat[j * n + j] = 1.0;
             continue;
         }
-        a_mat[j * n + j] = d_u[s] + ridge;
-        b_vec[j] = g_u[s];
+        let l2 = pen_u.and_then(|p| p.row(u, s)).map_or(0.0, |q| q.l2);
+        a_mat[j * n + j] = d_u[s] + ridge + l2;
+        b_vec[j] = g_u[s] - l2 * (factors[u][s] - anchor_u);
     }
 
     let Some(step) = solve_spd(&a_mat, &b_vec, n) else {
@@ -1836,6 +2090,8 @@ fn max_abs_score(
     updatable: &[bool],
     row_exposure: &[Vec<f64>],
     variate_values: &[Option<(Vec<f64>, usize)>],
+    factors: &[Vec<f64>],
+    penalty: Option<&PenaltyPlan>,
     scratch: &mut [Vec<f64>],
 ) -> f64 {
     for rows in scratch.iter_mut() {
@@ -1924,13 +2180,32 @@ fn max_abs_score(
                 }
             }
             None => {
+                // Under a penalty the score at the optimum is not zero - it is equal
+                // and opposite to the penalty gradient, which is the entire point of
+                // penalising. Testing the raw score would mean a penalised fit never
+                // reported convergence and always ran to `max_iterations`. See
+                // [`TablePenalty::subgradient`], and note it also handles the L1 kink,
+                // where optimality is the inclusion `|g| <= l1` rather than an equation.
+                let table_penalty = penalty.filter(|p| p.covers(t));
+                let anchor = match table_penalty {
+                    Some(_) => factors[t][ANCHOR_ROW],
+                    None => 0.0,
+                };
                 for r in 0..scratch[t].len() {
-                    // A locked row or one with no exposure carries no free parameter,
-                    // so its score is not ours to drive to zero.
-                    if row_exposure[t][r] <= 0.0 || tables[t].is_row_offset(r) {
+                    // A locked row, one with no exposure, or a penalised table's pinned
+                    // base level carries no free parameter, so its score is not ours to
+                    // drive to zero.
+                    if row_exposure[t][r] <= 0.0
+                        || tables[t].is_row_offset(r)
+                        || table_penalty.is_some_and(|p| p.is_gauge(t, r))
+                    {
                         continue;
                     }
-                    worst = worst.max(scratch[t][r].abs());
+                    let g = match table_penalty.and_then(|p| p.row(t, r)) {
+                        Some(pen) => pen.subgradient(scratch[t][r], factors[t][r] - anchor),
+                        None => scratch[t][r],
+                    };
+                    worst = worst.max(g.abs());
                 }
             }
         }
@@ -2228,6 +2503,7 @@ mod tests {
             sweeps_without_progress: 0,
             deviance_history: Vec::with_capacity(capacity),
             gradient_history: Vec::with_capacity(capacity),
+            objective_history: Vec::with_capacity(capacity),
         }
     }
 
@@ -2259,7 +2535,10 @@ mod tests {
             let phase = (sweep as f64) / 5.0;
             let score = 1e-3 * (1.0 - sweep as f64 / 600.0) * (1.5 + phase.sin());
             assert!(
-                matches!(progress.record(deviance, score, &options), Status::Continue),
+                matches!(
+                    progress.record(deviance, deviance, score, &options),
+                    Status::Continue
+                ),
                 "gave up at sweep {} with the deviance still falling",
                 sweep
             );
@@ -2281,7 +2560,7 @@ mod tests {
         for sweep in 0..(4 * STALL_SWEEPS) {
             // Moving only by rounding, which carries no information either way.
             deviance -= deviance * 1e-16;
-            if let Status::Stop = progress.record(deviance, 1e-6, &options) {
+            if let Status::Stop = progress.record(deviance, deviance, 1e-6, &options) {
                 stopped_at = Some(sweep);
                 break;
             }

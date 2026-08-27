@@ -25,6 +25,7 @@ use crate::rating_model::variate_basis_params;
 use super::fitting::Normalization;
 use super::loss::LossFunction;
 use super::matching::NO_MATCH;
+use super::penalty::{PenaltyPlan, ANCHOR_ROW};
 
 /// Largest reduced-basis design permitted. `X'WX` is dense at `p^2` and inverted in
 /// `p^3`, so this bounds the work at roughly 200 MB and a few seconds.
@@ -44,6 +45,19 @@ pub struct GLMInference {
     pub dispersion: f64,
     /// Free parameters in the reduced basis, i.e. the model's rank.
     pub n_parameters: usize,
+    /// Effective parameters actually spent, which is what `aic`, `bic` and
+    /// `df_residual` count.
+    ///
+    /// Equal to `n_parameters` for an unpenalised fit. A penalty buys bias for variance,
+    /// so a penalised model spends **less** than its parameter count: under a ridge this
+    /// is `trace((X'WX + P)^-1 X'WX)`, which falls smoothly from the rank toward zero as
+    /// the penalty grows. Under an L1 penalty it is the number of levels still away from
+    /// their base, which is the standard unbiased estimate for the lasso.
+    ///
+    /// Counting the nominal parameters instead would make `aic` charge a penalised model
+    /// for freedom it was not given, and would make every penalised model look worse
+    /// than the unpenalised one it was chosen over.
+    pub effective_parameters: f64,
     /// Table rows whose parameter is a linear combination of others, as
     /// `(table_index, row_index)`. Their factors are still valid predictions, but the
     /// data cannot separate their effect from another parameter's, so they have no
@@ -152,6 +166,7 @@ pub fn compute_inference(
     updatable: &[bool],
     variate_values: &[Option<(Vec<f64>, usize)>],
     normalization: Normalization,
+    penalty: Option<&PenaltyPlan>,
 ) -> Result<GLMInference, PolarsError> {
     let n_obs = target.len();
     let n_tables = factors.len();
@@ -221,12 +236,19 @@ pub fn compute_inference(
                 });
             }
         } else {
-            let reference = reference_row(&row_exposure[t]);
+            // A penalised table's reference is its base level, because that is the level
+            // the fit actually held still and shrank the others toward. An unpenalised
+            // table is free to anchor on the first level carrying any exposure.
+            let reference = if penalty.is_some_and(|p| p.covers(t)) {
+                Some(ANCHOR_ROW)
+            } else {
+                reference_row(&row_exposure[t])
+            };
             for r in 0..n_rows {
-                if row_exposure[t][r] <= 0.0 {
-                    table_layout.push(ReducedColumn::Excluded);
-                } else if Some(r) == reference {
+                if Some(r) == reference {
                     table_layout.push(ReducedColumn::Reference);
+                } else if row_exposure[t][r] <= 0.0 {
+                    table_layout.push(ReducedColumn::Excluded);
                 } else {
                     table_layout.push(ReducedColumn::Loadings(vec![(n_params, 1.0)]));
                     n_params += 1;
@@ -234,6 +256,29 @@ pub fn compute_inference(
             }
         }
         layout.push(table_layout);
+    }
+
+    // The penalty's own contribution to the curvature, one entry per reduced column,
+    // and which columns the lasso has driven onto their base level. Both are read off
+    // the layout that was just built, so they cannot drift out of step with it.
+    let mut p_diag = vec![0.0f64; n_params];
+    let mut zeroed = vec![false; n_params];
+    if let Some(plan) = penalty {
+        for t in 0..n_tables {
+            if !plan.covers(t) {
+                continue;
+            }
+            let anchor = factors[t][ANCHOR_ROW];
+            for r in 0..factors[t].len() {
+                let Some(pen) = plan.row(t, r) else { continue };
+                if let ReducedColumn::Loadings(loadings) = &layout[t][r] {
+                    for (c, _) in loadings {
+                        p_diag[*c] = pen.l2;
+                        zeroed[*c] = factors[t][r] == anchor;
+                    }
+                }
+            }
+        }
     }
 
     if n_params > MAX_PARAMETERS {
@@ -309,20 +354,7 @@ pub fn compute_inference(
     let active: Vec<usize> = (0..n_params).filter(|j| !aliased[*j]).collect();
     let rank = active.len();
 
-    // ---- 4. Dispersion ---------------------------------------------------------
-    //
-    // Degrees of freedom spend the model's rank, not its parameter count: an aliased
-    // parameter costs nothing because it estimates nothing.
-    let df_residual = active_obs as f64 - rank as f64;
-    let dispersion = if loss_fn.has_fixed_dispersion() {
-        1.0
-    } else if df_residual > 0.0 {
-        pearson_chi2 / df_residual
-    } else {
-        f64::NAN
-    };
-
-    // ---- 5. Invert -------------------------------------------------------------
+    // ---- 4. Invert -------------------------------------------------------------
     let mut compact_of = vec![None; n_params];
     for (c, &j) in active.iter().enumerate() {
         compact_of[j] = Some(c);
@@ -335,7 +367,53 @@ pub fn compute_inference(
             compact[ci * k + cj] = xtwx[i * n_params + j];
         }
     }
-    let compact_cov = invert_spd(&compact, k)?;
+    // Under a penalty the covariance is not the inverse of the information. The
+    // estimator solves `score(b) = P b` rather than `score(b) = 0`, so its variance is
+    // the sandwich `(H + P)^-1 H (H + P)^-1` - smaller than `H^-1`, which is the whole
+    // trade a penalty makes. Reporting `H^-1` here would overstate the uncertainty of
+    // every shrunk level while the point estimates were biased toward the base, which is
+    // exactly the combination that reads as "significant and well measured".
+    //
+    // `trace((H + P)^-1 H)` falls out of the same product and is the effective parameter
+    // count.
+    let penalised = p_diag.iter().any(|v| *v > 0.0);
+    let (compact_cov, spent) = if penalised {
+        let mut a = compact.clone();
+        for (c, &j) in active.iter().enumerate() {
+            a[c * k + c] += p_diag[j];
+        }
+        let a_inv = invert_spd(&a, k)?;
+        let hat = matmul(&a_inv, &compact, k);
+        let trace: f64 = (0..k).map(|i| hat[i * k + i]).sum();
+        (matmul(&hat, &a_inv, k), trace)
+    } else {
+        (invert_spd(&compact, k)?, rank as f64)
+    };
+
+    // An L1 penalty adds no curvature, so it leaves no trace in the sandwich above.
+    // What it spends is the levels it kept: the number of non-zero coefficients is an
+    // unbiased estimate of the lasso's degrees of freedom (Zou, Hastie and Tibshirani,
+    // 2007), and it is what `aic` should charge for a model that also chose its levels.
+    let effective_parameters = match penalty {
+        Some(plan) if plan.selects() => active
+            .iter()
+            .filter(|j| !zeroed[**j])
+            .count() as f64,
+        _ => spent,
+    };
+
+    // ---- 5. Dispersion ---------------------------------------------------------
+    //
+    // Degrees of freedom spend what the model actually used: an aliased parameter costs
+    // nothing because it estimates nothing, and a shrunk one costs less than a free one.
+    let df_residual = active_obs as f64 - effective_parameters;
+    let dispersion = if loss_fn.has_fixed_dispersion() {
+        1.0
+    } else if df_residual > 0.0 {
+        pearson_chi2 / df_residual
+    } else {
+        f64::NAN
+    };
 
     // Scatter back into full-size coordinates; dropped columns stay zero and are
     // caught by the `compact_of` check when contrasts are formed.
@@ -425,6 +503,20 @@ pub fn compute_inference(
         standard_errors.push(ses);
     }
 
+    // A lasso chooses its levels from the same data it then estimates them on, and a
+    // Wald interval that conditions on that choice while ignoring it is famously too
+    // narrow - it is not a wide interval, it is the wrong quantity. There is no cheap
+    // correction; the honest answers are a bootstrap or a refit on the selected levels,
+    // both of which are the caller's to run. So nothing is reported rather than
+    // something that would be read as a significance test.
+    if penalty.is_some_and(|p| p.selects()) {
+        for ses in standard_errors.iter_mut() {
+            for se in ses.iter_mut() {
+                *se = f64::NAN;
+            }
+        }
+    }
+
     // Without an anchor the factors are not identified, so a per-row standard error
     // would be describing a quantity the fit does not pin down.
     if normalization == Normalization::None {
@@ -442,8 +534,9 @@ pub fn compute_inference(
             // Parameter count follows statsmodels: the mean parameters only, and the
             // rank rather than the nominal count. An estimated dispersion is not
             // counted, so these line up with what statsmodels and most GLM software
-            // report.
-            let k = rank as f64;
+            // report. Under a penalty the effective count is what was spent, which is
+            // equal to the rank when there is no penalty.
+            let k = effective_parameters;
             (
                 Some(-2.0 * llf + 2.0 * k),
                 Some(-2.0 * llf + k * (active_obs as f64).ln()),
@@ -517,6 +610,7 @@ pub fn compute_inference(
         dispersion,
         variate_terms,
         n_parameters: rank,
+        effective_parameters,
         df_residual,
         pearson_chi2,
         log_likelihood,
@@ -605,6 +699,26 @@ const ALIAS_DESIGN_TOL: f64 = 1e-12;
 
 /// Finds parameters that are linear combinations of earlier ones.
 ///
+/// `a * b` for two dense `n x n` matrices in row-major order.
+///
+/// Only reached on a penalised fit, where it runs twice alongside the `n^3` inversion
+/// that was happening anyway.
+fn matmul(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
+    let mut out = vec![0.0f64; n * n];
+    for i in 0..n {
+        for l in 0..n {
+            let x = a[i * n + l];
+            if x == 0.0 {
+                continue;
+            }
+            for j in 0..n {
+                out[i * n + j] += x * b[l * n + j];
+            }
+        }
+    }
+    out
+}
+
 /// A rank-deficient `X'WX` is not an error condition here — it is a statement about
 /// the data. Two tables keyed on the same feature are collinear; a completely
 /// separated level carries no information and confounds with the intercept. Either
