@@ -1138,30 +1138,56 @@ fn update_table(
     // `normalize` performs - see [`crate::glm::penalty`].
     let penalty = penalty.filter(|p| p.covers(t));
 
+    // Scratch for the base level's own step, which needs every other level's contrast
+    // at once. One allocation the width of the table, on penalised fits only.
+    let mut contrasts: Vec<f64> = match penalty {
+        Some(_) => Vec::with_capacity(n_rows.saturating_sub(1)),
+        None => Vec::new(),
+    };
+
     for r in 0..n_rows {
         let old = factors[t][r];
 
-        // Read after the anchor row has had its own turn, not before the loop. The
-        // anchor row is row 0 and is never penalised, so it moves first and every other
-        // row is then shrunk toward where it actually is. Reading it up front instead
-        // lags the whole table one sweep behind its own base level, and the contrasts
-        // chase a reference that keeps moving: a lasso strong enough to drop every level
-        // settled at a contrast of 1.46 rather than at zero, and tight fits stopped
-        // converging at all. The cost is one array read per row.
+        // Read after the base level has had its own turn, not before the loop, so every
+        // other level is shrunk toward where the base actually is rather than toward
+        // where it was a sweep ago. Reading it up front left the contrasts chasing a
+        // reference that kept moving - a lasso strong enough to drop every level settled
+        // at a contrast of 1.46 instead of zero. The cost is one array read per row.
         let anchor = match penalty {
             Some(_) => factors[t][ANCHOR_ROW],
             None => 0.0,
         };
 
-        // Rows with no exposure, locked rows, degenerate denominators, and a
-        // penalised table's base level all keep whatever factor they started with.
+        // Rows with no exposure, locked rows, and degenerate denominators keep whatever
+        // factor they started with.
         let new = if row_exposure[r] <= 0.0
             || table.is_row_offset(r)
-            || penalty.is_some_and(|p| p.is_gauge(t, r))
             || !(denom[r] > 0.0)
             || !denom[r].is_finite()
         {
             old
+        } else if let (Some(pen), true) = (penalty, r == ANCHOR_ROW) {
+            // The base level moves every contrast at once, so its step is not a scalar
+            // solve - see [`TablePenalty::solve_anchor`]. Every other level is still
+            // holding last sweep's value here, which is what makes these the contrasts
+            // the step is defined against.
+            contrasts.clear();
+            contrasts.extend(
+                (0..n_rows)
+                    .filter(|s| *s != ANCHOR_ROW && pen.row(t, *s).is_some())
+                    .map(|s| factors[t][s] - old),
+            );
+            anchor_factor(
+                old,
+                numer[r],
+                denom[r],
+                power,
+                pen.row(t, 1).unwrap_or(TablePenalty { l1: 0.0, l2: 0.0 }),
+                &mut contrasts,
+                step_limit,
+                eta_limit,
+            )
+            .unwrap_or(old)
         } else {
             next_factor(
                 old,
@@ -1273,6 +1299,47 @@ fn next_factor(
         }
     };
 
+    if !step.is_finite() {
+        return None;
+    }
+    Some((old + step.clamp(-step_limit, step_limit)).clamp(-eta_limit, eta_limit))
+}
+
+/// Where a penalised table's base level moves to, or `None` if the step is unusable.
+///
+/// [`TablePenalty::solve_anchor`] carries the argument for why this row is stepped at
+/// all rather than pinned; the mechanics here are the same as [`next_factor`], including
+/// the `ln(1 + .)` damping that a log link needs.
+#[inline]
+#[allow(clippy::too_many_arguments)]
+fn anchor_factor(
+    old: f64,
+    numer: f64,
+    denom: f64,
+    power: Option<f64>,
+    penalty: TablePenalty,
+    contrasts: &mut [f64],
+    step_limit: f64,
+    eta_limit: f64,
+) -> Option<f64> {
+    let (g, h) = match power {
+        Some(_) => (numer - denom, denom),
+        None => (numer, denom),
+    };
+    let raw = penalty.solve_anchor(g, h, contrasts);
+    if !raw.is_finite() {
+        return None;
+    }
+    let step = match power {
+        Some(_) => {
+            if raw > -1.0 {
+                (1.0 + raw).ln()
+            } else {
+                -step_limit
+            }
+        }
+        None => raw,
+    };
     if !step.is_finite() {
         return None;
     }
@@ -1480,38 +1547,31 @@ fn update_pair(
     // A level that is locked, or that no observation reached, carries no free parameter.
     // Zeroing its row and column and pinning its diagonal leaves the rest of the system
     // untouched and its own step at zero.
-    // A penalised table's base level is pinned too - it is the gauge the contrasts are
-    // measured against, not a parameter. See [`PenaltyPlan::is_gauge`].
     let frozen_t: Vec<bool> = (0..k_t)
-        .map(|r| {
-            row_exposure[t][r] <= 0.0
-                || tables[t].is_row_offset(r)
-                || penalty.is_some_and(|p| p.is_gauge(t, r))
-                || !(d_t[r] > 0.0)
-        })
+        .map(|r| row_exposure[t][r] <= 0.0 || tables[t].is_row_offset(r) || !(d_t[r] > 0.0))
         .collect();
     let frozen_u: Vec<bool> = (0..k_u)
-        .map(|s| {
-            row_exposure[u][s] <= 0.0
-                || tables[u].is_row_offset(s)
-                || penalty.is_some_and(|p| p.is_gauge(u, s))
-                || !(d_u[s] > 0.0)
-        })
+        .map(|s| row_exposure[u][s] <= 0.0 || tables[u].is_row_offset(s) || !(d_u[s] > 0.0))
         .collect();
 
     // The secondary table takes the ridge, so the shared component lands on the primary.
     let scale: f64 = d_u.iter().sum::<f64>() / (k_u as f64).max(1.0);
     let ridge = PAIR_RIDGE * scale.max(f64::MIN_POSITIVE);
 
-    // An L2 penalty is exact here and costs two extra terms: it adds a constant to the
-    // curvature and a linear term to the score, and this system carries both already.
-    // An L1 penalty has no equivalent - there is no way to soft-threshold two coupled
-    // coordinates simultaneously and land on the right pair of zeros - so the caller
-    // empties `joint_pairs` when one is active, and these lambdas are then all zero.
+    // An L2 penalty is exact here: it adds a constant to each level's curvature, a
+    // linear term to its score, and - because every contrast is measured against the
+    // base level - a `-l2` coupling between each level and the base, which this system
+    // is already dense enough to carry. An L1 penalty has no equivalent, since there is
+    // no way to soft-threshold two coupled coordinates at once and land on the right
+    // pair of zeros, so the caller empties `joint_pairs` when one is active and the
+    // lambdas below are then all zero.
     let pen_t = penalty.filter(|p| p.covers(t));
     let pen_u = penalty.filter(|p| p.covers(u));
     let anchor_t = factors[t].get(ANCHOR_ROW).copied().unwrap_or(0.0);
     let anchor_u = factors[u].get(ANCHOR_ROW).copied().unwrap_or(0.0);
+    let l2_of = |p: Option<&PenaltyPlan>, table: usize, row: usize| -> f64 {
+        p.and_then(|p| p.row(table, row)).map_or(0.0, |q| q.l2)
+    };
 
     let mut a_mat = vec![0.0f64; n * n];
     let mut b_vec = vec![0.0f64; n];
@@ -1520,9 +1580,27 @@ fn update_pair(
             a_mat[r * n + r] = 1.0;
             continue;
         }
-        let l2 = pen_t.and_then(|p| p.row(t, r)).map_or(0.0, |q| q.l2);
-        a_mat[r * n + r] = d_t[r] + l2;
-        b_vec[r] = g_t[r] - l2 * (factors[t][r] - anchor_t);
+        if r == ANCHOR_ROW {
+            // The base level carries every contrast's penalty with the opposite sign.
+            let mut curvature = 0.0;
+            let mut score = 0.0;
+            for other in 0..k_t {
+                if other == ANCHOR_ROW || frozen_t[other] {
+                    continue;
+                }
+                let l2 = l2_of(pen_t, t, other);
+                curvature += l2;
+                score += l2 * (factors[t][other] - anchor_t);
+                a_mat[r * n + other] -= l2;
+                a_mat[other * n + r] -= l2;
+            }
+            a_mat[r * n + r] = d_t[r] + curvature;
+            b_vec[r] = g_t[r] + score;
+        } else {
+            let l2 = l2_of(pen_t, t, r);
+            a_mat[r * n + r] = d_t[r] + l2;
+            b_vec[r] = g_t[r] - l2 * (factors[t][r] - anchor_t);
+        }
         for s in 0..k_u {
             if frozen_u[s] {
                 continue;
@@ -1538,9 +1616,26 @@ fn update_pair(
             a_mat[j * n + j] = 1.0;
             continue;
         }
-        let l2 = pen_u.and_then(|p| p.row(u, s)).map_or(0.0, |q| q.l2);
-        a_mat[j * n + j] = d_u[s] + ridge + l2;
-        b_vec[j] = g_u[s] - l2 * (factors[u][s] - anchor_u);
+        if s == ANCHOR_ROW {
+            let mut curvature = 0.0;
+            let mut score = 0.0;
+            for other in 0..k_u {
+                if other == ANCHOR_ROW || frozen_u[other] {
+                    continue;
+                }
+                let l2 = l2_of(pen_u, u, other);
+                curvature += l2;
+                score += l2 * (factors[u][other] - anchor_u);
+                a_mat[j * n + (k_t + other)] -= l2;
+                a_mat[(k_t + other) * n + j] -= l2;
+            }
+            a_mat[j * n + j] = d_u[s] + ridge + curvature;
+            b_vec[j] = g_u[s] + score;
+        } else {
+            let l2 = l2_of(pen_u, u, s);
+            a_mat[j * n + j] = d_u[s] + ridge + l2;
+            b_vec[j] = g_u[s] - l2 * (factors[u][s] - anchor_u);
+        }
     }
 
     let Some(step) = solve_spd(&a_mat, &b_vec, n) else {
@@ -2191,19 +2286,35 @@ fn max_abs_score(
                     Some(_) => factors[t][ANCHOR_ROW],
                     None => 0.0,
                 };
+                // The base level's own condition, which is the sum of every other
+                // level's with the sign flipped. Built once per table.
+                let base_contrasts: Vec<f64> = match table_penalty {
+                    Some(plan) => (0..scratch[t].len())
+                        .filter(|s| *s != ANCHOR_ROW && plan.row(t, *s).is_some())
+                        .map(|s| factors[t][s] - anchor)
+                        .collect(),
+                    None => Vec::new(),
+                };
+
                 for r in 0..scratch[t].len() {
-                    // A locked row, one with no exposure, or a penalised table's pinned
-                    // base level carries no free parameter, so its score is not ours to
-                    // drive to zero.
-                    if row_exposure[t][r] <= 0.0
-                        || tables[t].is_row_offset(r)
-                        || table_penalty.is_some_and(|p| p.is_gauge(t, r))
-                    {
+                    // A locked row or one with no exposure carries no free parameter,
+                    // so its score is not ours to drive to zero.
+                    if row_exposure[t][r] <= 0.0 || tables[t].is_row_offset(r) {
                         continue;
                     }
-                    let g = match table_penalty.and_then(|p| p.row(t, r)) {
-                        Some(pen) => pen.subgradient(scratch[t][r], factors[t][r] - anchor),
-                        None => scratch[t][r],
+                    let g = match (table_penalty, r == ANCHOR_ROW) {
+                        (Some(plan), true) => plan
+                            .row(t, 1)
+                            .map_or(scratch[t][r], |pen| {
+                                pen.anchor_subgradient(scratch[t][r], &base_contrasts)
+                            }),
+                        (Some(plan), false) => match plan.row(t, r) {
+                            Some(pen) => {
+                                pen.subgradient(scratch[t][r], factors[t][r] - anchor)
+                            }
+                            None => scratch[t][r],
+                        },
+                        (None, _) => scratch[t][r],
                     };
                     worst = worst.max(g.abs());
                 }

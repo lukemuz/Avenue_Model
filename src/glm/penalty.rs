@@ -119,6 +119,121 @@ impl TablePenalty {
         }
     }
 
+    /// Where a penalised table's **base level** should move to.
+    ///
+    /// The base level is not a spectator. Every other level is measured against it, so
+    /// moving it by `d` moves every contrast by `-d` at once - which is exactly the
+    /// direction a backfit needs to be able to take cheaply, and exactly the direction
+    /// the intercept would otherwise have to supply one table at a time.
+    ///
+    /// **Pinning it instead is a disaster, and a quiet one.** It looks reasonable: the
+    /// base level is the reference, other libraries drop that column, so hold it still.
+    /// But the model carries an intercept *and* a factor per level, and pinning the base
+    /// removes the redundancy that lets a table shift its own level in one step. On the
+    /// French motor data that took a fit from 12 sweeps to 457 **at `alpha = 1e-12`** -
+    /// a penalty far too small to move a coefficient. The penalty was free; the
+    /// parameterisation was not.
+    ///
+    /// So the base level stays free and carries the penalty's gradient with respect to
+    /// itself, which is minus the sum of every other level's. That makes the
+    /// over-parameterised stationarity conditions consistent again - they sum to the
+    /// intercept's condition, exactly as they do unpenalised - and leaves the gauge
+    /// freedom that [`Normalization::BaseLevel`] exists to remove.
+    ///
+    /// Writing `z_r` for the contrasts, `m` for how many there are, and `S` for their
+    /// sum, the objective in the step `d` is
+    ///
+    /// ```text
+    /// h/2 * d^2 - g*d + sum_r [ l2/2 * (z_r - d)^2 + l1 * |z_r - d| ]
+    /// ```
+    ///
+    /// which is convex, piecewise quadratic, and has kinks at every `z_r`. Its
+    /// derivative is `d*(h + m*l2) - (g + l2*S) - l1 * sum_r sign(z_r - d)`, and is
+    /// non-decreasing, so the root is found by walking the sorted contrasts once. With
+    /// no L1 term there are no kinks and the walk collapses to a single division.
+    ///
+    /// `contrasts` is sorted in place. That is `O(m log m)` per table per sweep against
+    /// the `O(n)` passes either side of it, so it does not show up.
+    ///
+    /// [`Normalization::BaseLevel`]: crate::glm::fitting::Normalization::BaseLevel
+    pub fn solve_anchor(&self, g: f64, h: f64, contrasts: &mut [f64]) -> f64 {
+        let m = contrasts.len();
+        let a = h + m as f64 * self.l2;
+        if !(a > 0.0) {
+            return 0.0;
+        }
+        let b = g + self.l2 * contrasts.iter().sum::<f64>();
+        if !(self.l1 > 0.0) {
+            return b / a;
+        }
+
+        contrasts.sort_by(|x, y| x.total_cmp(y));
+
+        // `below` counts the contrasts strictly under the interval being examined, so
+        // the sign sum over `z_r - d` is `m - 2*below`.
+        let mut below = 0usize;
+        let mut idx = 0usize;
+        loop {
+            let lo = if idx == 0 {
+                f64::NEG_INFINITY
+            } else {
+                contrasts[idx - 1]
+            };
+            let hi = if idx == m { f64::INFINITY } else { contrasts[idx] };
+            let sign_sum = m as f64 - 2.0 * below as f64;
+            let candidate = (b + self.l1 * sign_sum) / a;
+            if candidate > lo && candidate < hi {
+                return candidate;
+            }
+            if idx == m {
+                return b / a;
+            }
+
+            // Step over every contrast equal to this one at once; the derivative jumps
+            // by twice their number.
+            let v = contrasts[idx];
+            let mut equal = 0usize;
+            while idx + equal < m && contrasts[idx + equal] == v {
+                equal += 1;
+            }
+            let left = a * v - b - self.l1 * (m as f64 - 2.0 * below as f64);
+            let right = a * v - b - self.l1 * (m as f64 - 2.0 * (below + equal) as f64);
+            if left <= 0.0 && right >= 0.0 {
+                // The derivative changes sign across the kink itself.
+                return v;
+            }
+            below += equal;
+            idx += equal;
+        }
+    }
+
+    /// The smallest subgradient at a penalised table's base level.
+    ///
+    /// Its score is `g` plus the sum of every other level's penalty gradient, because
+    /// the base level appears in all of them with the opposite sign. Contrasts sitting
+    /// exactly on zero contribute an interval rather than a value, and the best choice
+    /// within it is the usual soft threshold.
+    ///
+    /// Summed over a table this cancels against the other rows exactly, leaving the
+    /// intercept's own condition - which is the check that the conditions are
+    /// consistent, and is what pinning the base level broke.
+    #[inline]
+    pub fn anchor_subgradient(&self, g: f64, contrasts: &[f64]) -> f64 {
+        let mut base = g;
+        let mut slack = 0.0;
+        for z in contrasts {
+            base += self.l2 * z;
+            if *z > 0.0 {
+                base += self.l1;
+            } else if *z < 0.0 {
+                base -= self.l1;
+            } else {
+                slack += self.l1;
+            }
+        }
+        soft_threshold(base, slack)
+    }
+
     /// The penalty's contribution to the objective, on the half-deviance scale.
     #[inline]
     pub fn value(&self, z: f64) -> f64 {
@@ -217,36 +332,6 @@ impl PenaltyPlan {
         } else {
             Some(self.penalty)
         }
-    }
-
-    /// Whether this row is a penalised table's gauge, and so must be held still.
-    ///
-    /// **A penalised table's base level is pinned, not fitted.** This is the one place
-    /// where switching a penalty on changes the shape of the problem rather than just
-    /// its arithmetic, and getting it wrong makes the fit unsolvable rather than merely
-    /// inaccurate.
-    ///
-    /// The model carries an intercept *and* a free factor for every level, one more
-    /// parameter than the model has directions. Unpenalised that is harmless: the
-    /// stationarity conditions are `g_r = 0` for every row, the intercept's condition is
-    /// their sum, and a redundant condition among consistent ones costs nothing.
-    ///
-    /// Add a penalty on the contrasts and the redundancy turns into a contradiction.
-    /// Every non-base level now wants `g_r = p_r`, the base level would still want
-    /// `g_0 = 0`, and the intercept still wants the residuals to sum to zero - which
-    /// forces `sum p_r = 0`, something no real penalty satisfies. The two conditions
-    /// fight, and the fit converges to whichever the sweep happened to apply last. On a
-    /// lasso strong enough to drop every level, the intercept came back holding the base
-    /// level's own mean instead of the overall weighted mean, and tighter fits stopped
-    /// converging at all because no point satisfied every condition at once.
-    ///
-    /// Holding the base level still removes the extra parameter and the extra condition
-    /// together, leaving exactly the identified problem: an intercept and one contrast
-    /// per remaining level. That is also, precisely, what one-hot dummy coding with a
-    /// dropped reference gives every other library, which is why the two agree.
-    #[inline]
-    pub fn is_gauge(&self, table: usize, row: usize) -> bool {
-        row == ANCHOR_ROW && self.covers(table)
     }
 
     /// Whether any table is penalised at all.
@@ -375,13 +460,95 @@ mod tests {
         assert!(p.row(1, 1).is_some());
     }
 
+    /// Brute force against the definition: the anchor step has to minimise the
+    /// piecewise-quadratic objective it claims to, kinks and all.
     #[test]
-    fn only_a_penalised_table_has_a_pinned_gauge() {
-        let p = PenaltyPlan::new(0.1, 0.5, 1.0, &[1, 4, 5], &[false, false, true]).unwrap();
-        assert!(p.is_gauge(1, 0), "a penalised table pins its base level");
-        assert!(!p.is_gauge(1, 1));
-        assert!(!p.is_gauge(0, 0), "the intercept is the one free constant");
-        assert!(!p.is_gauge(2, 0), "an unpenalised table keeps every row free");
+    fn the_anchor_step_minimises_its_objective() {
+        let cases: [(f64, f64, Vec<f64>); 6] = [
+            (3.0, 4.0, vec![0.5, -0.25, 1.0]),
+            (-2.0, 1.0, vec![0.0, 0.0, 0.8]),
+            (0.0, 2.0, vec![-1.0, -1.0, -1.0]),
+            (12.0, 0.5, vec![0.3]),
+            (-7.0, 3.0, vec![2.0, -2.0, 0.0, 0.4, 0.4]),
+            (0.1, 9.0, vec![]),
+        ];
+        for (l1, l2) in [(0.0, 1.5), (2.0, 0.0), (1.0, 0.75), (0.0, 0.0)] {
+            let p = TablePenalty { l1, l2 };
+            for (g, h, z) in cases.iter() {
+                let f = |d: f64| {
+                    0.5 * h * d * d - g * d
+                        + z.iter()
+                            .map(|zr| p.value(zr - d))
+                            .sum::<f64>()
+                };
+                let mut work = z.clone();
+                let d = p.solve_anchor(*g, *h, &mut work);
+                let best = f(d);
+                // Nothing nearby may be better, at a range of scales.
+                for step in [1e-6, 1e-4, 1e-2, 0.1, 1.0] {
+                    for probe in [d - step, d + step] {
+                        assert!(
+                            f(probe) >= best - 1e-9 * best.abs().max(1.0),
+                            "l1={l1} l2={l2} g={g} h={h} z={z:?}: f({probe})={}                              beats f({d})={best}",
+                            f(probe)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The step and the subgradient must agree about where the optimum is, or the fit
+    /// stops somewhere the sweep would still move away from.
+    #[test]
+    fn the_anchor_subgradient_vanishes_where_the_anchor_step_does() {
+        let p = TablePenalty { l1: 1.5, l2: 2.0 };
+        for g in [-9.0, -3.0, -0.5, 0.0, 0.5, 3.0, 9.0] {
+            for z in [
+                vec![0.0, 0.0],
+                vec![0.6, -0.6],
+                vec![1.0, 1.0, 1.0],
+                vec![0.0, 2.0, -0.3],
+            ] {
+                let mut work = z.clone();
+                let moved = p.solve_anchor(g, 4.0, &mut work).abs() > 1e-12;
+                let scored = p.anchor_subgradient(g, &z).abs() > 1e-12;
+                assert_eq!(moved, scored, "g = {g}, z = {z:?}");
+            }
+        }
+    }
+
+    /// Summed over a whole table the penalty gradients cancel, leaving the intercept's
+    /// own condition. This is the consistency that pinning the base level destroyed, and
+    /// with it the whole argument for letting the base level move.
+    #[test]
+    fn a_tables_penalty_gradients_sum_to_zero() {
+        // Differentiable: every contrast away from the kink.
+        let p = TablePenalty { l1: 0.9, l2: 1.7 };
+        let z = [0.4, -1.2, 2.5];
+        let rows: f64 = z.iter().map(|zr| p.subgradient(0.0, *zr)).sum();
+        let anchor = p.anchor_subgradient(0.0, &z);
+        assert!(
+            (rows + anchor).abs() < 1e-12,
+            "rows contribute {rows}, anchor {anchor}"
+        );
+
+        // A pure ridge has no kink at all, so a zero contrast cancels too.
+        let ridge = TablePenalty { l1: 0.0, l2: 1.7 };
+        let z = [0.4, -1.2, 0.0, 2.5];
+        let rows: f64 = z.iter().map(|zr| ridge.subgradient(0.0, *zr)).sum();
+        let anchor = ridge.anchor_subgradient(0.0, &z);
+        assert!(
+            (rows + anchor).abs() < 1e-12,
+            "ridge: rows contribute {rows}, anchor {anchor}"
+        );
+
+        // On a kink each side independently picks its own smallest subgradient, so the
+        // two agree only to within `l1` per zeroed contrast. That gap is slack the base
+        // level is entitled to, not a disagreement about where the optimum is.
+        let rows: f64 = z.iter().map(|zr| p.subgradient(0.0, *zr)).sum();
+        let anchor = p.anchor_subgradient(0.0, &z);
+        assert!((rows + anchor).abs() <= p.l1 + 1e-12, "gap {}", rows + anchor);
     }
 
     #[test]
