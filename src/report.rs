@@ -15,7 +15,7 @@
 //! needs, and what an implementation team reads off. Because the tables *are* the
 //! model, those were always one document.
 
-use crate::plan::{FittedPlan, PlanCheck, ResolvedTerm};
+use crate::plan::{FittedModel, PlanCheck, ResolvedTerm};
 use crate::validation::{Severity, Validation, ValidationOptions, Warning};
 use polars::prelude::*;
 
@@ -77,7 +77,9 @@ pub struct ModelReport {
     pub plan_json: String,
     /// A short digest of the plan, to tell two reports apart at a glance.
     pub fingerprint: String,
-    pub fit: FitSummary,
+    /// How the fit went. `None` for a model that was loaded or converted rather than
+    /// fitted here, so a report never implies a fit that did not happen.
+    pub fit: Option<FitSummary>,
     /// Present when the report was built against data.
     pub validation: Option<Validation>,
     /// Rating tables with coefficients, standard errors, status and relativities.
@@ -89,7 +91,7 @@ pub struct ModelReport {
     pub headline: String,
 }
 
-impl FittedPlan {
+impl FittedModel {
     /// Assemble the full report, validating against `data` when it is given.
     ///
     /// Pass the [`PlanCheck`] from before fitting to carry its findings through;
@@ -98,7 +100,6 @@ impl FittedPlan {
     pub fn report(
         &self,
         data: Option<&DataFrame>,
-        check: Option<&PlanCheck>,
         options: &ValidationOptions,
     ) -> Result<ModelReport, PolarsError> {
         let validation = match data {
@@ -107,7 +108,10 @@ impl FittedPlan {
         };
 
         let mut findings: Vec<Finding> = Vec::new();
-        if let Some(check) = check {
+        // The check comes from the fit rather than from the caller. Several of its
+        // findings are about the plan and cannot be recovered from the fitted model,
+        // so asking for it back meant forgetting produced a cleaner report.
+        if let Some(check) = self.check.as_ref() {
             for issue in &check.issues {
                 findings.push(Finding {
                     severity: issue.severity,
@@ -126,19 +130,21 @@ impl FittedPlan {
                     stage: stage_of(warning).to_string(),
                 });
             }
-        } else if !self.diagnostics.converged {
-            // Without validation the convergence flag would otherwise go unreported.
-            findings.push(Finding {
-                severity: Severity::High,
-                code: "not_converged".to_string(),
-                message: format!(
-                    "The fit did not converge: it stopped after {} sweeps with a score of \
-                     {:.2e}. The factors had not settled, so these are not the \
-                     maximum-likelihood relativities.",
-                    self.diagnostics.iterations, self.diagnostics.max_gradient
-                ),
-                stage: "fit".to_string(),
-            });
+        } else if let Some(diagnostics) = self.diagnostics.as_ref() {
+            if !diagnostics.converged {
+                // Without validation the convergence flag would otherwise go unreported.
+                findings.push(Finding {
+                    severity: Severity::High,
+                    code: "not_converged".to_string(),
+                    message: format!(
+                        "The fit did not converge: it stopped after {} sweeps with a score \
+                         of {:.2e}. The factors had not settled, so these are not the \
+                         maximum-likelihood relativities.",
+                        diagnostics.iterations, diagnostics.max_gradient
+                    ),
+                    stage: "fit".to_string(),
+                });
+            }
         }
 
         // A finding reported before the fit and again after it is one finding.
@@ -153,28 +159,39 @@ impl FittedPlan {
             Verdict::Usable
         };
 
-        let inference = self.diagnostics.inference.as_ref();
-        let fit = FitSummary {
-            converged: self.diagnostics.converged,
-            iterations: self.diagnostics.iterations,
-            max_gradient: self.diagnostics.max_gradient,
-            deviance: self.diagnostics.deviance,
-            null_deviance: self.diagnostics.null_deviance,
-            pseudo_r2: self.diagnostics.pseudo_r2(),
-            n_parameters: inference.map(|i| i.n_parameters),
-            dispersion: inference.map(|i| i.dispersion),
-            aic: inference.and_then(|i| i.aic),
-            bic: inference.and_then(|i| i.bic),
-            table_conditioning: self.diagnostics.table_conditioning,
-        };
+        let fit = self.diagnostics.as_ref().map(|diagnostics| {
+            let inference = diagnostics.inference.as_ref();
+            FitSummary {
+                converged: diagnostics.converged,
+                iterations: diagnostics.iterations,
+                max_gradient: diagnostics.max_gradient,
+                deviance: diagnostics.deviance,
+                null_deviance: diagnostics.null_deviance,
+                pseudo_r2: diagnostics.pseudo_r2(),
+                n_parameters: inference.map(|i| i.n_parameters),
+                dispersion: inference.map(|i| i.dispersion),
+                aic: inference.and_then(|i| i.aic),
+                bic: inference.and_then(|i| i.bic),
+                table_conditioning: diagnostics.table_conditioning,
+            }
+        });
 
-        let plan_json = self.plan.to_json()?;
-        let fingerprint = fingerprint(&plan_json);
-        let headline = headline(verdict, &fit, validation.as_ref(), &findings);
+        // A model with no plan has nothing to fingerprint but its tables, so the
+        // fingerprint follows whatever describes it.
+        let plan_json = match self.plan.as_ref() {
+            Some(plan) => plan.to_json()?,
+            None => String::new(),
+        };
+        let fingerprint = fingerprint(if plan_json.is_empty() {
+            &self.family
+        } else {
+            &plan_json
+        });
+        let headline = headline(verdict, fit.as_ref(), validation.as_ref(), &findings);
 
         Ok(ModelReport {
-            family: self.plan.family.clone(),
-            target: self.target.clone(),
+            family: self.family.clone(),
+            target: self.target.clone().unwrap_or_else(|| "unknown".to_string()),
             table_names: self.table_names.clone(),
             resolved: self.resolved.clone(),
             plan_json,
@@ -211,7 +228,7 @@ fn fingerprint(plan_json: &str) -> String {
 
 fn headline(
     verdict: Verdict,
-    fit: &FitSummary,
+    fit: Option<&FitSummary>,
     validation: Option<&Validation>,
     findings: &[Finding],
 ) -> String {
@@ -227,11 +244,15 @@ fn headline(
             v.ae_ratio,
             v.gini
         ),
-        None => format!(
-            "It explains {:.1}% of the deviance in training, and has not been measured \
-             against held-out data",
-            100.0 * fit.pseudo_r2
-        ),
+        None => match fit {
+            Some(fit) => format!(
+                "It explains {:.1}% of the deviance in training, and has not been measured \
+                 against held-out data",
+                100.0 * fit.pseudo_r2
+            ),
+            // Loaded or converted: there is no training deviance to quote either.
+            None => "It has not been measured against any data".to_string(),
+        },
     };
 
     match verdict {
@@ -306,43 +327,50 @@ impl ModelReport {
         }
         out.push('\n');
 
-        out.push_str("## Fit\n\n");
-        out.push_str(&format!(
-            "| | |\n|---|---|\n\
-             | Converged | {} after {} sweeps (score {:.2e}) |\n\
-             | Deviance | {:.6} against a null of {:.6} |\n\
-             | Pseudo R-squared | {:.4} |\n",
-            if self.fit.converged { "yes" } else { "**no**" },
-            self.fit.iterations,
-            self.fit.max_gradient,
-            self.fit.deviance,
-            self.fit.null_deviance,
-            self.fit.pseudo_r2,
-        ));
-        if let Some(p) = self.fit.n_parameters {
-            out.push_str(&format!("| Parameters | {} |\n", p));
-        }
-        if let Some(d) = self.fit.dispersion {
-            out.push_str(&format!("| Dispersion | {:.6} |\n", d));
-        }
-        if let Some(a) = self.fit.aic {
-            out.push_str(&format!("| AIC | {:.4} |\n", a));
-        }
-        if let Some(b) = self.fit.bic {
-            out.push_str(&format!("| BIC | {:.4} |\n", b));
-        }
-        if let Some(c) = self.fit.table_conditioning {
+        if let Some(fit) = self.fit.as_ref() {
+            out.push_str("## Fit\n\n");
             out.push_str(&format!(
-                "| Table conditioning | {:.2}{} |\n",
-                c,
-                if c > 10.0 {
-                    " — above 10, expect a slow fit"
-                } else {
-                    ""
-                }
+                "| | |\n|---|---|\n\
+                 | Converged | {} after {} sweeps (score {:.2e}) |\n\
+                 | Deviance | {:.6} against a null of {:.6} |\n\
+                 | Pseudo R-squared | {:.4} |\n",
+                if fit.converged { "yes" } else { "**no**" },
+                fit.iterations,
+                fit.max_gradient,
+                fit.deviance,
+                fit.null_deviance,
+                fit.pseudo_r2,
             ));
+            if let Some(p) = fit.n_parameters {
+                out.push_str(&format!("| Parameters | {} |\n", p));
+            }
+            if let Some(d) = fit.dispersion {
+                out.push_str(&format!("| Dispersion | {:.6} |\n", d));
+            }
+            if let Some(a) = fit.aic {
+                out.push_str(&format!("| AIC | {:.4} |\n", a));
+            }
+            if let Some(b) = fit.bic {
+                out.push_str(&format!("| BIC | {:.4} |\n", b));
+            }
+            if let Some(c) = fit.table_conditioning {
+                out.push_str(&format!(
+                    "| Table conditioning | {:.2}{} |\n",
+                    c,
+                    if c > 10.0 {
+                        " — above 10, expect a slow fit"
+                    } else {
+                        ""
+                    }
+                ));
+            }
+            out.push('\n');
+        } else {
+            out.push_str(
+                "## Fit\n\nThis model was loaded or converted rather than fitted here, so \
+                 there are no fit statistics to report.\n\n",
+            );
         }
-        out.push('\n');
 
         if let Some(v) = self.validation.as_ref() {
             out.push_str("## Validation\n\n");
@@ -378,10 +406,12 @@ impl ModelReport {
             out.push('\n');
         }
 
-        out.push_str("## Plan\n\n");
-        out.push_str("The model's source code. Save it, edit it, re-run it.\n\n```json\n");
-        out.push_str(&self.plan_json);
-        out.push_str("\n```\n");
+        if !self.plan_json.is_empty() {
+            out.push_str("## Plan\n\n");
+            out.push_str("The model's source code. Save it, edit it, re-run it.\n\n```json\n");
+            out.push_str(&self.plan_json);
+            out.push_str("\n```\n");
+        }
 
         out
     }

@@ -115,7 +115,7 @@ mod plan_tests {
         let plan = Plan::frequency("exposure")
             .with(Term::banded("driver_age", Breaks::quantile(4)));
         let fitted = plan.fit(&df, "claims", options()).unwrap();
-        assert!(fitted.diagnostics.converged);
+        assert_eq!(fitted.converged(), Some(true));
     }
 
     #[test]
@@ -422,7 +422,7 @@ mod plan_tests {
         assert!(check.is_fittable(), "{:?}", check.issues);
 
         let fitted = plan.fit(&df, "claims", options()).unwrap();
-        assert!(fitted.diagnostics.converged, "{:?}", fitted.diagnostics);
+        assert_eq!(fitted.converged(), Some(true));
         assert_eq!(fitted.table_names, vec!["intercept", "driver_age", "region"]);
 
         // Scoring goes through the same encoding the fit used.
@@ -496,7 +496,7 @@ mod plan_tests {
                 },
             )
             .unwrap();
-        assert_eq!(fitted.plan.family, "tweedie");
+        assert_eq!(fitted.family, "tweedie");
         assert_eq!(fitted.model.get_link_function(), "log");
     }
 

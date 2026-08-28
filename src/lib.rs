@@ -125,6 +125,23 @@ fn estimate_num_tables(model_json: &str) -> PyResult<usize> {
 }
 
 #[cfg(feature = "python")]
+impl PyRatingModel {
+    /// Wrap a model built elsewhere, so a `FittedModel` can hand its scoring model out
+    /// for composition, consolidation and rounding.
+    pub(crate) fn wrap(
+        inner: RatingModel,
+        family: String,
+        table_names: Vec<String>,
+    ) -> Self {
+        PyRatingModel {
+            inner,
+            family,
+            table_names,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
 #[pymethods]
 impl PyRatingModel {
     /// Create a new RatingModel from a collection of rating tables

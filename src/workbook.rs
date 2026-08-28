@@ -139,6 +139,18 @@ pub struct Manifest {
     pub link: String,
     /// Which scale the factor column is on.
     pub scale: Scale,
+    /// The response column this model was fitted against, and how exposure entered.
+    ///
+    /// Recorded so a loaded model can be measured on the same footing as one just
+    /// fitted. Without it the tables can score but cannot be validated: nothing would
+    /// say which column the predictions are supposed to explain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exposure: Option<String>,
+    /// `offset` or `weight`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exposure_role: Option<String>,
     pub tables: Vec<TableManifest>,
     /// Category codes for any string columns, so a level keeps the code it was fitted
     /// with. Without this a workbook could not be scored against fresh data.
@@ -195,17 +207,6 @@ impl TableIssue {
             None => format!("[{}] table '{}': {}", self.code, self.table, self.message),
         }
     }
-}
-
-/// A model loaded from a workbook, with anything non-blocking that was noticed.
-pub struct LoadedModel {
-    pub model: RatingModel,
-    pub table_names: Vec<String>,
-    pub encoding: Encoding,
-    pub family: String,
-    pub tweedie_power: f64,
-    /// Non-blocking observations. Blocking ones are returned as an error instead.
-    pub issues: Vec<TableIssue>,
 }
 
 // ---------------------------------------------------------------- validation
@@ -508,6 +509,7 @@ impl Workbook {
     ///
     /// `scale` defaults to relativities under a log link, which is the scale a pricing
     /// actuary reads and edits.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_model(
         model: &RatingModel,
         family: &str,
@@ -515,6 +517,7 @@ impl Workbook {
         encoding: &Encoding,
         tweedie_power: f64,
         scale: Option<Scale>,
+        response: Option<(&str, Option<&str>, Option<&str>)>,
     ) -> Result<Self, PolarsError> {
         let link = model.get_link_function();
         let scale = scale.unwrap_or_else(|| Scale::default_for(&link));
@@ -618,6 +621,9 @@ impl Workbook {
                 tweedie_power,
                 link,
                 scale,
+                target: response.map(|(target, _, _)| target.to_string()),
+                exposure: response.and_then(|(_, exposure, _)| exposure.map(str::to_string)),
+                exposure_role: response.and_then(|(_, _, role)| role.map(str::to_string)),
                 tables: manifests,
                 encodings: encoding.maps.clone(),
             },
@@ -627,9 +633,13 @@ impl Workbook {
 
     /// Turn the workbook back into a model, checking every table's structure first.
     ///
+    /// The result is an ordinary [`crate::plan::FittedModel`], so a loaded model
+    /// scores, validates, reports and saves exactly like one just fitted. Anything
+    /// non-blocking noticed on the way lands on its `notes`.
+    ///
     /// Every blocking fault is reported together, not just the first: a caller fixing a
     /// hand-edited file should learn everything wrong with it in one pass.
-    pub fn to_model(&self) -> Result<LoadedModel, PolarsError> {
+    pub fn to_model(&self) -> Result<crate::plan::FittedModel, PolarsError> {
         if self.manifest.format_version > FORMAT_VERSION {
             return Err(PolarsError::ComputeError(
                 format!(
@@ -808,19 +818,29 @@ impl Workbook {
             tables.push(table);
         }
 
-        Ok(LoadedModel {
-            model: RatingModel::new(
-                tables,
-                LinkFunction::from_objective(&self.manifest.family),
-            ),
-            table_names: self.manifest.tables.iter().map(|t| t.name.clone()).collect(),
-            encoding: Encoding {
+        let mut loaded = crate::plan::FittedModel::from_model(
+            RatingModel::new(tables, LinkFunction::from_objective(&self.manifest.family)),
+            &self.manifest.family,
+            self.manifest.tables.iter().map(|t| t.name.clone()).collect(),
+            Encoding {
                 maps: self.manifest.encodings.clone(),
             },
-            family: self.manifest.family.clone(),
-            tweedie_power: self.manifest.tweedie_power,
-            issues,
-        })
+        );
+        loaded.tweedie_power = self.manifest.tweedie_power;
+        if let Some(target) = self.manifest.target.as_deref() {
+            loaded = loaded.with_response(
+                target,
+                self.manifest.exposure.as_deref(),
+                match self.manifest.exposure_role.as_deref() {
+                    Some("offset") => Some(crate::plan::ExposureRole::Offset),
+                    Some("weight") => Some(crate::plan::ExposureRole::Weight),
+                    _ => None,
+                },
+            );
+        }
+
+        loaded.notes = issues;
+        Ok(loaded)
     }
 }
 

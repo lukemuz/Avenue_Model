@@ -58,7 +58,7 @@ mod composition_tests {
     }
 
     /// Last year's plan: region only.
-    fn existing_plan(df: &DataFrame) -> crate::plan::FittedPlan {
+    fn existing_plan(df: &DataFrame) -> crate::plan::FittedModel {
         Plan::frequency("exposure")
             .with(Term::categorical("region"))
             .fit(df, "claims", options())
@@ -79,7 +79,7 @@ mod composition_tests {
             .with(Term::categorical("telematics"));
 
         let fitted = plan.fit(&df, "claims", options()).unwrap();
-        assert!(fitted.diagnostics.converged);
+        assert_eq!(fitted.converged(), Some(true));
 
         // Tables: the new intercept, the two carried offsets, then the new factor.
         assert_eq!(fitted.table_names.len(), 4);
@@ -236,7 +236,7 @@ mod composition_tests {
 
         // 3. Read it back. It is a model again, and it carries the loading.
         let loaded = Workbook::load_csv_dir(&dir).unwrap().to_model().unwrap();
-        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert!(loaded.notes.is_empty(), "{:?}", loaded.notes);
         for (after, before) in factors(&loaded.model, 1).iter().zip(factors(&existing.model, 1).iter())
         {
             assert!(
@@ -254,7 +254,7 @@ mod composition_tests {
             .unwrap()
             .with(Term::categorical("telematics"));
         let refitted = plan.fit(&df, "claims", options()).unwrap();
-        assert!(refitted.diagnostics.converged);
+        assert_eq!(refitted.converged(), Some(true));
 
         // The loading survived the whole trip untouched.
         assert_eq!(factors(&refitted.model, 2), factors(&loaded.model, 1));
@@ -292,5 +292,148 @@ mod composition_tests {
 
         // And the encoding travels with it, so the codes cannot drift.
         assert_eq!(back.encoding.as_ref().unwrap().label_for("region", 0), Some("east"));
+    }
+
+    // ------------------------------------------------------------ one type
+
+    /// A model loaded from a workbook is not a lesser object: it scores, it validates,
+    /// it reports, and it saves again. Before this, `validate` and `report` existed
+    /// only on a freshly fitted plan, so saving a model and loading it back cost you
+    /// the ability to measure it.
+    #[test]
+    fn a_loaded_model_can_do_everything_a_fitted_one_can() {
+        let dir = std::env::temp_dir().join(format!("avenue_one_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let df = motor(720);
+
+        let fitted = existing_plan(&df);
+        fitted.to_workbook(None).unwrap().save_csv_dir(&dir).unwrap();
+
+        let loaded = Workbook::load_csv_dir(&dir).unwrap().to_model().unwrap();
+        assert!(!loaded.was_fitted(), "it was loaded, not fitted here");
+        assert_eq!(loaded.converged(), None, "and it must not claim a fit it never did");
+
+        // The manifest carried the response, so it knows what it is explaining.
+        assert_eq!(loaded.target.as_deref(), Some("claims"));
+
+        // Validate: the same numbers the fitted model gives.
+        let a = fitted.validate(&df, &ValidationOptions::default()).unwrap();
+        let b = loaded.validate(&df, &ValidationOptions::default()).unwrap();
+        assert!((a.ae_ratio - b.ae_ratio).abs() < 1e-9);
+        assert!((a.gini - b.gini).abs() < 1e-9);
+
+        // Report: no fit section, and a headline that says so rather than implying one.
+        let report = loaded.report(Some(&df), &ValidationOptions::default()).unwrap();
+        assert!(report.fit.is_none());
+        assert!(report.to_markdown().contains("loaded or converted rather than fitted"));
+        assert!(report.headline.contains("actual over expected"));
+
+        // Save again, and round-trip once more.
+        loaded.to_workbook(None).unwrap().save_json(dir.join("again.json")).unwrap();
+        let again = Workbook::load_json(dir.join("again.json")).unwrap().to_model().unwrap();
+        assert_eq!(again.target.as_deref(), Some("claims"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A model with no plan cannot be measured until it is told what it explains, and
+    /// the refusal says how to fix that rather than guessing at a column.
+    #[test]
+    fn a_model_that_does_not_know_its_response_says_so() {
+        let df = motor(240);
+        let fitted = existing_plan(&df);
+        let bare = crate::plan::FittedModel::from_model(
+            fitted.model.clone(),
+            "poisson",
+            fitted.table_names.clone(),
+            fitted.encoding.clone(),
+        );
+
+        match bare.validate(&df, &ValidationOptions::default()) {
+            Ok(_) => panic!("it cannot know what to measure"),
+            Err(error) => {
+                let text = format!("{}", error);
+                assert!(text.contains("with_response"), "the repair must travel: {}", text);
+            }
+        }
+
+        // Told what it explains, it measures like anything else — and it prepares the
+        // raw frame itself, encoding `region` and deriving log(exposure) from what its
+        // own tables require.
+        let told = bare.with_response(
+            "claims",
+            Some("exposure"),
+            Some(crate::plan::ExposureRole::Offset),
+        );
+        let v = told.validate(&df, &ValidationOptions::default()).unwrap();
+        assert_eq!(v.unmatched_rows, 0, "a plan-less model must still prepare its own data");
+        assert!((v.ae_ratio - 1.0).abs() < 1e-6, "ae_ratio {}", v.ae_ratio);
+    }
+
+    /// Frequency plus severity is pure premium: under a log link the factors add, so
+    /// the fitted means multiply.
+    #[test]
+    fn a_frequency_and_a_severity_model_combine_into_pure_premium() {
+        let df = motor(720);
+
+        let frequency = existing_plan(&df);
+        let severity = Plan::severity("claims")
+            .with(Term::categorical("telematics"))
+            .fit(&df, "claims", options())
+            .unwrap();
+
+        let pure_premium = frequency.combine(&severity).unwrap();
+
+        // Every risk's pure premium is its frequency times its severity.
+        let expected: Vec<f64> = frequency
+            .predict(&df)
+            .unwrap()
+            .f64()
+            .unwrap()
+            .into_no_null_iter()
+            .zip(
+                severity
+                    .predict(&df)
+                    .unwrap()
+                    .f64()
+                    .unwrap()
+                    .into_no_null_iter(),
+            )
+            .map(|(f, s)| f * s)
+            .collect();
+        let got: Vec<f64> = pure_premium
+            .predict(&df)
+            .unwrap()
+            .f64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect();
+        for (a, b) in got.iter().zip(expected.iter()) {
+            assert!(
+                (a - b).abs() < 1e-9 * b.abs().max(1.0),
+                "{} should be the product {}",
+                a,
+                b
+            );
+        }
+
+        // It is a model like any other: it saves, and it carries no fit statistics of
+        // its own, because it was composed rather than fitted.
+        assert!(!pure_premium.was_fitted());
+        assert!(pure_premium.to_workbook(None).is_ok());
+    }
+
+    /// A LightGBM conversion is a model too — the same scoring, measuring, reporting
+    /// and saving as anything else, rather than a separate object with none of it.
+    #[test]
+    fn a_converted_lightgbm_model_is_a_model_like_any_other() {
+        let json = crate::tests::testing_utils::simple_lgbm_json();
+        let converted = crate::plan::FittedModel::from_lgbm_json(&json, "max").unwrap();
+
+        assert!(!converted.was_fitted());
+        assert!(!converted.table_names.is_empty());
+        // It saves as a workbook, which is what makes a converted ensemble deployable
+        // as a rating plan rather than only inspectable in memory.
+        assert!(converted.to_workbook(None).is_ok());
     }
 }

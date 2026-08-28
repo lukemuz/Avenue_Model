@@ -72,18 +72,18 @@ mod report_tests {
         let fitted = plan.fit(&df, "claims", options()).unwrap();
 
         let report = fitted
-            .report(Some(&df), Some(&check), &ValidationOptions::default())
+            .report(Some(&df), &ValidationOptions::default())
             .unwrap();
 
         assert_eq!(report.verdict, Verdict::Usable, "findings: {:?}", report.findings);
         assert!(report.findings.is_empty(), "{:?}", report.findings);
-        assert!(report.fit.converged);
+        assert!(report.fit.as_ref().unwrap().converged);
         assert!(report.validation.is_some());
 
         // The evidence a reader needs is attached, not left to be fetched.
         assert_eq!(report.rating_tables.len(), 3);
         assert_eq!(report.resolved.len(), 3);
-        assert!(report.fit.aic.is_some(), "model comparison needs AIC");
+        assert!(report.fit.as_ref().unwrap().aic.is_some(), "model comparison needs AIC");
         assert!(!report.plan_json.is_empty());
 
         // The headline is one sentence meant to be relayed as written.
@@ -124,7 +124,7 @@ mod report_tests {
         .unwrap();
 
         let report = fitted
-            .report(Some(&holdout), None, &ValidationOptions::default())
+            .report(Some(&holdout), &ValidationOptions::default())
             .unwrap();
 
         assert_eq!(report.verdict, Verdict::NotUsable);
@@ -154,22 +154,23 @@ mod report_tests {
     #[test]
     fn findings_are_ordered_by_severity_and_never_duplicated_across_stages() {
         let df = motor(480);
-        // `band` coarsens `driver_age`, so the plan check and the fit both have
-        // something to say about the same redundancy.
-        let band: Vec<i32> = (0..480)
-            .map(|i| if 18 + ((i * 7) % 55) < 45 { 0 } else { 1 })
-            .collect();
-        let df = df.hstack(&[Series::new("age_band".into(), band).into()]).unwrap();
-
+        // A band nothing falls into: the plan notices it is empty, the fit notices it
+        // was never estimated, and validation notices nothing tested it. Three stages,
+        // one underlying fact, none of them blocking.
         let plan = Plan::frequency("exposure")
-            .with(Term::banded("driver_age", Breaks::explicit(vec![44.0])))
-            .with(Term::categorical("age_band"));
-        let check = plan.check(&df, "claims").unwrap();
+            .with(Term::banded(
+                "driver_age",
+                Breaks::explicit(vec![30.0, 45.0, 200.0]),
+            ))
+            .with(Term::categorical("region"));
         let fitted = plan.fit(&df, "claims", options()).unwrap();
-        let report = fitted
-            .report(Some(&df), Some(&check), &ValidationOptions::default())
-            .unwrap();
+        let report = fitted.report(Some(&df), &ValidationOptions::default()).unwrap();
 
+        assert!(
+            report.findings.len() >= 2,
+            "expected findings from more than one stage, got {:?}",
+            report.findings.iter().map(|f| &f.code).collect::<Vec<_>>()
+        );
         for pair in report.findings.windows(2) {
             assert!(
                 pair[0].severity >= pair[1].severity,
@@ -187,11 +188,42 @@ mod report_tests {
                 finding.code
             );
         }
-        // Findings say where to go and fix them.
+        // Findings say where to go and fix them, and the plan stage is represented
+        // without the caller having handed the check back.
         assert!(report
             .findings
             .iter()
             .all(|f| ["plan", "fit", "validation"].contains(&f.stage.as_str())));
+        assert!(
+            report.findings.iter().any(|f| f.stage == "plan"),
+            "the check is retained by the fit, so plan findings must arrive on their own"
+        );
+    }
+
+    /// A plan with a blocking fault is refused rather than fitted. The faults that
+    /// block are the ones that make the fit describe something other than the data.
+    #[test]
+    fn a_plan_that_cannot_be_fitted_is_refused_with_the_reason() {
+        let df = motor(480);
+        // `age_band` is an exact coarsening of `driver_age`: the pair is unidentified.
+        let band: Vec<i32> = (0..480)
+            .map(|i| if 18 + ((i * 7) % 55) < 45 { 0 } else { 1 })
+            .collect();
+        let df = df.hstack(&[Series::new("age_band".into(), band).into()]).unwrap();
+
+        let plan = Plan::frequency("exposure")
+            .with(Term::banded("driver_age", Breaks::explicit(vec![44.0])))
+            .with(Term::categorical("age_band"));
+
+        match plan.fit(&df, "claims", options()) {
+            Ok(_) => panic!("an unidentified plan must not be fitted"),
+            Err(error) => {
+                let text = format!("{}", error);
+                assert!(text.contains("cannot be fitted"), "{}", text);
+                assert!(text.contains("correlated at 1.0000"), "{}", text);
+                assert!(text.contains("drop one of them"), "the repair must travel: {}", text);
+            }
+        }
     }
 
     #[test]
@@ -211,7 +243,7 @@ mod report_tests {
             )
             .unwrap();
 
-        let report = fitted.report(None, None, &ValidationOptions::default()).unwrap();
+        let report = fitted.report(None, &ValidationOptions::default()).unwrap();
         assert!(report.validation.is_none());
         assert_eq!(report.verdict, Verdict::NotUsable);
         assert!(
@@ -232,8 +264,8 @@ mod report_tests {
 
         let a = plan().fit(&df, "claims", options()).unwrap();
         let b = plan().fit(&df, "claims", options()).unwrap();
-        let ra = a.report(None, None, &ValidationOptions::default()).unwrap();
-        let rb = b.report(None, None, &ValidationOptions::default()).unwrap();
+        let ra = a.report(None, &ValidationOptions::default()).unwrap();
+        let rb = b.report(None, &ValidationOptions::default()).unwrap();
         assert_eq!(ra.fingerprint, rb.fingerprint, "the same plan must fingerprint alike");
         assert_eq!(ra.fingerprint.len(), 12);
 
@@ -243,7 +275,7 @@ mod report_tests {
         let rc = different
             .fit(&df, "claims", options())
             .unwrap()
-            .report(None, None, &ValidationOptions::default())
+            .report(None, &ValidationOptions::default())
             .unwrap();
         assert_ne!(ra.fingerprint, rc.fingerprint, "a changed plan must fingerprint differently");
     }
@@ -253,7 +285,7 @@ mod report_tests {
         let df = motor(240);
         let plan = plan();
         let fitted = plan.fit(&df, "claims", options()).unwrap();
-        let report = fitted.report(Some(&df), None, &ValidationOptions::default()).unwrap();
+        let report = fitted.report(Some(&df), &ValidationOptions::default()).unwrap();
         let markdown = report.to_markdown();
 
         assert!(markdown.contains("## Plan"));
@@ -273,7 +305,7 @@ mod report_tests {
         let check = plan.check(&df, "claims").unwrap();
         let fitted = plan.fit(&df, "claims", options()).unwrap();
         let report = fitted
-            .report(Some(&df), Some(&check), &ValidationOptions::default())
+            .report(Some(&df), &ValidationOptions::default())
             .unwrap();
         let markdown = report.to_markdown();
 
@@ -319,7 +351,7 @@ mod report_tests {
     fn infinite_band_edges_and_missing_standard_errors_render_readably() {
         let df = motor(240);
         let fitted = plan().fit(&df, "claims", options()).unwrap();
-        let report = fitted.report(None, None, &ValidationOptions::default()).unwrap();
+        let report = fitted.report(None, &ValidationOptions::default()).unwrap();
         let markdown = report.to_markdown();
 
         // The top band's bound is infinite, and the base level's standard error is

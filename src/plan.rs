@@ -1866,28 +1866,86 @@ impl Plan {
 
 // ---------------------------------------------------------------- fitting
 
-/// A fitted plan: the model, what produced it, and everything needed to score,
-/// validate and report on it.
-pub struct FittedPlan {
-    pub plan: Plan,
+/// A model you can score, measure, report on and save — however you came by it.
+///
+/// This is the one type the library hands back. A plan produces it, a workbook loads
+/// into it, and a LightGBM conversion becomes it, so every capability is reachable
+/// from every route rather than only from the one that happened to be built first.
+///
+/// What differs between the routes is only how much is *known*: a fitted plan carries
+/// its plan, its diagnostics and its pre-fit check, while a converted tree ensemble
+/// carries none of those. Those fields are optional for exactly that reason, and
+/// nothing that depends on them pretends otherwise.
+#[derive(Clone)]
+pub struct FittedModel {
     pub model: RatingModel,
-    pub diagnostics: GLMDiagnostics,
     pub table_names: Vec<String>,
-    pub resolved: Vec<ResolvedTerm>,
     pub encoding: Encoding,
-    pub target: String,
-    pub weight_col: Option<String>,
-    pub offset_col: Option<String>,
+    pub family: String,
+    pub tweedie_power: f64,
+
+    /// The response column, when it is known. A fit knows it; a workbook records it;
+    /// a converted model does not, so [`FittedModel::validate`] takes it as an
+    /// argument there.
+    pub target: Option<String>,
+    /// The exposure column and how it enters, stated the way a plan states it rather
+    /// than resolved into a weight or an offset. A model that recorded only the
+    /// derived `log(exposure)` column could not rebuild it from fresh data.
+    pub exposure: Option<String>,
+    pub exposure_role: Option<ExposureRole>,
+
+    /// The plan that produced this, when a plan did.
+    pub plan: Option<Plan>,
+    /// How the fit went. Absent for a model that was loaded or converted rather than
+    /// fitted here.
+    pub diagnostics: Option<GLMDiagnostics>,
+    /// What the plan decided, one entry per table. Empty for a converted model.
+    pub resolved: Vec<ResolvedTerm>,
+    /// The check run before fitting.
+    ///
+    /// Retained rather than asked for again, because several of its findings — a thin
+    /// level, a near-aliased pair — are about the plan and cannot be recovered from
+    /// the fitted model. Making the caller pass it back meant forgetting produced a
+    /// *cleaner* report, which is the wrong way round.
+    pub check: Option<PlanCheck>,
+    /// Non-blocking observations from loading this model out of a workbook — an
+    /// edited variate, a lock on a row that no longer exists. Empty otherwise.
+    pub notes: Vec<crate::workbook::TableIssue>,
 }
 
 impl Plan {
-    /// Prepare, build and fit in one call.
+    /// Check, build and fit in one call.
+    ///
+    /// The check runs first and its findings are kept on the result. A plan with a
+    /// blocking fault is refused rather than fitted: the faults that block are the
+    /// ones that make the fit describe something other than the data — a target with
+    /// nulls, observations matching no row, a model spending more parameters than
+    /// there are rows.
     pub fn fit(
         &self,
         df: &DataFrame,
         target: &str,
         mut options: GLMOptions,
-    ) -> Result<FittedPlan, PolarsError> {
+    ) -> Result<FittedModel, PolarsError> {
+        let check = self.check(df, target)?;
+        if !check.is_fittable() {
+            let blocking: Vec<String> = check
+                .issues
+                .iter()
+                .filter(|issue| issue.severity == Severity::High)
+                .map(|issue| issue.message.clone())
+                .collect();
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "This plan cannot be fitted as it stands. {} problem{} found:\n  {}",
+                    blocking.len(),
+                    if blocking.len() == 1 { "" } else { "s" },
+                    blocking.join("\n  ")
+                )
+                .into(),
+            ));
+        }
+
         let prepared = self.prepare(df, None)?;
         let built = self.build(&prepared)?;
 
@@ -1904,21 +1962,151 @@ impl Plan {
             options,
         )?;
 
-        Ok(FittedPlan {
-            plan: self.clone(),
+        Ok(FittedModel {
             model,
-            diagnostics,
             table_names: built.table_names,
-            resolved: built.resolved,
             encoding: built.encoding,
-            target: target.to_string(),
-            weight_col: built.weight_col,
-            offset_col: built.offset_col,
+            family: self.family.clone(),
+            tweedie_power: self.tweedie_power,
+            target: Some(target.to_string()),
+            exposure: self.exposure.clone(),
+            exposure_role: Some(self.resolved_exposure_role()),
+            plan: Some(self.clone()),
+            diagnostics: Some(diagnostics),
+            resolved: built.resolved,
+            check: Some(check),
+            notes: Vec::new(),
         })
     }
 }
 
-impl FittedPlan {
+impl FittedModel {
+    /// Wrap a model that was built elsewhere — loaded from a workbook, or converted
+    /// from a tree ensemble — so it can be scored, measured, reported on and saved
+    /// like any other.
+    pub fn from_model(
+        model: RatingModel,
+        family: &str,
+        table_names: Vec<String>,
+        encoding: Encoding,
+    ) -> Self {
+        FittedModel {
+            model,
+            table_names,
+            encoding,
+            family: family.to_string(),
+            tweedie_power: 1.5,
+            target: None,
+            exposure: None,
+            exposure_role: None,
+            plan: None,
+            diagnostics: None,
+            resolved: Vec::new(),
+            check: None,
+            notes: Vec::new(),
+        }
+    }
+
+    /// Convert a LightGBM model into rating tables and hold it as a `FittedModel`.
+    ///
+    /// `consolidation` is `"max"` for the minimal set of tables or `"analysis"` for
+    /// one per tree node. Predictions match the original model exactly.
+    pub fn from_lgbm_json(model_json: &str, consolidation: &str) -> Result<Self, PolarsError> {
+        let model = RatingModel::from_lgbm_json(model_json, consolidation)?;
+        let family = serde_json::from_str::<serde_json::Value>(model_json)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("objective")
+                    .and_then(|v| v.as_str())
+                    .and_then(|o| o.split_whitespace().next())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "gaussian".to_string());
+        let names = (0..model.tables.len())
+            .map(|i| {
+                if i == 0 {
+                    "intercept".to_string()
+                } else {
+                    format!("table_{}", i)
+                }
+            })
+            .collect();
+        Ok(FittedModel::from_model(
+            model,
+            &family,
+            names,
+            Encoding::default(),
+        ))
+    }
+
+    /// Say how this model's response was measured, so a loaded or converted model can
+    /// be validated on the same footing as a fitted one.
+    pub fn with_response(
+        mut self,
+        target: &str,
+        exposure: Option<&str>,
+        role: Option<ExposureRole>,
+    ) -> Self {
+        self.target = Some(target.to_string());
+        self.exposure = exposure.map(str::to_string);
+        self.exposure_role = role.or(Some(ExposureRole::Weight));
+        self
+    }
+
+    /// True when this model was fitted here, rather than loaded or converted.
+    pub fn was_fitted(&self) -> bool {
+        self.diagnostics.is_some()
+    }
+
+    /// Whether the fit converged. `None` when this model was not fitted here.
+    pub fn converged(&self) -> Option<bool> {
+        self.diagnostics.as_ref().map(|d| d.converged)
+    }
+
+    /// Add two models together.
+    ///
+    /// Under a log link the linear predictors add, so the fitted means *multiply* —
+    /// which makes the sum of a frequency model and a severity model a pure premium
+    /// model exactly. The tables are combined into a single consolidated set, so the
+    /// result deploys as one rating plan rather than two.
+    ///
+    /// Both models must share a link function. The result carries no diagnostics: it
+    /// was composed rather than fitted, and its fit statistics belong to its parts.
+    pub fn combine(&self, other: &FittedModel) -> Result<FittedModel, PolarsError> {
+        let model = self.model.combine(&other.model)?;
+        let mut encoding = self.encoding.clone();
+        for (column, levels) in &other.encoding.maps {
+            encoding.maps.entry(column.clone()).or_insert(levels.clone());
+        }
+        let names = (0..model.tables.len())
+            .map(|i| {
+                if i == 0 {
+                    "intercept".to_string()
+                } else {
+                    format!("table_{}", i)
+                }
+            })
+            .collect();
+        Ok(FittedModel {
+            model,
+            table_names: names,
+            encoding,
+            family: self.family.clone(),
+            tweedie_power: self.tweedie_power,
+            target: None,
+            exposure: self.exposure.clone(),
+            exposure_role: self.exposure_role,
+            plan: None,
+            diagnostics: None,
+            resolved: Vec::new(),
+            check: None,
+            notes: Vec::new(),
+        })
+    }
+}
+
+impl FittedModel {
     /// The fitted model as an editable, portable artifact.
     ///
     /// `scale` defaults to relativities under a log link. Save it with
@@ -1930,17 +2118,85 @@ impl FittedPlan {
     ) -> Result<crate::workbook::Workbook, PolarsError> {
         crate::workbook::Workbook::from_model(
             &self.model,
-            &self.plan.family,
+            &self.family,
             &self.table_names,
             &self.encoding,
-            self.plan.tweedie_power,
+            self.tweedie_power,
             scale,
+            // Carried so a loaded model can be validated without being told again.
+            self.target.as_deref().map(|target| {
+                (
+                    target,
+                    self.exposure.as_deref(),
+                    self.exposure_role.map(|role| match role {
+                        ExposureRole::Offset => "offset",
+                        ExposureRole::Weight => "weight",
+                    }),
+                )
+            }),
         )
     }
 
     /// Prepare scoring data with the encoding this model was fitted with.
     pub fn prepare(&self, df: &DataFrame) -> Result<Prepared, PolarsError> {
-        self.plan.prepare(df, Some(&self.encoding))
+        if let Some(plan) = &self.plan {
+            return plan.prepare(df, Some(&self.encoding));
+        }
+
+        // No plan, so the tables themselves say what the data must look like: every
+        // feature column, and the dtype the matcher will read it as. That is the whole
+        // requirement, and it is already written down in the model.
+        let mut out = df.clone();
+        for table in &self.model.tables {
+            for (column, dtype) in table.get_feature_info() {
+                if out.column(&column).is_err() {
+                    // Left alone: the missing column shows up as unmatched rows, which
+                    // validate reports with a count rather than a type error here.
+                    continue;
+                }
+                let series = out.column(&column)?;
+                let cast = match dtype {
+                    DataType::Float64 => series.cast(&DataType::Float64)?,
+                    DataType::Int32 => {
+                        encode_categorical(series, &column, Some(&self.encoding))?.0
+                    }
+                    _ => continue,
+                };
+                out.with_column(cast)?;
+            }
+        }
+
+        let mut weight_col = None;
+        let mut offset_col = None;
+        if let Some(exposure) = &self.exposure {
+            let series = out
+                .column(exposure)
+                .map_err(|_| missing_column(exposure, df))?
+                .cast(&DataType::Float64)?;
+            out.with_column(series.clone())?;
+            match self.exposure_role.unwrap_or(ExposureRole::Weight) {
+                ExposureRole::Weight => weight_col = Some(exposure.clone()),
+                ExposureRole::Offset => {
+                    let logs: Vec<f64> = series
+                        .f64()?
+                        .into_iter()
+                        .map(|v| match v {
+                            Some(x) if x > 0.0 => x.ln(),
+                            _ => f64::NEG_INFINITY,
+                        })
+                        .collect();
+                    out.with_column(Series::new(DERIVED_OFFSET.into(), logs))?;
+                    offset_col = Some(DERIVED_OFFSET.to_string());
+                }
+            }
+        }
+
+        Ok(Prepared {
+            df: out,
+            encoding: self.encoding.clone(),
+            weight_col,
+            offset_col,
+        })
     }
 
     /// Fitted means on the response scale.
@@ -1959,6 +2215,15 @@ impl FittedPlan {
         df: &DataFrame,
         options: &ValidationOptions,
     ) -> Result<Validation, PolarsError> {
+        let target = self.target.clone().ok_or_else(|| {
+            PolarsError::ComputeError(
+                "This model does not know which column its response is, so it cannot be \
+                 measured. A fitted plan records it and a workbook stores it; for a model \
+                 that was converted or built by hand, say so with \
+                 `with_response(target, weight_col, offset_col)`."
+                    .into(),
+            )
+        })?;
         let prepared = self.prepare(df)?;
         // Findings name the tables rather than numbering them; a reader should not
         // have to resolve "table 2" against anything.
@@ -1969,12 +2234,12 @@ impl FittedPlan {
         let mut validation = validate(
             &self.model,
             &prepared.df,
-            &self.target,
+            &target,
             prepared.weight_col.as_deref(),
             prepared.offset_col.as_deref(),
-            &self.plan.family,
-            self.plan.tweedie_power,
-            Some(&self.diagnostics),
+            &self.family,
+            self.tweedie_power,
+            self.diagnostics.as_ref(),
             &options,
         )?;
         for frame in validation.actual_vs_expected.iter_mut() {
@@ -2015,16 +2280,13 @@ impl FittedPlan {
     /// `Status`, and for log links `Relativity`. Categorical codes are rendered back
     /// into the level text they came from, as a `<column>_Level` column.
     pub fn rating_tables(&self) -> Result<Vec<DataFrame>, PolarsError> {
-        let standard_errors = self
+        let inference = self.diagnostics.as_ref().and_then(|d| d.inference.as_ref());
+        let standard_errors = inference.map(|i| i.standard_errors.clone());
+        let aliased = inference.map(|i| i.aliased_rows.clone()).unwrap_or_default();
+        let unfitted = self
             .diagnostics
-            .inference
             .as_ref()
-            .map(|i| i.standard_errors.clone());
-        let aliased = self
-            .diagnostics
-            .inference
-            .as_ref()
-            .map(|i| i.aliased_rows.clone())
+            .map(|d| d.unfitted_rows.clone())
             .unwrap_or_default();
 
         let mut out = Vec::with_capacity(self.model.tables.len());
@@ -2043,7 +2305,7 @@ impl FittedPlan {
 
             let status: Vec<&str> = (0..coefficients.len())
                 .map(|r| {
-                    if self.diagnostics.unfitted_rows.contains(&(t, r)) {
+                    if unfitted.contains(&(t, r)) {
                         "no_data"
                     } else if aliased.contains(&(t, r)) {
                         "aliased"

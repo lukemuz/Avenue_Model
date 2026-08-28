@@ -96,7 +96,7 @@ mod workbook_tests {
     }
 
     fn book(model: &RatingModel, scale: Option<Scale>) -> Workbook {
-        Workbook::from_model(model, "poisson", &names(), &encoding(), 1.5, scale).unwrap()
+        Workbook::from_model(model, "poisson", &names(), &encoding(), 1.5, scale, None).unwrap()
     }
 
     // ------------------------------------------------------------ round trip
@@ -124,7 +124,7 @@ mod workbook_tests {
         assert_eq!(loaded.table_names, names());
         assert_eq!(loaded.family, "poisson");
         assert_eq!(loaded.encoding.label_for("region", 1), Some("north"));
-        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert!(loaded.notes.is_empty(), "{:?}", loaded.notes);
     }
 
     /// The factor scale has no such conversion, so it must be exact to the bit — which
@@ -223,7 +223,7 @@ mod workbook_tests {
             loaded.model.tables[1].variate_values(),
             Some([20.0, 35.0, 55.0, 70.0].as_slice())
         );
-        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert!(loaded.notes.is_empty(), "{:?}", loaded.notes);
     }
 
     #[test]
@@ -334,6 +334,7 @@ mod workbook_tests {
             &Encoding::default(),
             1.5,
             Some(Scale::Relativity),
+            None,
         ));
         assert!(error.contains("log link"), "{}", error);
         // And the default for such a model is the factor scale.
@@ -502,7 +503,7 @@ mod workbook_tests {
         let loaded = workbook.to_model().unwrap();
         // Not refused: the table says what it says, and predictions follow it.
         let issue = loaded
-            .issues
+            .notes
             .iter()
             .find(|i| i.code == "variate_factors_edited")
             .expect("an edited variate must be reported");

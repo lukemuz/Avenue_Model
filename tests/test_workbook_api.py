@@ -99,7 +99,7 @@ class WorkbookTests(unittest.TestCase):
 
         loaded = Workbook.load_csv_dir(str(self.dir)).to_model()
         self.assertEqual(loaded.family, "poisson")
-        self.assertEqual(loaded.issues, [])
+        self.assertEqual(loaded.notes, [])
 
         after = loaded.predict(self.df)["predictions"].to_list()
         for a, b in zip(after, before):
@@ -178,7 +178,7 @@ class CompositionTests(unittest.TestCase):
 
         # The carried table came out exactly as it went in.
         carried = fitted.rating_tables()[fitted.table_names.index("prior.region")]
-        original = self.loaded.model_tables()[self.loaded.table_names.index("region")]
+        original = self.loaded.rating_model.model_tables()[self.loaded.table_names.index("region")]
         self.assertEqual(
             carried["Rating_Factor"].to_list(), original["Rating_Factor"].to_list()
         )
@@ -189,7 +189,7 @@ class CompositionTests(unittest.TestCase):
         self.assertAlmostEqual(v.ae_ratio, 1.0, places=6)
 
     def test_a_supplied_table_can_define_the_shape_instead(self):
-        region = self.loaded.model_tables()[self.loaded.table_names.index("region")]
+        region = self.loaded.rating_model.model_tables()[self.loaded.table_names.index("region")]
         plan = Plan.frequency("exposure").given("region", region)
 
         fitted = plan.fit(self.df, "claims", GLMOptions())
@@ -207,6 +207,73 @@ class CompositionTests(unittest.TestCase):
         recovered = Plan.from_json(plan.to_json())
         self.assertEqual(recovered.to_json(), plan.to_json())
         self.assertIn("prior.region", recovered.term_names)
+
+
+class OneTypeTests(unittest.TestCase):
+    """Every route produces the same object, so every capability is reachable."""
+
+    def setUp(self):
+        self.df = motor()
+        self.dir = Path(tempfile.mkdtemp())
+        self.fitted = (
+            Plan.frequency("exposure")
+            .categorical("region")
+            .fit(self.df, "claims", GLMOptions())
+        )
+        self.fitted.to_workbook().save_csv_dir(str(self.dir))
+        self.loaded = Workbook.load_csv_dir(str(self.dir)).to_model()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_a_loaded_model_validates_reports_and_saves_like_a_fitted_one(self):
+        self.assertFalse(self.loaded.was_fitted)
+        # Not fitted here, so it must not claim a fit that did or did not converge.
+        self.assertIsNone(self.loaded.converged)
+        self.assertEqual(self.loaded.target, "claims")
+
+        a = self.fitted.validate(self.df)
+        b = self.loaded.validate(self.df)
+        self.assertAlmostEqual(a.ae_ratio, b.ae_ratio, places=9)
+        self.assertAlmostEqual(a.gini, b.gini, places=9)
+
+        report = self.loaded.report(self.df)
+        self.assertEqual(report.fit, {})
+        self.assertIn("loaded or converted rather than fitted", report.markdown)
+
+        self.loaded.to_workbook().save_json(str(self.dir / "again.json"))
+        again = Workbook.load_json(str(self.dir / "again.json")).to_model()
+        self.assertEqual(again.target, "claims")
+
+    def test_frequency_plus_severity_is_pure_premium(self):
+        severity = (
+            Plan.severity("claims")
+            .categorical("telematics")
+            .fit(self.df, "claims", GLMOptions())
+        )
+        pure_premium = self.fitted + severity
+
+        f = self.fitted.predict(self.df)["predictions"].to_list()
+        s = severity.predict(self.df)["predictions"].to_list()
+        pp = pure_premium.predict(self.df)["predictions"].to_list()
+        for got, want in zip(pp, (a * b for a, b in zip(f, s))):
+            self.assertAlmostEqual(got, want, places=9)
+
+        self.assertFalse(pure_premium.was_fitted)
+
+    def test_the_check_is_carried_so_plan_findings_arrive_unasked(self):
+        # `report` takes no check argument: forgetting it used to produce a cleaner
+        # report, which is the wrong way round.
+        report = self.fitted.report(self.df)
+        self.assertTrue(all(f["stage"] in {"plan", "fit", "validation"} for f in report.findings))
+
+    def test_an_unfittable_plan_is_refused_rather_than_fitted(self):
+        broken = self.df.with_columns(
+            pl.when(pl.int_range(pl.len()) == 0).then(None).otherwise(pl.col("claims")).alias("claims")
+        )
+        with self.assertRaises(ValueError) as caught:
+            Plan.frequency("exposure").categorical("region").fit(broken, "claims", GLMOptions())
+        self.assertIn("cannot be fitted", str(caught.exception))
 
 
 if __name__ == "__main__":

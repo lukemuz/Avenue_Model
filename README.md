@@ -64,8 +64,8 @@ check = plan.check(train, "claim_count")
 for issue in check.issues:
     print(issue["severity"], issue["code"], issue["message"])
 
-fitted = plan.fit(train, "claim_count", GLMOptions())
-report = fitted.report(holdout, check)
+fitted = plan.fit(train, "claim_count")     # runs the check itself, and keeps it
+report = fitted.report(holdout)             # so plan findings arrive unasked
 
 print(report.verdict)     # "usable" | "usable_with_caveats" | "not_usable"
 print(report.headline)    # one sentence, written to be shown to a person
@@ -145,6 +145,8 @@ from avenue_model import Workbook
 
 loaded = Workbook.load_csv_dir("plan_2026").to_model()   # after someone edits it
 loaded.predict(new_business)
+loaded.validate(holdout)      # a loaded model is not a lesser one
+loaded.report(holdout)
 ```
 
 **One factor column, named for its scale.** Log-link models write `Relativity`, because
@@ -192,6 +194,40 @@ instead to keep a table's levels and bands while re-estimating its numbers.
 
 Supplied tables travel inside the plan's JSON, so a plan stays a complete description of
 its model, and they are checked exactly as strictly as one loaded from disk.
+
+### One type, whichever way you got here
+
+Everything returns a `FittedModel`, so every capability is reachable from every route.
+
+```python
+fitted = plan.fit(train, "claim_count")                    # fitted from a plan
+loaded = Workbook.load_csv_dir("plan_2025").to_model()     # loaded from a file
+converted = FittedModel.from_lgbm_json(booster.dump_model())  # converted from LightGBM
+```
+
+All three `predict`, `validate`, `report`, `to_workbook` and compose. What differs is
+only how much is *known*: `was_fitted` is False for the last two, `converged` is `None`
+rather than False, and a report omits its fit section instead of inventing one.
+
+A model that was not fitted here does not know what its response is, so say once:
+
+```python
+converted = converted.with_response("claim_count", exposure="exposure",
+                                    exposure_role="offset")
+```
+
+A workbook records that in its manifest, so a loaded model never needs telling.
+
+**Frequency times severity is pure premium.** Under a log link the factors add, so the
+means multiply:
+
+```python
+frequency = Plan.frequency("exposure").categorical("region").fit(train, "claim_count")
+severity  = Plan.severity("claim_count").categorical("region").fit(claims, "severity")
+
+pure_premium = frequency + severity      # one consolidated rating plan
+pure_premium.to_workbook().save_csv_dir("technical_price")
+```
 
 ### Fit a GLM on rating tables
 
@@ -618,7 +654,7 @@ reasoning is in the [module docs](src/glm/README.md#build-settings).
 ## Development
 
 ```bash
-cargo test --lib                  # 250 tests
+cargo test --lib                  # 255 tests
 maturin develop --release         # build the Python bindings
 cargo test --features benchmarks  # include the benchmark tests
 ```

@@ -12,10 +12,9 @@
 #![cfg(feature = "python")]
 
 use crate::plan::{
-    Base, Breaks, ExposureRole, FittedPlan, GivenRole, Plan, PlanCheck, ResolvedTerm, Term,
+    Base, Breaks, ExposureRole, FittedModel, GivenRole, Plan, PlanCheck, ResolvedTerm, Term,
 };
 use crate::report::{ModelReport, Verdict};
-use crate::rating_model::RatingModel;
 use crate::validation::{Severity, Validation, ValidationOptions};
 use crate::workbook::{Scale, Workbook};
 use polars::prelude::*;
@@ -264,24 +263,28 @@ impl PyPlan {
     /// collide with this plan's own, and a report listing `region` twice says nothing
     /// about which is which.
     #[pyo3(signature = (model, prefix="prior"))]
-    fn offset_model(&self, model: &PyLoadedModel, prefix: &str) -> PyResult<Self> {
+    fn offset_model(&self, model: &PyFittedModel, prefix: &str) -> PyResult<Self> {
         let plan = self
             .inner
             .clone()
-            .with_offset_model(&model.model, &model.table_names, prefix)
+            .with_offset_model(
+                &model.inner.model,
+                &model.inner.table_names,
+                prefix,
+            )
             .map_err(value_error)?;
         // The carried tables hold category codes, so the plan must encode string
         // columns the same way or the same level could take a different code.
         Ok(PyPlan {
-            inner: plan.with_encoding(model.encoding.clone()),
+            inner: plan.with_encoding(model.inner.encoding.clone()),
         })
     }
 
     /// Encode string columns with these codes rather than deriving them from the data.
     /// Needed whenever the plan carries tables built elsewhere.
-    fn with_encoding(&self, encoding: &PyLoadedModel) -> Self {
+    fn with_encoding(&self, source: &PyFittedModel) -> Self {
         PyPlan {
-            inner: self.inner.clone().with_encoding(encoding.encoding.clone()),
+            inner: self.inner.clone().with_encoding(source.inner.encoding.clone()),
         }
     }
 
@@ -349,10 +352,10 @@ impl PyPlan {
         df: PyDataFrame,
         target: &str,
         options: Option<crate::PyGLMOptions>,
-    ) -> PyResult<PyFittedPlan> {
+    ) -> PyResult<PyFittedModel> {
         let df: DataFrame = df.into();
         let options = options.map(|o| o.inner).unwrap_or_default();
-        Ok(PyFittedPlan {
+        Ok(PyFittedModel {
             inner: self.inner.fit(&df, target, options).map_err(value_error)?,
         })
     }
@@ -579,23 +582,125 @@ impl PyValidation {
 
 /// A fitted plan: the model, what produced it, and everything needed to score,
 /// validate and report on it.
-#[pyclass(name = "FittedPlan")]
-pub struct PyFittedPlan {
-    inner: FittedPlan,
+#[pyclass(name = "FittedModel")]
+pub struct PyFittedModel {
+    inner: FittedModel,
 }
 
 #[pymethods]
-impl PyFittedPlan {
+impl PyFittedModel {
+    /// The plan that produced this, or `None` for a model that was loaded, converted
+    /// or composed rather than fitted from a plan.
     #[getter]
-    fn plan(&self) -> PyPlan {
-        PyPlan {
-            inner: self.inner.plan.clone(),
-        }
+    fn plan(&self) -> Option<PyPlan> {
+        self.inner.plan.as_ref().map(|plan| PyPlan {
+            inner: plan.clone(),
+        })
+    }
+
+    /// Whether the fit converged. `None` when this model was not fitted here, so a
+    /// caller cannot mistake "not fitted" for "did not converge".
+    #[getter]
+    fn converged(&self) -> Option<bool> {
+        self.inner.converged()
+    }
+
+    /// True when this model was fitted here, rather than loaded or converted.
+    #[getter]
+    fn was_fitted(&self) -> bool {
+        self.inner.was_fitted()
     }
 
     #[getter]
-    fn converged(&self) -> bool {
-        self.inner.diagnostics.converged
+    fn family(&self) -> String {
+        self.inner.family.clone()
+    }
+
+    /// The response column, when it is known.
+    #[getter]
+    fn target(&self) -> Option<String> {
+        self.inner.target.clone()
+    }
+
+    /// The scoring model itself, for composition, consolidation and rounding.
+    #[getter]
+    fn rating_model(&self) -> crate::PyRatingModel {
+        crate::PyRatingModel::wrap(
+            self.inner.model.clone(),
+            self.inner.family.clone(),
+            self.inner.table_names.clone(),
+        )
+    }
+
+    /// Non-blocking observations from loading this model out of a workbook.
+    #[getter]
+    fn notes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let list = PyList::empty(py);
+        for note in &self.inner.notes {
+            let dict = PyDict::new(py);
+            dict.set_item("table", &note.table)?;
+            dict.set_item("row", note.row)?;
+            dict.set_item("code", &note.code)?;
+            dict.set_item("message", &note.message)?;
+            list.append(dict)?;
+        }
+        Ok(list)
+    }
+
+    /// Convert a LightGBM model into rating tables. Predictions match it exactly.
+    ///
+    /// `consolidation` is `"max"` for the minimal set of tables, `"analysis"` for one
+    /// per tree node.
+    #[staticmethod]
+    #[pyo3(signature = (model_json, consolidation="max"))]
+    fn from_lgbm_json(model_json: &str, consolidation: &str) -> PyResult<Self> {
+        Ok(PyFittedModel {
+            inner: FittedModel::from_lgbm_json(model_json, consolidation)
+                .map_err(value_error)?,
+        })
+    }
+
+    /// Say how this model's response was measured, so a converted or hand-built model
+    /// can be validated on the same footing as a fitted one.
+    ///
+    /// `exposure_role` is `"offset"` (log exposure added to the linear predictor) or
+    /// `"weight"`.
+    #[pyo3(signature = (target, exposure=None, exposure_role=None))]
+    fn with_response(
+        &self,
+        target: &str,
+        exposure: Option<&str>,
+        exposure_role: Option<&str>,
+    ) -> PyResult<Self> {
+        let role = match exposure_role {
+            None => None,
+            Some("offset") => Some(ExposureRole::Offset),
+            Some("weight") => Some(ExposureRole::Weight),
+            Some(other) => {
+                return Err(value_error(format!(
+                    "exposure_role must be 'offset' or 'weight', got '{}'.",
+                    other
+                )))
+            }
+        };
+        Ok(PyFittedModel {
+            inner: self.inner.clone().with_response(target, exposure, role),
+        })
+    }
+
+    /// Add two models together.
+    ///
+    /// Under a log link the factors add, so the fitted means multiply — which makes a
+    /// frequency model plus a severity model a pure premium model exactly. The result
+    /// carries no fit statistics: it was composed, not fitted.
+    fn combine(&self, other: &PyFittedModel) -> PyResult<Self> {
+        Ok(PyFittedModel {
+            inner: self.inner.combine(&other.inner).map_err(value_error)?,
+        })
+    }
+
+    fn __add__(&self, other: &PyFittedModel) -> PyResult<Self> {
+        self.combine(other)
     }
 
     #[getter]
@@ -677,14 +782,12 @@ impl PyFittedPlan {
 
     /// Assemble the full report, validating against `df` when it is given.
     ///
-    /// Pass the `PlanCheck` from before fitting to carry its findings through: several
-    /// are about the plan rather than the fit and cannot be recovered from the fitted
-    /// model.
-    #[pyo3(signature = (df=None, check=None, bins=None))]
+    /// The pre-fit check is carried automatically, so the plan's own findings arrive
+    /// without being handed back.
+    #[pyo3(signature = (df=None, bins=None))]
     fn report(
         &self,
         df: Option<PyDataFrame>,
-        check: Option<PyPlanCheck>,
         bins: Option<usize>,
     ) -> PyResult<PyModelReport> {
         let frame: Option<DataFrame> = df.map(|d| d.into());
@@ -694,19 +797,21 @@ impl PyFittedPlan {
         }
         let report = self
             .inner
-            .report(frame.as_ref(), check.as_ref().map(|c| &c.inner), &options)
+            .report(frame.as_ref(), &options)
             .map_err(value_error)?;
         Ok(PyModelReport { inner: report })
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "FittedPlan(family='{}', target='{}', tables={}, converged={}, deviance={:.6})",
-            self.inner.plan.family,
-            self.inner.target,
+            "FittedModel(family='{}', target={}, tables={}, fitted={})",
+            self.inner.family,
+            match &self.inner.target {
+                Some(target) => format!("'{}'", target),
+                None => "None".to_string(),
+            },
             self.inner.table_names.len(),
-            self.inner.diagnostics.converged,
-            self.inner.diagnostics.deviance
+            self.inner.was_fitted()
         )
     }
 }
@@ -757,21 +862,27 @@ impl PyModelReport {
     }
 
     /// How the fit went: converged, iterations, deviance, pseudo_r2, aic, bic,
-    /// dispersion, n_parameters, table_conditioning.
+    /// dispersion, n_parameters, table_conditioning. Empty for a model that was loaded
+    /// or converted rather than fitted here.
     #[getter]
     fn fit<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
-        dict.set_item("converged", self.inner.fit.converged)?;
-        dict.set_item("iterations", self.inner.fit.iterations)?;
-        dict.set_item("max_gradient", self.inner.fit.max_gradient)?;
-        dict.set_item("deviance", self.inner.fit.deviance)?;
-        dict.set_item("null_deviance", self.inner.fit.null_deviance)?;
-        dict.set_item("pseudo_r2", self.inner.fit.pseudo_r2)?;
-        dict.set_item("n_parameters", self.inner.fit.n_parameters)?;
-        dict.set_item("dispersion", self.inner.fit.dispersion)?;
-        dict.set_item("aic", self.inner.fit.aic)?;
-        dict.set_item("bic", self.inner.fit.bic)?;
-        dict.set_item("table_conditioning", self.inner.fit.table_conditioning)?;
+        let Some(fit) = self.inner.fit.as_ref() else {
+            // Not fitted here, so there is nothing to report rather than zeroes that
+            // would read as a fit that went badly.
+            return Ok(dict);
+        };
+        dict.set_item("converged", fit.converged)?;
+        dict.set_item("iterations", fit.iterations)?;
+        dict.set_item("max_gradient", fit.max_gradient)?;
+        dict.set_item("deviance", fit.deviance)?;
+        dict.set_item("null_deviance", fit.null_deviance)?;
+        dict.set_item("pseudo_r2", fit.pseudo_r2)?;
+        dict.set_item("n_parameters", fit.n_parameters)?;
+        dict.set_item("dispersion", fit.dispersion)?;
+        dict.set_item("aic", fit.aic)?;
+        dict.set_item("bic", fit.bic)?;
+        dict.set_item("table_conditioning", fit.table_conditioning)?;
         Ok(dict)
     }
 
@@ -872,17 +983,14 @@ impl PyWorkbook {
 
     /// Turn the workbook back into a model, checking every table first.
     ///
+    /// The result is an ordinary `FittedModel`, so a loaded model scores, validates,
+    /// reports and saves exactly like one just fitted.
+    ///
     /// Raises if the structure is unusable, listing every fault at once rather than
     /// stopping at the first — a hand-edited file should be repairable in one pass.
-    fn to_model(&self) -> PyResult<PyLoadedModel> {
-        let loaded = self.inner.to_model().map_err(value_error)?;
-        Ok(PyLoadedModel {
-            model: loaded.model,
-            table_names: loaded.table_names,
-            encoding: loaded.encoding,
-            family: loaded.family,
-            tweedie_power: loaded.tweedie_power,
-            issues: loaded.issues,
+    fn to_model(&self) -> PyResult<PyFittedModel> {
+        Ok(PyFittedModel {
+            inner: self.inner.to_model().map_err(value_error)?,
         })
     }
 
@@ -937,75 +1045,6 @@ impl PyWorkbook {
     }
 }
 
-/// A model loaded from a workbook.
-#[pyclass(name = "LoadedModel")]
-#[derive(Clone)]
-pub struct PyLoadedModel {
-    pub(crate) model: RatingModel,
-    pub(crate) table_names: Vec<String>,
-    pub(crate) encoding: crate::plan::Encoding,
-    pub(crate) family: String,
-    pub(crate) tweedie_power: f64,
-    pub(crate) issues: Vec<crate::workbook::TableIssue>,
-}
-
-#[pymethods]
-impl PyLoadedModel {
-    #[getter]
-    fn table_names(&self) -> Vec<String> {
-        self.table_names.clone()
-    }
-
-    #[getter]
-    fn family(&self) -> String {
-        self.family.clone()
-    }
-
-    #[getter]
-    fn tweedie_power(&self) -> f64 {
-        self.tweedie_power
-    }
-
-    /// Non-blocking observations from the load: `table`, `row`, `code`, `message`.
-    /// Anything blocking was raised instead.
-    #[getter]
-    fn issues<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
-        let list = PyList::empty(py);
-        for issue in &self.issues {
-            let dict = PyDict::new(py);
-            dict.set_item("table", &issue.table)?;
-            dict.set_item("row", issue.row)?;
-            dict.set_item("code", &issue.code)?;
-            dict.set_item("message", &issue.message)?;
-            list.append(dict)?;
-        }
-        Ok(list)
-    }
-
-    /// The rating tables, on the model's own factor scale.
-    fn model_tables(&self) -> Vec<PyDataFrame> {
-        self.model.model_tables().into_iter().map(PyDataFrame).collect()
-    }
-
-    /// Fitted means for a dataframe.
-    fn predict(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
-        let df: DataFrame = df.into();
-        let predictions = self.model.predict(&df).map_err(value_error)?;
-        DataFrame::new(vec![predictions.into()])
-            .map(PyDataFrame)
-            .map_err(value_error)
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "LoadedModel(family='{}', tables={}, notes={})",
-            self.family,
-            self.table_names.len(),
-            self.issues.len()
-        )
-    }
-}
-
 // `GivenRole` is reached through Term::given and Term::offset above.
 const _: Option<GivenRole> = None;
 
@@ -1014,10 +1053,9 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPlan>()?;
     m.add_class::<PyPlanCheck>()?;
     m.add_class::<PyValidation>()?;
-    m.add_class::<PyFittedPlan>()?;
+    m.add_class::<PyFittedModel>()?;
     m.add_class::<PyModelReport>()?;
     m.add_class::<PyWorkbook>()?;
-    m.add_class::<PyLoadedModel>()?;
     Ok(())
 }
 

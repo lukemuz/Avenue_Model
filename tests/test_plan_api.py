@@ -143,7 +143,7 @@ class FitAndValidateTests(unittest.TestCase):
         self.fitted = self.plan.fit(self.df, "claims", GLMOptions())
 
     def test_an_ordinary_dataframe_fits_without_a_table_built_by_hand(self):
-        self.assertTrue(self.fitted.converged)
+        self.assertEqual(self.fitted.converged, True)
         self.assertEqual(
             self.fitted.table_names, ["intercept", "driver_age", "region"]
         )
@@ -203,7 +203,7 @@ class ReportTests(unittest.TestCase):
         self.fitted = self.plan.fit(self.df, "claims", GLMOptions())
 
     def test_a_sound_model_reports_usable_and_carries_its_evidence(self):
-        report = self.fitted.report(self.df, self.check)
+        report = self.fitted.report(self.df)
 
         self.assertEqual(report.verdict, "usable")
         self.assertEqual(report.findings, [])
@@ -221,7 +221,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("has not been measured against held-out data", report.headline)
 
     def test_the_markdown_leads_with_the_verdict_and_carries_the_plan_back(self):
-        report = self.fitted.report(self.df, self.check)
+        report = self.fitted.report(self.df)
         markdown = report.markdown
 
         for section in ("## The model", "## Fit", "## Validation", "## Rating tables", "## Plan"):
