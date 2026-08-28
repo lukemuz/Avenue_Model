@@ -408,8 +408,9 @@ impl Plan {
     }
 
     pub fn to_json(&self) -> Result<String, PolarsError> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| PolarsError::ComputeError(format!("Could not serialise plan: {}", e).into()))
+        serde_json::to_string_pretty(self).map_err(|e| {
+            PolarsError::ComputeError(format!("Could not serialise plan: {}", e).into())
+        })
     }
 
     pub fn from_json(text: &str) -> Result<Self, PolarsError> {
@@ -593,7 +594,8 @@ impl Plan {
                 .cast(&DataType::Float64)
                 .map_err(|_| {
                     PolarsError::ComputeError(
-                        format!("Exposure column '{}' cannot be read as a number.", exposure).into(),
+                        format!("Exposure column '{}' cannot be read as a number.", exposure)
+                            .into(),
                     )
                 })?;
             out.with_column(series.clone())?;
@@ -671,8 +673,7 @@ fn encode_categorical(
                         .collect()
                 }
             };
-            let lookup: HashMap<&str, i32> =
-                map.iter().map(|(t, c)| (t.as_str(), *c)).collect();
+            let lookup: HashMap<&str, i32> = map.iter().map(|(t, c)| (t.as_str(), *c)).collect();
             let codes: Vec<i32> = text
                 .into_iter()
                 .map(|v| match v {
@@ -680,10 +681,7 @@ fn encode_categorical(
                     None => UNSEEN_CODE,
                 })
                 .collect();
-            Ok((
-                Series::new(column.into(), codes).into(),
-                Some(map),
-            ))
+            Ok((Series::new(column.into(), codes).into(), Some(map)))
         }
         DataType::Int32 => Ok((series.clone(), None)),
         DataType::Int8
@@ -1126,16 +1124,12 @@ impl Plan {
                         .get_column_names()
                         .iter()
                         .all(|c| c.as_str() == "Rating_Factor");
-                let faults: Vec<String> = crate::workbook::check_table(
-                    &frame,
-                    name,
-                    "Rating_Factor",
-                    is_constant,
-                )
-                .into_iter()
-                .filter(|issue| issue.blocking)
-                .map(|issue| issue.describe())
-                .collect();
+                let faults: Vec<String> =
+                    crate::workbook::check_table(&frame, name, "Rating_Factor", is_constant)
+                        .into_iter()
+                        .filter(|issue| issue.blocking)
+                        .map(|issue| issue.describe())
+                        .collect();
                 if !faults.is_empty() {
                     return Err(PolarsError::ComputeError(
                         format!(
@@ -1511,7 +1505,10 @@ impl Plan {
                 } else {
                     let values = series.cast(&DataType::Float64)?;
                     let ca = values.f64()?;
-                    let bad = ca.into_iter().filter(|v| !matches!(v, Some(x) if x.is_finite())).count();
+                    let bad = ca
+                        .into_iter()
+                        .filter(|v| !matches!(v, Some(x) if x.is_finite()))
+                        .count();
                     if bad > 0 {
                         issues.push(Issue::new(
                             Severity::High,
@@ -1524,11 +1521,7 @@ impl Plan {
                             ),
                         ));
                     }
-                    let negative = ca
-                        .into_iter()
-                        .flatten()
-                        .filter(|v| *v < 0.0)
-                        .count();
+                    let negative = ca.into_iter().flatten().filter(|v| *v < 0.0).count();
                     let needs_non_negative = matches!(
                         self.family.to_lowercase().as_str(),
                         "poisson" | "gamma" | "tweedie" | "binomial" | "binary"
@@ -1688,7 +1681,6 @@ impl Plan {
                     ),
                 ));
             }
-
         }
 
         // ---- thin levels, measured on the exposure the fit will use
@@ -1770,12 +1762,7 @@ impl Plan {
         if let Some(matches) = all_matches.as_ref() {
             // Offsets and variates never enter a pair: an offset carries no free
             // parameter, and a variate's rows are tied to a curve rather than free.
-            let shapes: Vec<usize> = built
-                .model
-                .tables
-                .iter()
-                .map(|t| t.data.height())
-                .collect();
+            let shapes: Vec<usize> = built.model.tables.iter().map(|t| t.data.height()).collect();
             let eligible: Vec<bool> = built
                 .model
                 .tables
@@ -2247,9 +2234,7 @@ impl FittedModel {
                 let series = out.column(&column)?;
                 let cast = match dtype {
                     DataType::Float64 => series.cast(&DataType::Float64)?,
-                    DataType::Int32 => {
-                        encode_categorical(series, &column, Some(&self.encoding))?.0
-                    }
+                    DataType::Int32 => encode_categorical(series, &column, Some(&self.encoding))?.0,
                     _ => continue,
                 };
                 out.with_column(cast)?;
@@ -2372,7 +2357,9 @@ impl FittedModel {
     pub fn rating_tables(&self) -> Result<Vec<DataFrame>, PolarsError> {
         let inference = self.diagnostics.as_ref().and_then(|d| d.inference.as_ref());
         let standard_errors = inference.map(|i| i.standard_errors.clone());
-        let aliased = inference.map(|i| i.aliased_rows.clone()).unwrap_or_default();
+        let aliased = inference
+            .map(|i| i.aliased_rows.clone())
+            .unwrap_or_default();
         let unfitted = self
             .diagnostics
             .as_ref()

@@ -227,7 +227,10 @@ impl PyPlan {
             .map(|b| b.map(Breaks::explicit))
             .collect();
         Ok(PyPlan {
-            inner: self.inner.clone().with(Term::Interaction { columns, breaks }),
+            inner: self
+                .inner
+                .clone()
+                .with(Term::Interaction { columns, breaks }),
         })
     }
 
@@ -267,11 +270,7 @@ impl PyPlan {
         let plan = self
             .inner
             .clone()
-            .with_offset_model(
-                &model.inner.model,
-                &model.inner.table_names,
-                prefix,
-            )
+            .with_offset_model(&model.inner.model, &model.inner.table_names, prefix)
             .map_err(value_error)?;
         // The carried tables hold category codes, so the plan must encode string
         // columns the same way or the same level could take a different code.
@@ -284,7 +283,10 @@ impl PyPlan {
     /// Needed whenever the plan carries tables built elsewhere.
     fn with_encoding(&self, source: &PyFittedModel) -> Self {
         PyPlan {
-            inner: self.inner.clone().with_encoding(source.inner.encoding.clone()),
+            inner: self
+                .inner
+                .clone()
+                .with_encoding(source.inner.encoding.clone()),
         }
     }
 
@@ -655,8 +657,7 @@ impl PyFittedModel {
     #[pyo3(signature = (model_json, consolidation="max"))]
     fn from_lgbm_json(model_json: &str, consolidation: &str) -> PyResult<Self> {
         Ok(PyFittedModel {
-            inner: FittedModel::from_lgbm_json(model_json, consolidation)
-                .map_err(value_error)?,
+            inner: FittedModel::from_lgbm_json(model_json, consolidation).map_err(value_error)?,
         })
     }
 
@@ -785,11 +786,7 @@ impl PyFittedModel {
     /// The pre-fit check is carried automatically, so the plan's own findings arrive
     /// without being handed back.
     #[pyo3(signature = (df=None, bins=None))]
-    fn report(
-        &self,
-        df: Option<PyDataFrame>,
-        bins: Option<usize>,
-    ) -> PyResult<PyModelReport> {
+    fn report(&self, df: Option<PyDataFrame>, bins: Option<usize>) -> PyResult<PyModelReport> {
         let frame: Option<DataFrame> = df.map(|d| d.into());
         let mut options = ValidationOptions::default();
         if let Some(bins) = bins {

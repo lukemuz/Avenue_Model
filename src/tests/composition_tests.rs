@@ -110,9 +110,8 @@ mod composition_tests {
             .unwrap()
             .into_no_null_iter()
             .collect();
-        let factor_of = |code: i32| -> f64 {
-            telematics[codes.iter().position(|c| *c == code).unwrap()]
-        };
+        let factor_of =
+            |code: i32| -> f64 { telematics[codes.iter().position(|c| *c == code).unwrap()] };
         // True multipliers are 0.8, 1.0, 1.2, so against code 0 they are 1.0, 1.25, 1.5.
         for (code, want) in [(1i32, 1.25f64), (2, 1.5)] {
             let got = (factor_of(code) - factor_of(0)).exp();
@@ -143,8 +142,11 @@ mod composition_tests {
             .with(Term::categorical("telematics"));
 
         let check = plan.check(&df, "frequency").unwrap();
-        let by_name: std::collections::HashMap<&str, &crate::plan::ResolvedTerm> =
-            check.resolved.iter().map(|r| (r.name.as_str(), r)).collect();
+        let by_name: std::collections::HashMap<&str, &crate::plan::ResolvedTerm> = check
+            .resolved
+            .iter()
+            .map(|r| (r.name.as_str(), r))
+            .collect();
 
         assert_eq!(by_name["prior.region"].kind, "offset");
         assert_eq!(
@@ -169,7 +171,10 @@ mod composition_tests {
         let fitted = plan.fit(&df, "frequency", options()).unwrap();
 
         assert_eq!(fitted.resolved[1].kind, "given");
-        assert_eq!(fitted.resolved[1].parameters, 3, "a given structure is estimated");
+        assert_eq!(
+            fitted.resolved[1].parameters, 3,
+            "a given structure is estimated"
+        );
         assert_eq!(
             fitted.model.tables[1].data.height(),
             last_year.height(),
@@ -198,11 +203,13 @@ mod composition_tests {
             Series::new("Rating_Factor".into(), vec![0.0f64, 0.1, 0.2]).into(),
         ])
         .unwrap();
-        let plan = Plan::frequency("exposure")
-            .with(Term::offset("banded", &scrambled).unwrap());
+        let plan = Plan::frequency("exposure").with(Term::offset("banded", &scrambled).unwrap());
 
         let check = plan.check(&df, "frequency").unwrap();
-        assert!(!check.is_fittable(), "a bad supplied table must block the plan");
+        assert!(
+            !check.is_fittable(),
+            "a bad supplied table must block the plan"
+        );
         assert!(
             check
                 .issues
@@ -223,7 +230,11 @@ mod composition_tests {
 
         // 1. Fit a plan and write it out as a spreadsheet someone can open.
         let existing = existing_plan(&df);
-        existing.to_workbook(None).unwrap().save_csv_dir(&dir).unwrap();
+        existing
+            .to_workbook(None)
+            .unwrap()
+            .save_csv_dir(&dir)
+            .unwrap();
 
         // 2. Someone opens 01_region.csv and applies a 10% loading to every region.
         let path = dir.join("01_region.csv");
@@ -243,7 +254,9 @@ mod composition_tests {
         // 3. Read it back. It is a model again, and it carries the loading.
         let loaded = Workbook::load_csv_dir(&dir).unwrap().to_model().unwrap();
         assert!(loaded.notes.is_empty(), "{:?}", loaded.notes);
-        for (after, before) in factors(&loaded.model, 1).iter().zip(factors(&existing.model, 1).iter())
+        for (after, before) in factors(&loaded.model, 1)
+            .iter()
+            .zip(factors(&existing.model, 1).iter())
         {
             assert!(
                 (after - before - 1.1f64.ln()).abs() < 1e-9,
@@ -266,7 +279,9 @@ mod composition_tests {
         assert_eq!(factors(&refitted.model, 2), factors(&loaded.model, 1));
 
         // And the new model still balances: the fitted intercept absorbed the 10%.
-        let v = refitted.validate(&df, &ValidationOptions::default()).unwrap();
+        let v = refitted
+            .validate(&df, &ValidationOptions::default())
+            .unwrap();
         assert!((v.ae_ratio - 1.0).abs() < 1e-6, "ae_ratio {}", v.ae_ratio);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -292,13 +307,18 @@ mod composition_tests {
         assert_eq!(plan.encoding, back.encoding);
 
         // The table travels inside the plan, not by reference to a file.
-        assert!(json.contains("\"role\": \"offset\""), "{}", &json[..400.min(json.len())]);
         assert!(
-            matches!(&back.terms[0], Term::Given { role, .. } if *role == GivenRole::Offset)
+            json.contains("\"role\": \"offset\""),
+            "{}",
+            &json[..400.min(json.len())]
         );
+        assert!(matches!(&back.terms[0], Term::Given { role, .. } if *role == GivenRole::Offset));
 
         // And the encoding travels with it, so the codes cannot drift.
-        assert_eq!(back.encoding.as_ref().unwrap().label_for("region", 0), Some("east"));
+        assert_eq!(
+            back.encoding.as_ref().unwrap().label_for("region", 0),
+            Some("east")
+        );
     }
 
     // ------------------------------------------------------------ one type
@@ -314,11 +334,19 @@ mod composition_tests {
         let df = motor(720);
 
         let fitted = existing_plan(&df);
-        fitted.to_workbook(None).unwrap().save_csv_dir(&dir).unwrap();
+        fitted
+            .to_workbook(None)
+            .unwrap()
+            .save_csv_dir(&dir)
+            .unwrap();
 
         let loaded = Workbook::load_csv_dir(&dir).unwrap().to_model().unwrap();
         assert!(!loaded.was_fitted(), "it was loaded, not fitted here");
-        assert_eq!(loaded.converged(), None, "and it must not claim a fit it never did");
+        assert_eq!(
+            loaded.converged(),
+            None,
+            "and it must not claim a fit it never did"
+        );
 
         // The manifest carried the response, so it knows what it is explaining.
         assert_eq!(loaded.target.as_deref(), Some("frequency"));
@@ -330,14 +358,25 @@ mod composition_tests {
         assert!((a.gini - b.gini).abs() < 1e-9);
 
         // Report: no fit section, and a headline that says so rather than implying one.
-        let report = loaded.report(Some(&df), &ValidationOptions::default()).unwrap();
+        let report = loaded
+            .report(Some(&df), &ValidationOptions::default())
+            .unwrap();
         assert!(report.fit_summary.is_none());
-        assert!(report.to_markdown().contains("loaded or converted rather than fitted"));
+        assert!(report
+            .to_markdown()
+            .contains("loaded or converted rather than fitted"));
         assert!(report.headline.contains("actual over expected"));
 
         // Save again, and round-trip once more.
-        loaded.to_workbook(None).unwrap().save_json(dir.join("again.json")).unwrap();
-        let again = Workbook::load_json(dir.join("again.json")).unwrap().to_model().unwrap();
+        loaded
+            .to_workbook(None)
+            .unwrap()
+            .save_json(dir.join("again.json"))
+            .unwrap();
+        let again = Workbook::load_json(dir.join("again.json"))
+            .unwrap()
+            .to_model()
+            .unwrap();
         assert_eq!(again.target.as_deref(), Some("frequency"));
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -360,7 +399,11 @@ mod composition_tests {
             Ok(_) => panic!("it cannot know what to measure"),
             Err(error) => {
                 let text = format!("{}", error);
-                assert!(text.contains("with_response"), "the repair must travel: {}", text);
+                assert!(
+                    text.contains("with_response"),
+                    "the repair must travel: {}",
+                    text
+                );
             }
         }
 
@@ -373,7 +416,10 @@ mod composition_tests {
             Some(crate::plan::ExposureRole::Weight),
         );
         let v = told.validate(&df, &ValidationOptions::default()).unwrap();
-        assert_eq!(v.unmatched_rows, 0, "a plan-less model must still prepare its own data");
+        assert_eq!(
+            v.unmatched_rows, 0,
+            "a plan-less model must still prepare its own data"
+        );
         assert!((v.ae_ratio - 1.0).abs() < 1e-6, "ae_ratio {}", v.ae_ratio);
     }
 
@@ -481,11 +527,21 @@ mod composition_tests {
             .into_no_null_iter()
             .collect();
         for ((got, a), b) in got.iter().zip(a.iter()).zip(b.iter()) {
-            assert!((got - a * b).abs() < 1e-9, "{} should equal {} * {}", got, a, b);
+            assert!(
+                (got - a * b).abs() < 1e-9,
+                "{} should equal {} * {}",
+                got,
+                a,
+                b
+            );
         }
         assert_eq!(
             combined.encoding.maps["region"],
-            vec![("a".to_string(), 0), ("b".to_string(), 1), ("c".to_string(), 2)]
+            vec![
+                ("a".to_string(), 0),
+                ("b".to_string(), 1),
+                ("c".to_string(), 2)
+            ]
         );
     }
 

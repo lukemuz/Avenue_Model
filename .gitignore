@@ -1,5 +1,7 @@
 /target
+/dist
 /WIP
+.DS_Store
 license_key.txt
 __pycache__/
 

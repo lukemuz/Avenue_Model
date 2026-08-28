@@ -7,9 +7,9 @@ pub mod python_api;
 pub mod rating_model;
 pub mod report;
 pub mod table_estimator;
+pub mod tests;
 pub mod validation;
 pub mod workbook;
-pub mod tests;
 
 // Python bindings (only when "python" feature is enabled)
 #[cfg(feature = "python")]
@@ -128,11 +128,7 @@ fn estimate_num_tables(model_json: &str) -> PyResult<usize> {
 impl PyRatingModel {
     /// Wrap a model built elsewhere, so a `FittedModel` can hand its scoring model out
     /// for composition, consolidation and rounding.
-    pub(crate) fn wrap(
-        inner: RatingModel,
-        family: String,
-        table_names: Vec<String>,
-    ) -> Self {
+    pub(crate) fn wrap(inner: RatingModel, family: String, table_names: Vec<String>) -> Self {
         PyRatingModel {
             inner,
             family,

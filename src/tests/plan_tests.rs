@@ -94,7 +94,10 @@ mod plan_tests {
         let plan = Plan::frequency("exposure").with(Term::categorical("region"));
         let prepared = plan.prepare(&df, None).unwrap();
 
-        assert_eq!(prepared.df.column("region").unwrap().dtype(), &DataType::Int32);
+        assert_eq!(
+            prepared.df.column("region").unwrap().dtype(),
+            &DataType::Int32
+        );
         let built = plan.build(&prepared).unwrap();
 
         // Codes follow sorted level text, so encoding is independent of row order.
@@ -112,8 +115,8 @@ mod plan_tests {
             &DataType::Int64,
             "the fixture must actually carry the awkward dtype"
         );
-        let plan = Plan::frequency("exposure")
-            .with(Term::banded("driver_age", Breaks::quantile(4)));
+        let plan =
+            Plan::frequency("exposure").with(Term::banded("driver_age", Breaks::quantile(4)));
         let fitted = plan.fit(&df, "claims", options()).unwrap();
         assert_eq!(fitted.converged(), Some(true));
     }
@@ -125,8 +128,11 @@ mod plan_tests {
         let n = regions.len();
         let df = DataFrame::new(vec![
             Series::new("region".into(), regions).into(),
-            Series::new("claims".into(), (0..n).map(|i| (i % 3) as f64).collect::<Vec<f64>>())
-                .into(),
+            Series::new(
+                "claims".into(),
+                (0..n).map(|i| (i % 3) as f64).collect::<Vec<f64>>(),
+            )
+            .into(),
             Series::new("exposure".into(), vec![1.0; n]).into(),
         ])
         .unwrap();
@@ -152,7 +158,9 @@ mod plan_tests {
         // And it can be named outright.
         let pinned = Plan::frequency("exposure").with(Term::categorical_based_on(
             "region",
-            Base::Level { value: "rare".to_string() },
+            Base::Level {
+                value: "rare".to_string(),
+            },
         ));
         let built = pinned.build(&pinned.prepare(&df, None).unwrap()).unwrap();
         assert_eq!(built.resolved[1].base_level.as_deref(), Some("rare"));
@@ -160,11 +168,17 @@ mod plan_tests {
         // Naming one that does not exist says so, and lists what does.
         let wrong = Plan::frequency("exposure").with(Term::categorical_based_on(
             "region",
-            Base::Level { value: "nowhere".to_string() },
+            Base::Level {
+                value: "nowhere".to_string(),
+            },
         ));
         let err = expect_err(wrong.build(&wrong.prepare(&df, None).unwrap()));
         assert!(err.contains("nowhere"), "{}", err);
-        assert!(err.contains("common"), "the message must list the real levels: {}", err);
+        assert!(
+            err.contains("common"),
+            "the message must list the real levels: {}",
+            err
+        );
     }
 
     #[test]
@@ -188,8 +202,8 @@ mod plan_tests {
     #[test]
     fn a_variate_spends_its_degree_and_not_its_rows() {
         let df = motor(240);
-        let plan = Plan::frequency("exposure")
-            .with(Term::variate("driver_age", Breaks::quantile(8), 2));
+        let plan =
+            Plan::frequency("exposure").with(Term::variate("driver_age", Breaks::quantile(8), 2));
         let prepared = plan.prepare(&df, None).unwrap();
         let built = plan.build(&prepared).unwrap();
 
@@ -237,7 +251,10 @@ mod plan_tests {
         // And the whole thing must fit and score without dropping observations.
         let fitted = plan.fit(&df, "claims", options()).unwrap();
         let v = fitted.validate(&df, &ValidationOptions::default()).unwrap();
-        assert_eq!(v.unmatched_rows, 0, "every row must land in the crossed table");
+        assert_eq!(
+            v.unmatched_rows, 0,
+            "every row must land in the crossed table"
+        );
     }
 
     // ------------------------------------------------------------ checking
@@ -258,7 +275,10 @@ mod plan_tests {
 
         let age = &check.resolved[1];
         assert_eq!(age.kind, "banded");
-        let edges = age.edges.as_ref().expect("a quantile rule must state its edges");
+        let edges = age
+            .edges
+            .as_ref()
+            .expect("a quantile rule must state its edges");
         assert!(
             edges.last().unwrap().is_infinite(),
             "the top band is unbounded: {:?}",
@@ -288,7 +308,13 @@ mod plan_tests {
         let mut exposure: Vec<f64> = vec![1.0; n];
         exposure[11] = 0.0;
         let df = DataFrame::new(vec![
-            Series::new("region".into(), (0..n).map(|i| if i % 2 == 0 { "a" } else { "b" }).collect::<Vec<&str>>()).into(),
+            Series::new(
+                "region".into(),
+                (0..n)
+                    .map(|i| if i % 2 == 0 { "a" } else { "b" })
+                    .collect::<Vec<&str>>(),
+            )
+            .into(),
             Series::new("flat".into(), vec![3.0f64; n]).into(),
             Series::new("claims".into(), claims).into(),
             Series::new("exposure".into(), exposure).into(),
@@ -312,7 +338,11 @@ mod plan_tests {
             assert!(pair[0].severity >= pair[1].severity);
         }
         // Every message names the column it is about.
-        let nulls = check.issues.iter().find(|i| i.code == "target_has_nulls").unwrap();
+        let nulls = check
+            .issues
+            .iter()
+            .find(|i| i.code == "target_has_nulls")
+            .unwrap();
         assert!(nulls.message.contains("claims"), "{}", nulls.message);
     }
 
@@ -326,7 +356,11 @@ mod plan_tests {
         let df = DataFrame::new(vec![
             Series::new("age".into(), age).into(),
             Series::new("band".into(), band).into(),
-            Series::new("claims".into(), (0..n).map(|i| (i % 3) as f64).collect::<Vec<f64>>()).into(),
+            Series::new(
+                "claims".into(),
+                (0..n).map(|i| (i % 3) as f64).collect::<Vec<f64>>(),
+            )
+            .into(),
             Series::new("exposure".into(), vec![1.0; n]).into(),
         ])
         .unwrap();
@@ -352,8 +386,11 @@ mod plan_tests {
     #[test]
     fn check_rejects_a_variate_degree_the_bands_cannot_identify() {
         let df = motor(240);
-        let plan = Plan::frequency("exposure")
-            .with(Term::variate("driver_age", Breaks::explicit(vec![30.0, 50.0]), 3));
+        let plan = Plan::frequency("exposure").with(Term::variate(
+            "driver_age",
+            Breaks::explicit(vec![30.0, 50.0]),
+            3,
+        ));
         // `check` reports a structural fault rather than throwing: a caller must be
         // able to learn everything wrong from one call.
         let check = plan.check(&df, "claims").unwrap();
@@ -379,10 +416,15 @@ mod plan_tests {
     #[test]
     fn a_plan_round_trips_through_json_unchanged() {
         let plan = Plan::frequency("exposure")
-            .with(Term::banded("driver_age", Breaks::explicit(vec![25.0, 40.0])))
+            .with(Term::banded(
+                "driver_age",
+                Breaks::explicit(vec![25.0, 40.0]),
+            ))
             .with(Term::categorical_based_on(
                 "region",
-                Base::Level { value: "north".to_string() },
+                Base::Level {
+                    value: "north".to_string(),
+                },
             ))
             .with(Term::variate("vehicle_value", Breaks::quantile(10), 2))
             .with(Term::interaction(
@@ -392,7 +434,10 @@ mod plan_tests {
 
         let json = plan.to_json().unwrap();
         let back = Plan::from_json(&json).unwrap();
-        assert_eq!(plan, back, "a plan is the model's source code and must survive a save");
+        assert_eq!(
+            plan, back,
+            "a plan is the model's source code and must survive a save"
+        );
 
         // And it is legible rather than an opaque blob, since a person may edit it.
         assert!(json.contains("\"driver_age\""), "{}", json);
@@ -405,7 +450,10 @@ mod plan_tests {
     fn a_plan_fits_scores_and_validates_from_an_ordinary_dataframe() {
         let df = motor(480);
         let plan = Plan::frequency("exposure")
-            .with(Term::banded("driver_age", Breaks::explicit(vec![30.0, 45.0, 60.0])))
+            .with(Term::banded(
+                "driver_age",
+                Breaks::explicit(vec![30.0, 45.0, 60.0]),
+            ))
             .with(Term::categorical("region"));
 
         let check = plan.check(&df, "claims").unwrap();
@@ -413,12 +461,19 @@ mod plan_tests {
 
         let fitted = plan.fit(&df, "claims", options()).unwrap();
         assert_eq!(fitted.converged(), Some(true));
-        assert_eq!(fitted.table_names, vec!["intercept", "driver_age", "region"]);
+        assert_eq!(
+            fitted.table_names,
+            vec!["intercept", "driver_age", "region"]
+        );
 
         // Scoring goes through the same encoding the fit used.
         let predictions = fitted.predict(&df).unwrap();
         assert_eq!(predictions.len(), 480);
-        assert!(predictions.f64().unwrap().into_no_null_iter().all(|v| v.is_finite()));
+        assert!(predictions
+            .f64()
+            .unwrap()
+            .into_no_null_iter()
+            .all(|v| v.is_finite()));
 
         // A Poisson fit with a free intercept balances actual against expected.
         let v = fitted.validate(&df, &ValidationOptions::default()).unwrap();
@@ -428,9 +483,18 @@ mod plan_tests {
         // The rating tables carry the level text back, not just the codes.
         let tables = fitted.rating_tables().unwrap();
         let region = &tables[2];
-        assert!(region.get_column_names().iter().any(|c| c.as_str() == "region_Level"));
-        assert!(region.get_column_names().iter().any(|c| c.as_str() == "Relativity"));
-        assert!(region.get_column_names().iter().any(|c| c.as_str() == "Standard_Error"));
+        assert!(region
+            .get_column_names()
+            .iter()
+            .any(|c| c.as_str() == "region_Level"));
+        assert!(region
+            .get_column_names()
+            .iter()
+            .any(|c| c.as_str() == "Relativity"));
+        assert!(region
+            .get_column_names()
+            .iter()
+            .any(|c| c.as_str() == "Standard_Error"));
         let status: Vec<&str> = region
             .column("Status")
             .unwrap()
@@ -447,18 +511,32 @@ mod plan_tests {
         let plan = Plan::frequency("exposure").with(Term::categorical("region"));
         let fitted = plan.fit(&df, "claims", options()).unwrap();
 
-        let mut regions: Vec<&str> = (0..240).map(|i| ["north", "south", "east", "west"][i % 4]).collect();
+        let mut regions: Vec<&str> = (0..240)
+            .map(|i| ["north", "south", "east", "west"][i % 4])
+            .collect();
         regions[0] = "atlantis";
         let holdout = DataFrame::new(vec![
             Series::new("region".into(), regions).into(),
-            Series::new("driver_age".into(), (0..240).map(|i| 18 + ((i * 7) % 55) as i64).collect::<Vec<i64>>()).into(),
+            Series::new(
+                "driver_age".into(),
+                (0..240)
+                    .map(|i| 18 + ((i * 7) % 55) as i64)
+                    .collect::<Vec<i64>>(),
+            )
+            .into(),
             Series::new("exposure".into(), vec![1.0f64; 240]).into(),
-            Series::new("claims".into(), (0..240).map(|i| (i % 3) as f64).collect::<Vec<f64>>()).into(),
+            Series::new(
+                "claims".into(),
+                (0..240).map(|i| (i % 3) as f64).collect::<Vec<f64>>(),
+            )
+            .into(),
         ])
         .unwrap();
 
         // The unseen level must not silently collide with a real one.
-        let v = fitted.validate(&holdout, &ValidationOptions::default()).unwrap();
+        let v = fitted
+            .validate(&holdout, &ValidationOptions::default())
+            .unwrap();
         assert_eq!(v.unmatched_rows, 1);
         assert!(v
             .warnings
@@ -501,7 +579,11 @@ mod plan_tests {
         let missing = Plan::frequency("exposure").with(Term::categorical("postcode"));
         let err = expect_err(missing.prepare(&df, None));
         assert!(err.contains("postcode"), "{}", err);
-        assert!(err.contains("Columns present"), "must list what is there: {}", err);
+        assert!(
+            err.contains("Columns present"),
+            "must list what is there: {}",
+            err
+        );
     }
 
     #[test]

@@ -274,7 +274,10 @@ fn headline(
     };
 
     match verdict {
-        Verdict::Usable => format!("{}. Nothing was found that should stop it being used.", quality),
+        Verdict::Usable => format!(
+            "{}. Nothing was found that should stop it being used.",
+            quality
+        ),
         Verdict::UsableWithCaveats => format!(
             "{}. It is usable, with {} caveat{} to carry forward — the first is: {}",
             quality,
@@ -489,7 +492,11 @@ fn format_cell(column: &Column, row: usize) -> String {
     match column.dtype() {
         DataType::Float64 => match column.f64().ok().and_then(|c| c.get(row)) {
             Some(v) if v.is_infinite() => {
-                if v > 0.0 { "inf".into() } else { "-inf".into() }
+                if v > 0.0 {
+                    "inf".into()
+                } else {
+                    "-inf".into()
+                }
             }
             Some(v) if v.is_nan() => "—".into(),
             // Enough digits to be useful, few enough to read.

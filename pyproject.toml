@@ -4,17 +4,35 @@ build-backend = "maturin"
 
 [project]
 name = "avenue_model"
-description = "Avenue Model - Rust extension for Avenue insurance modeling"
+description = "Fast, defensible insurance models built directly from rating tables"
 version = "0.1.0"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
+authors = [
+    { name = "Lucas Muzynoski" },
+]
+keywords = ["actuarial", "glm", "insurance", "lightgbm", "rating-tables"]
 dependencies = [
     "polars==1.31.0",
 ]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Scientific/Engineering",
 ]
+
+[project.urls]
+Homepage = "https://github.com/lukemuz/Avenue_Model"
+Repository = "https://github.com/lukemuz/Avenue_Model"
+Issues = "https://github.com/lukemuz/Avenue_Model/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

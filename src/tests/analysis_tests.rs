@@ -504,7 +504,6 @@ mod analysis_tests {
                         Ok((feature.clone(), feature_value))
                     })
                     .collect::<Result<HashMap<_, _>, PolarsError>>()?;
-                
                 match table.find_row_match(&row_values) {
                     Some(row_idx) => Ok(row_idx as u32),
                     None => Err(PolarsError::ComputeError(

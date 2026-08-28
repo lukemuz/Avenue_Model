@@ -203,7 +203,10 @@ impl TableIssue {
     /// One line, naming the table and row.
     pub fn describe(&self) -> String {
         match self.row {
-            Some(row) => format!("[{}] table '{}' row {}: {}", self.code, self.table, row, self.message),
+            Some(row) => format!(
+                "[{}] table '{}' row {}: {}",
+                self.code, self.table, row, self.message
+            ),
             None => format!("[{}] table '{}': {}", self.code, self.table, self.message),
         }
     }
@@ -239,7 +242,10 @@ pub fn check_table(
             ));
             return issues;
         }
-        Ok(column) => match column.cast(&DataType::Float64).and_then(|c| c.f64().cloned()) {
+        Ok(column) => match column
+            .cast(&DataType::Float64)
+            .and_then(|c| c.f64().cloned())
+        {
             Ok(values) => values,
             Err(_) => {
                 issues.push(TableIssue::blocking(
@@ -370,16 +376,17 @@ pub fn check_table(
                 name,
                 Some(row),
                 "null_bound",
-                format!("Band bound '{}' is empty. Every row needs an upper bound.", feature),
+                format!(
+                    "Band bound '{}' is empty. Every row needs an upper bound.",
+                    feature
+                ),
             ));
             continue;
         }
 
         // Every numeric column must reach infinity somewhere, or the observations
         // above its largest bound match no row at all and score as NaN.
-        let max = values
-            .into_no_null_iter()
-            .fold(f64::NEG_INFINITY, f64::max);
+        let max = values.into_no_null_iter().fold(f64::NEG_INFINITY, f64::max);
         if !max.is_infinite() {
             issues.push(TableIssue::blocking(
                 name,
@@ -410,7 +417,10 @@ pub fn check_table(
                              ascend down the table: lookup takes the first row whose bound \
                              is not below the value, so an out-of-order row silently \
                              returns the wrong band. Sort the rows by '{}'.",
-                            feature, bounds[row], bounds[row - 1], feature
+                            feature,
+                            bounds[row],
+                            bounds[row - 1],
+                            feature
                         ),
                     ));
                     break;
@@ -592,7 +602,10 @@ impl Workbook {
             }
             frame.with_column(Series::new(
                 scale.column().into(),
-                factors.iter().map(|f| scale.from_factor(*f)).collect::<Vec<f64>>(),
+                factors
+                    .iter()
+                    .map(|f| scale.from_factor(*f))
+                    .collect::<Vec<f64>>(),
             ))?;
 
             let locked_rows: Vec<usize> = (0..table.data.height())
@@ -821,7 +834,11 @@ impl Workbook {
         let mut loaded = crate::plan::FittedModel::from_model(
             RatingModel::new(tables, LinkFunction::from_objective(&self.manifest.family)),
             &self.manifest.family,
-            self.manifest.tables.iter().map(|t| t.name.clone()).collect(),
+            self.manifest
+                .tables
+                .iter()
+                .map(|t| t.name.clone())
+                .collect(),
             Encoding {
                 maps: self.manifest.encodings.clone(),
             },
@@ -1002,7 +1019,11 @@ impl Workbook {
 pub(crate) fn frame_to_records(
     df: &DataFrame,
 ) -> Result<Vec<BTreeMap<String, serde_json::Value>>, PolarsError> {
-    let names: Vec<String> = df.get_column_names().iter().map(|c| c.to_string()).collect();
+    let names: Vec<String> = df
+        .get_column_names()
+        .iter()
+        .map(|c| c.to_string())
+        .collect();
     let mut out = Vec::with_capacity(df.height());
     for row in 0..df.height() {
         let mut record = BTreeMap::new();
@@ -1012,9 +1033,9 @@ pub(crate) fn frame_to_records(
                 // Infinity has no JSON representation, so it travels as the string
                 // every rating table means by it.
                 DataType::Float64 => match column.f64()?.get(row) {
-                    Some(v) if v.is_infinite() => serde_json::Value::String(
-                        if v > 0.0 { "inf" } else { "-inf" }.to_string(),
-                    ),
+                    Some(v) if v.is_infinite() => {
+                        serde_json::Value::String(if v > 0.0 { "inf" } else { "-inf" }.to_string())
+                    }
                     Some(v) => serde_json::json!(v),
                     None => serde_json::Value::Null,
                 },
@@ -1027,10 +1048,7 @@ pub(crate) fn frame_to_records(
                     None => serde_json::Value::Null,
                 },
                 _ => serde_json::Value::String(
-                    column
-                        .get(row)
-                        .map(|v| v.to_string())
-                        .unwrap_or_default(),
+                    column.get(row).map(|v| v.to_string()).unwrap_or_default(),
                 ),
             };
             record.insert(name.clone(), value);
@@ -1219,7 +1237,11 @@ impl Workbook {
 /// Hand-rolled rather than delegated so infinity round-trips as the literal `inf` a
 /// rating table means by it, rather than whatever a writer happens to emit.
 fn frame_to_csv(df: &DataFrame) -> Result<String, PolarsError> {
-    let names: Vec<String> = df.get_column_names().iter().map(|c| c.to_string()).collect();
+    let names: Vec<String> = df
+        .get_column_names()
+        .iter()
+        .map(|c| c.to_string())
+        .collect();
     let mut out = String::new();
     out.push_str(&names.join(","));
     out.push('\n');
@@ -1231,7 +1253,11 @@ fn frame_to_csv(df: &DataFrame) -> Result<String, PolarsError> {
                 Ok(match column.dtype() {
                     DataType::Float64 => match column.f64()?.get(row) {
                         Some(v) if v.is_infinite() => {
-                            if v > 0.0 { "inf".into() } else { "-inf".into() }
+                            if v > 0.0 {
+                                "inf".into()
+                            } else {
+                                "-inf".into()
+                            }
                         }
                         Some(v) => format!("{}", v),
                         None => String::new(),
@@ -1290,14 +1316,16 @@ fn csv_to_frame(text: &str, table: &str) -> Result<DataFrame, PolarsError> {
     let mut columns: Vec<Column> = Vec::with_capacity(names.len());
     for (position, name) in names.iter().enumerate() {
         let cells: Vec<&str> = rows.iter().map(|r| r[position].as_str()).collect();
-        let non_empty: Vec<&str> = cells.iter().copied().filter(|c| !c.trim().is_empty()).collect();
+        let non_empty: Vec<&str> = cells
+            .iter()
+            .copied()
+            .filter(|c| !c.trim().is_empty())
+            .collect();
 
         // A column of whole numbers is a category code; a column with a decimal point,
         // an exponent or an infinity is a numeric band.
-        let integral = !non_empty.is_empty()
-            && non_empty
-                .iter()
-                .all(|c| c.trim().parse::<i32>().is_ok());
+        let integral =
+            !non_empty.is_empty() && non_empty.iter().all(|c| c.trim().parse::<i32>().is_ok());
         if integral {
             columns.push(
                 Series::new(
@@ -1317,7 +1345,10 @@ fn csv_to_frame(text: &str, table: &str) -> Result<DataFrame, PolarsError> {
             columns.push(
                 Series::new(
                     name.as_str().into(),
-                    cells.iter().map(|c| parse_number(c)).collect::<Vec<Option<f64>>>(),
+                    cells
+                        .iter()
+                        .map(|c| parse_number(c))
+                        .collect::<Vec<Option<f64>>>(),
                 )
                 .into(),
             );

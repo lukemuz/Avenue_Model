@@ -75,7 +75,12 @@ mod report_tests {
             .report(Some(&df), &ValidationOptions::default())
             .unwrap();
 
-        assert_eq!(report.verdict, Verdict::Usable, "findings: {:?}", report.findings);
+        assert_eq!(
+            report.verdict,
+            Verdict::Usable,
+            "findings: {:?}",
+            report.findings
+        );
         assert!(report.findings.is_empty(), "{:?}", report.findings);
         assert!(report.fit_summary.as_ref().unwrap().converged);
         assert!(report.validation.is_some());
@@ -83,7 +88,10 @@ mod report_tests {
         // The evidence a reader needs is attached, not left to be fetched.
         assert_eq!(report.rating_tables.len(), 3);
         assert_eq!(report.resolved.len(), 3);
-        assert!(report.fit_summary.as_ref().unwrap().aic.is_some(), "model comparison needs AIC");
+        assert!(
+            report.fit_summary.as_ref().unwrap().aic.is_some(),
+            "model comparison needs AIC"
+        );
         assert!(!report.plan_json.is_empty());
 
         // The headline is one sentence meant to be relayed as written.
@@ -111,7 +119,9 @@ mod report_tests {
             Series::new("region".into(), regions).into(),
             Series::new(
                 "driver_age".into(),
-                (0..480).map(|i| 18 + ((i * 7) % 55) as i64).collect::<Vec<i64>>(),
+                (0..480)
+                    .map(|i| 18 + ((i * 7) % 55) as i64)
+                    .collect::<Vec<i64>>(),
             )
             .into(),
             Series::new("exposure".into(), vec![1.0f64; 480]).into(),
@@ -142,7 +152,9 @@ mod report_tests {
 
         // And the rendered document says so before it shows a single number.
         let markdown = report.to_markdown();
-        let verdict_at = markdown.find("Not usable as it stands").expect("verdict missing");
+        let verdict_at = markdown
+            .find("Not usable as it stands")
+            .expect("verdict missing");
         let findings_at = markdown.find("## Findings").expect("findings missing");
         let fit_at = markdown.find("## Fit").expect("fit section missing");
         assert!(
@@ -164,7 +176,9 @@ mod report_tests {
             ))
             .with(Term::categorical("region"));
         let fitted = plan.fit(&df, "claims", options()).unwrap();
-        let report = fitted.report(Some(&df), &ValidationOptions::default()).unwrap();
+        let report = fitted
+            .report(Some(&df), &ValidationOptions::default())
+            .unwrap();
 
         assert!(
             report.findings.len() >= 2,
@@ -209,7 +223,9 @@ mod report_tests {
         let band: Vec<i32> = (0..480)
             .map(|i| if 18 + ((i * 7) % 55) < 45 { 0 } else { 1 })
             .collect();
-        let df = df.hstack(&[Series::new("age_band".into(), band).into()]).unwrap();
+        let df = df
+            .hstack(&[Series::new("age_band".into(), band).into()])
+            .unwrap();
 
         let plan = Plan::frequency("exposure")
             .with(Term::banded("driver_age", Breaks::explicit(vec![44.0])))
@@ -221,7 +237,11 @@ mod report_tests {
                 let text = format!("{}", error);
                 assert!(text.contains("cannot be fitted"), "{}", text);
                 assert!(text.contains("correlated at 1.0000"), "{}", text);
-                assert!(text.contains("drop one of them"), "the repair must travel: {}", text);
+                assert!(
+                    text.contains("drop one of them"),
+                    "the repair must travel: {}",
+                    text
+                );
             }
         }
     }
@@ -252,7 +272,9 @@ mod report_tests {
             report.findings
         );
         assert!(
-            report.headline.contains("has not been measured against held-out data"),
+            report
+                .headline
+                .contains("has not been measured against held-out data"),
             "the report must not imply a validation it did not do: {}",
             report.headline
         );
@@ -266,7 +288,10 @@ mod report_tests {
         let b = plan().fit(&df, "claims", options()).unwrap();
         let ra = a.report(None, &ValidationOptions::default()).unwrap();
         let rb = b.report(None, &ValidationOptions::default()).unwrap();
-        assert_eq!(ra.fingerprint, rb.fingerprint, "the same plan must fingerprint alike");
+        assert_eq!(
+            ra.fingerprint, rb.fingerprint,
+            "the same plan must fingerprint alike"
+        );
         assert_eq!(ra.fingerprint.len(), 12);
 
         let different = Plan::frequency("exposure")
@@ -277,7 +302,10 @@ mod report_tests {
             .unwrap()
             .report(None, &ValidationOptions::default())
             .unwrap();
-        assert_ne!(ra.fingerprint, rc.fingerprint, "a changed plan must fingerprint differently");
+        assert_ne!(
+            ra.fingerprint, rc.fingerprint,
+            "a changed plan must fingerprint differently"
+        );
     }
 
     #[test]
@@ -288,10 +316,7 @@ mod report_tests {
         let changed_intercept = changed_model.tables[0].get_rating_factor(0) + 0.01;
         changed_model.tables[0]
             .data
-            .with_column(Series::new(
-                "Rating_Factor".into(),
-                vec![changed_intercept],
-            ))
+            .with_column(Series::new("Rating_Factor".into(), vec![changed_intercept]))
             .unwrap();
 
         let a = crate::plan::FittedModel::from_model(
@@ -312,7 +337,9 @@ mod report_tests {
         assert_ne!(ra.fingerprint, rb.fingerprint);
         assert_eq!(
             ra.fingerprint,
-            a.report(None, &ValidationOptions::default()).unwrap().fingerprint,
+            a.report(None, &ValidationOptions::default())
+                .unwrap()
+                .fingerprint,
             "volatile workbook provenance must not change the model identity"
         );
     }
@@ -322,7 +349,9 @@ mod report_tests {
         let df = motor(240);
         let plan = plan();
         let fitted = plan.fit(&df, "claims", options()).unwrap();
-        let report = fitted.report(Some(&df), &ValidationOptions::default()).unwrap();
+        let report = fitted
+            .report(Some(&df), &ValidationOptions::default())
+            .unwrap();
         let markdown = report.to_markdown();
 
         assert!(markdown.contains("## Plan"));
@@ -332,7 +361,10 @@ mod report_tests {
         let end = markdown[start..].find("```").unwrap() + start;
         let embedded = markdown[start..end].trim();
         let recovered = Plan::from_json(embedded).expect("the embedded plan must parse");
-        assert_eq!(recovered, plan, "the report must round-trip the plan it describes");
+        assert_eq!(
+            recovered, plan,
+            "the report must round-trip the plan it describes"
+        );
     }
 
     #[test]
@@ -360,9 +392,18 @@ mod report_tests {
         }
 
         // Level text, not just codes: a report a person reads has to name the levels.
-        assert!(markdown.contains("region_Level"), "level labels must be rendered");
-        assert!(markdown.contains("north"), "the actual level names must appear");
-        assert!(markdown.contains("Relativity"), "a log-link report quotes relativities");
+        assert!(
+            markdown.contains("region_Level"),
+            "level labels must be rendered"
+        );
+        assert!(
+            markdown.contains("north"),
+            "the actual level names must appear"
+        );
+        assert!(
+            markdown.contains("Relativity"),
+            "a log-link report quotes relativities"
+        );
 
         // Every table row must have the same cell count as its header, or the
         // Markdown collapses into unreadable soup.
@@ -375,11 +416,9 @@ mod report_tests {
             let cells = line.matches('|').count() - line.matches("\\|").count();
             match header {
                 None => header = Some(cells),
-                Some(expected) => assert_eq!(
-                    cells, expected,
-                    "ragged markdown table row: {}",
-                    line
-                ),
+                Some(expected) => {
+                    assert_eq!(cells, expected, "ragged markdown table row: {}", line)
+                }
             }
         }
     }
@@ -394,7 +433,10 @@ mod report_tests {
         // The top band's bound is infinite, and the base level's standard error is
         // exactly zero while an unestimated one is NaN. None of those may print as
         // "NaN" or "inf" noise in a document a person reads.
-        assert!(markdown.contains("inf"), "the unbounded top band should say so");
+        assert!(
+            markdown.contains("inf"),
+            "the unbounded top band should say so"
+        );
         assert!(!markdown.contains("NaN"), "NaN must render as an em dash");
     }
 }

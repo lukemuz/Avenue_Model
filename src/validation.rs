@@ -283,7 +283,9 @@ pub fn validate(
         .iter()
         .map(|t| {
             let ca = t.data.column("Rating_Factor")?.f64()?;
-            Ok((0..ca.len()).map(|i| ca.get(i).unwrap_or(f64::NAN)).collect())
+            Ok((0..ca.len())
+                .map(|i| ca.get(i).unwrap_or(f64::NAN))
+                .collect())
         })
         .collect::<Result<_, PolarsError>>()?;
 
@@ -684,7 +686,11 @@ fn calibration_table(
 ) -> Result<(DataFrame, f64, f64), PolarsError> {
     let n = mu.len();
     let mut order: Vec<usize> = (0..n).collect();
-    order.sort_by(|&a, &b| mu[a].partial_cmp(&mu[b]).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|&a, &b| {
+        mu[a]
+            .partial_cmp(&mu[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let total_weight: f64 = w.iter().sum();
     if total_weight <= 0.0 {

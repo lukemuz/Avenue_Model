@@ -2,6 +2,10 @@
 name = "avenue_model"
 version = "0.1.0"
 edition = "2021"
+description = "Fast, defensible insurance models built directly from rating tables"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/lukemuz/Avenue_Model"
 
 [lib]
 name = "avenue_model"

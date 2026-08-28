@@ -133,15 +133,35 @@ mod validation_tests {
         .unwrap();
 
         // The calibration buckets partition the same exposure and the same actuals.
-        let bucket_weight: f64 = v.calibration.column("weight").unwrap().f64().unwrap().sum().unwrap();
-        let bucket_actual: f64 = v.calibration.column("actual").unwrap().f64().unwrap().sum().unwrap();
+        let bucket_weight: f64 = v
+            .calibration
+            .column("weight")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .sum()
+            .unwrap();
+        let bucket_actual: f64 = v
+            .calibration
+            .column("actual")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .sum()
+            .unwrap();
         assert!((bucket_weight - v.total_weight).abs() < 1e-9);
         assert!((bucket_actual - v.total_actual).abs() < 1e-9);
 
         // So does every table's actual-versus-expected exhibit.
         for (t, ave) in v.actual_vs_expected.iter().enumerate() {
             let a: f64 = ave.column("Actual").unwrap().f64().unwrap().sum().unwrap();
-            let e: f64 = ave.column("Expected").unwrap().f64().unwrap().sum().unwrap();
+            let e: f64 = ave
+                .column("Expected")
+                .unwrap()
+                .f64()
+                .unwrap()
+                .sum()
+                .unwrap();
             let n: i64 = ave.column("N").unwrap().i64().unwrap().sum().unwrap();
             assert!(
                 (a - v.total_actual).abs() < 1e-8,
@@ -287,7 +307,11 @@ mod validation_tests {
         assert_eq!(w.severity, Severity::High);
         assert!(!v.is_usable());
         // The message has to carry the numbers, since it is what gets shown to a person.
-        assert!(w.message.contains("48 of 480"), "message was: {}", w.message);
+        assert!(
+            w.message.contains("48 of 480"),
+            "message was: {}",
+            w.message
+        );
     }
 
     #[test]
@@ -311,11 +335,18 @@ mod validation_tests {
             "a model separating rates 1..4 should order risk, gini was {}",
             v.gini
         );
-        assert!(v.lift > 3.0, "top over bottom rate should be near 4, got {}", v.lift);
+        assert!(
+            v.lift > 3.0,
+            "top over bottom rate should be near 4, got {}",
+            v.lift
+        );
 
         // An intercept-only model predicts one number for everyone: no ordering at all.
         let flat = RatingModel::from_dataframes(
-            vec![intercept((2.5f64).ln()), cat_table("region", 4, vec![0.0; 4])],
+            vec![
+                intercept((2.5f64).ln()),
+                cat_table("region", 4, vec![0.0; 4]),
+            ],
             "poisson",
             None,
             None,
@@ -356,7 +387,8 @@ mod validation_tests {
         )
         .unwrap();
         let (fit, diag) =
-            fit_glm_with_diagnostics(&model, &df, "claims", Some("exposure"), None, opts()).unwrap();
+            fit_glm_with_diagnostics(&model, &df, "claims", Some("exposure"), None, opts())
+                .unwrap();
 
         let v = validate(
             &fit,
@@ -388,14 +420,24 @@ mod validation_tests {
         let df = data(480);
 
         let flat = RatingModel::from_dataframes(
-            vec![intercept((2.5f64).ln()), cat_table("region", 4, vec![0.0; 4])],
+            vec![
+                intercept((2.5f64).ln()),
+                cat_table("region", 4, vec![0.0; 4]),
+            ],
             "poisson",
             None,
             None,
         )
         .unwrap();
         let vf = validate(
-            &flat, &df, "claims", Some("exposure"), None, "poisson", 1.5, None,
+            &flat,
+            &df,
+            "claims",
+            Some("exposure"),
+            None,
+            "poisson",
+            1.5,
+            None,
             &ValidationOptions::default(),
         )
         .unwrap();
@@ -407,7 +449,14 @@ mod validation_tests {
 
         let (model, diag) = fitted(&df);
         let v = validate(
-            &model, &df, "claims", Some("exposure"), None, "poisson", 1.5, Some(&diag),
+            &model,
+            &df,
+            "claims",
+            Some("exposure"),
+            None,
+            "poisson",
+            1.5,
+            Some(&diag),
             &ValidationOptions::default(),
         )
         .unwrap();
@@ -435,7 +484,14 @@ mod validation_tests {
         )
         .unwrap();
         let v = validate(
-            &inverted, &df, "claims", Some("exposure"), None, "poisson", 1.5, None,
+            &inverted,
+            &df,
+            "claims",
+            Some("exposure"),
+            None,
+            "poisson",
+            1.5,
+            None,
             &ValidationOptions::default(),
         )
         .unwrap();
@@ -444,7 +500,10 @@ mod validation_tests {
             .warnings
             .iter()
             .any(|w| w.code == "worse_than_intercept" && w.severity == Severity::High));
-        assert!(v.gini < 0.0, "an inverted ordering should give a negative gini");
+        assert!(
+            v.gini < 0.0,
+            "an inverted ordering should give a negative gini"
+        );
     }
 
     #[test]
@@ -461,7 +520,14 @@ mod validation_tests {
         )
         .unwrap();
         let v = validate(
-            &inverted, &df, "claims", Some("exposure"), None, "poisson", 1.5, None,
+            &inverted,
+            &df,
+            "claims",
+            Some("exposure"),
+            None,
+            "poisson",
+            1.5,
+            None,
             &ValidationOptions::default(),
         )
         .unwrap();
@@ -481,8 +547,18 @@ mod validation_tests {
         let df = data(1200);
         let (model, diag) = fitted(&df);
         let v = validate(
-            &model, &df, "claims", Some("exposure"), None, "poisson", 1.5, Some(&diag),
-            &ValidationOptions { bins: 4, ..Default::default() },
+            &model,
+            &df,
+            "claims",
+            Some("exposure"),
+            None,
+            "poisson",
+            1.5,
+            Some(&diag),
+            &ValidationOptions {
+                bins: 4,
+                ..Default::default()
+            },
         )
         .unwrap();
 
@@ -500,7 +576,12 @@ mod validation_tests {
             );
         }
         // Ordered by prediction, so predicted rates ascend across buckets.
-        let mp = v.calibration.column("mean_predicted").unwrap().f64().unwrap();
+        let mp = v
+            .calibration
+            .column("mean_predicted")
+            .unwrap()
+            .f64()
+            .unwrap();
         for i in 1..4 {
             assert!(
                 mp.get(i).unwrap() >= mp.get(i - 1).unwrap(),
@@ -525,10 +606,18 @@ mod validation_tests {
         )
         .unwrap();
         let (fit, diag) =
-            fit_glm_with_diagnostics(&model, &df, "claims", Some("exposure"), None, opts()).unwrap();
+            fit_glm_with_diagnostics(&model, &df, "claims", Some("exposure"), None, opts())
+                .unwrap();
 
         let v = validate(
-            &fit, &df, "claims", Some("exposure"), None, "poisson", 1.5, Some(&diag),
+            &fit,
+            &df,
+            "claims",
+            Some("exposure"),
+            None,
+            "poisson",
+            1.5,
+            Some(&diag),
             &ValidationOptions::default(),
         )
         .unwrap();
@@ -548,11 +637,22 @@ mod validation_tests {
         let (model, _) = fitted(&df);
 
         let missing = validate(
-            &model, &df, "claims", Some("nope"), None, "poisson", 1.5, None,
+            &model,
+            &df,
+            "claims",
+            Some("nope"),
+            None,
+            "poisson",
+            1.5,
+            None,
             &ValidationOptions::default(),
         );
         let msg = format!("{}", missing.unwrap_err());
-        assert!(msg.contains("nope"), "message must name the column: {}", msg);
+        assert!(
+            msg.contains("nope"),
+            "message must name the column: {}",
+            msg
+        );
         assert!(
             msg.contains("Columns present"),
             "message must list what is available: {}",
@@ -566,7 +666,14 @@ mod validation_tests {
         ])
         .unwrap();
         assert!(validate(
-            &model, &empty, "claims", Some("exposure"), None, "poisson", 1.5, None,
+            &model,
+            &empty,
+            "claims",
+            Some("exposure"),
+            None,
+            "poisson",
+            1.5,
+            None,
             &ValidationOptions::default(),
         )
         .is_err());
@@ -605,18 +712,19 @@ mod validation_tests {
             None,
         )
         .unwrap();
-        let (fit, diag) = fit_glm_with_diagnostics(
-            &model,
+        let (fit, diag) =
+            fit_glm_with_diagnostics(&model, &df, "claims", None, Some("log_exposure"), opts())
+                .unwrap();
+
+        let v = validate(
+            &fit,
             &df,
             "claims",
             None,
             Some("log_exposure"),
-            opts(),
-        )
-        .unwrap();
-
-        let v = validate(
-            &fit, &df, "claims", None, Some("log_exposure"), "poisson", 1.5, Some(&diag),
+            "poisson",
+            1.5,
+            Some(&diag),
             &ValidationOptions::default(),
         )
         .unwrap();
@@ -626,7 +734,11 @@ mod validation_tests {
             "an offset fit should still balance, got {}",
             v.ae_ratio
         );
-        assert!(v.is_usable(), "{:?}", v.warnings.iter().map(|w| &w.code).collect::<Vec<_>>());
+        assert!(
+            v.is_usable(),
+            "{:?}",
+            v.warnings.iter().map(|w| &w.code).collect::<Vec<_>>()
+        );
     }
 
     /// Data with no within-group variation makes a saturated fit *exactly* right, and
@@ -681,7 +793,14 @@ mod validation_tests {
         // Validation still measures the model correctly: it is perfectly calibrated,
         // and the only high-severity finding is the convergence flag it was handed.
         let v = validate(
-            &model, &df, "claims", Some("exposure"), None, "poisson", 1.5, Some(&diag),
+            &model,
+            &df,
+            "claims",
+            Some("exposure"),
+            None,
+            "poisson",
+            1.5,
+            Some(&diag),
             &ValidationOptions::default(),
         )
         .unwrap();
@@ -701,14 +820,24 @@ mod validation_tests {
     fn ties_contribute_no_discrimination() {
         let df = data(480);
         let flat = RatingModel::from_dataframes(
-            vec![intercept((2.5f64).ln()), cat_table("region", 4, vec![0.0; 4])],
+            vec![
+                intercept((2.5f64).ln()),
+                cat_table("region", 4, vec![0.0; 4]),
+            ],
             "poisson",
             None,
             None,
         )
         .unwrap();
         let v = validate(
-            &flat, &df, "claims", Some("exposure"), None, "poisson", 1.5, None,
+            &flat,
+            &df,
+            "claims",
+            Some("exposure"),
+            None,
+            "poisson",
+            1.5,
+            None,
             &ValidationOptions::default(),
         )
         .unwrap();

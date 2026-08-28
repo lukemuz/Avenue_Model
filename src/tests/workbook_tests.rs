@@ -48,7 +48,10 @@ mod workbook_tests {
             vec![
                 RatingTable::new(intercept(-0.7), None),
                 RatingTable::new(
-                    banded(vec![25.0, 45.0, 65.0, f64::INFINITY], vec![0.0, 0.2, 0.5, 0.6]),
+                    banded(
+                        vec![25.0, 45.0, 65.0, f64::INFINITY],
+                        vec![0.0, 0.2, 0.5, 0.6],
+                    ),
                     None,
                 ),
                 RatingTable::new(categorical(vec![0, 1, 2], vec![0.0, 0.15, -0.1]), None),
@@ -178,7 +181,10 @@ mod workbook_tests {
             bounds
         );
         // JSON has no representation for infinity, so it must travel as text.
-        assert!(json.contains("\"inf\""), "infinity must be written explicitly");
+        assert!(
+            json.contains("\"inf\""),
+            "infinity must be written explicitly"
+        );
     }
 
     #[test]
@@ -195,7 +201,10 @@ mod workbook_tests {
             "an offset table must reload as an offset, or an existing rating plan cannot \
              be carried into a new model"
         );
-        assert!(loaded.model.tables[1].is_row_offset(2), "a locked row must stay locked");
+        assert!(
+            loaded.model.tables[1].is_row_offset(2),
+            "a locked row must stay locked"
+        );
         assert!(!loaded.model.tables[1].is_row_offset(0));
 
         // A variate too, which the plain table round trip also used to drop.
@@ -211,7 +220,8 @@ mod workbook_tests {
             .map(|v| slope * (v - 20.0))
             .collect();
         let mut data = with_variate.tables[1].data.clone();
-        data.with_column(Series::new("Rating_Factor".into(), onto)).unwrap();
+        data.with_column(Series::new("Rating_Factor".into(), onto))
+            .unwrap();
         with_variate.tables[1] = RatingTable::new(data, None)
             .as_polynomial_variate(vec![20.0, 35.0, 55.0, 70.0], 1)
             .unwrap();
@@ -237,8 +247,16 @@ mod workbook_tests {
 
         // One file per table plus the manifest, named so a person can find them.
         let age_csv = std::fs::read_to_string(dir.join("01_age.csv")).unwrap();
-        assert!(age_csv.starts_with("age,Relativity"), "header was: {}", age_csv.lines().next().unwrap());
-        assert!(age_csv.contains("inf,"), "the top band must read as inf: {}", age_csv);
+        assert!(
+            age_csv.starts_with("age,Relativity"),
+            "header was: {}",
+            age_csv.lines().next().unwrap()
+        );
+        assert!(
+            age_csv.contains("inf,"),
+            "the top band must read as inf: {}",
+            age_csv
+        );
         assert!(dir.join("manifest.json").exists());
 
         let loaded = Workbook::load_csv_dir(&dir).unwrap().to_model().unwrap();
@@ -283,9 +301,22 @@ mod workbook_tests {
         let before = predictions(&model());
         let after = predictions(&loaded.model);
         // Row 1 of the scoring frame is region 1.
-        let expected = before[1] * 2.0 / model().tables[2].data
-            .column("Rating_Factor").unwrap().f64().unwrap().get(1).unwrap().exp();
-        assert!((after[1] - expected).abs() < 1e-12, "{} vs {}", after[1], expected);
+        let expected = before[1] * 2.0
+            / model().tables[2]
+                .data
+                .column("Rating_Factor")
+                .unwrap()
+                .f64()
+                .unwrap()
+                .get(1)
+                .unwrap()
+                .exp();
+        assert!(
+            (after[1] - expected).abs() < 1e-12,
+            "{} vs {}",
+            after[1],
+            expected
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -306,7 +337,13 @@ mod workbook_tests {
             columns
         );
         // exp(0.15) for the second region.
-        let written = relativity.tables[2].column("Relativity").unwrap().f64().unwrap().get(1).unwrap();
+        let written = relativity.tables[2]
+            .column("Relativity")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .get(1)
+            .unwrap();
         assert!((written - 0.15f64.exp()).abs() < 1e-12);
 
         // The factor scale is available when asked for, and carries the other column.
@@ -364,8 +401,16 @@ mod workbook_tests {
         .unwrap();
         let error = load_with_table(scrambled, Scale::Factor);
         assert!(error.contains("bounds_not_ascending"), "{}", error);
-        assert!(error.contains("row 1"), "the message must locate the fault: {}", error);
-        assert!(error.contains("Sort the rows"), "and carry the repair: {}", error);
+        assert!(
+            error.contains("row 1"),
+            "the message must locate the fault: {}",
+            error
+        );
+        assert!(
+            error.contains("Sort the rows"),
+            "and carry the repair: {}",
+            error
+        );
     }
 
     #[test]
@@ -414,7 +459,11 @@ mod workbook_tests {
         .unwrap();
         let error = load_with_table(wrong, Scale::Factor);
         assert!(error.contains("unreadable_dtype"), "{}", error);
-        assert!(error.contains("Int64"), "the message must name the dtype: {}", error);
+        assert!(
+            error.contains("Int64"),
+            "the message must name the dtype: {}",
+            error
+        );
     }
 
     #[test]
@@ -433,11 +482,20 @@ mod workbook_tests {
         // Three separate faults in one table.
         let broken = DataFrame::new(vec![
             Series::new("age".into(), vec![45.0f64, 25.0, 65.0]).into(),
-            Series::new("Rating_Factor".into(), vec![Some(0.2f64), None, Some(f64::NAN)]).into(),
+            Series::new(
+                "Rating_Factor".into(),
+                vec![Some(0.2f64), None, Some(f64::NAN)],
+            )
+            .into(),
         ])
         .unwrap();
         let error = load_with_table(broken, Scale::Factor);
-        for code in ["null_factor", "non_finite_factor", "bounds_not_ascending", "no_unbounded_band"] {
+        for code in [
+            "null_factor",
+            "non_finite_factor",
+            "bounds_not_ascending",
+            "no_unbounded_band",
+        ] {
             assert!(error.contains(code), "missing {}: {}", code, error);
         }
         assert!(
@@ -450,12 +508,11 @@ mod workbook_tests {
     #[test]
     fn an_intercept_table_that_is_not_one_row_is_refused() {
         let mut workbook = book(&model(), Some(Scale::Factor));
-        workbook.tables[0] = DataFrame::new(vec![Series::new(
-            "Rating_Factor".into(),
-            vec![0.0f64, 1.0],
-        )
-        .into()])
-        .unwrap();
+        workbook.tables[0] =
+            DataFrame::new(vec![
+                Series::new("Rating_Factor".into(), vec![0.0f64, 1.0]).into()
+            ])
+            .unwrap();
         let error = expect_err(workbook.to_model());
         assert!(error.contains("intercept_not_single_row"), "{}", error);
     }
@@ -559,7 +616,11 @@ mod workbook_tests {
 
         let error = expect_err(workbook.to_model());
         assert!(error.contains("unknown_level"), "{}", error);
-        assert!(error.contains("notaregion"), "the message must quote it: {}", error);
+        assert!(
+            error.contains("notaregion"),
+            "the message must quote it: {}",
+            error
+        );
         assert!(
             error.contains("east") && error.contains("north"),
             "and list the levels that do exist: {}",
