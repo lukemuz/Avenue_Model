@@ -1,8 +1,8 @@
 use polars::prelude::*;
-use std::collections::{HashMap, HashSet};
 use rayon::prelude::*;
+use std::collections::{HashMap, HashSet};
 
-use super::{RatingTable, FeatureValue};
+use super::{FeatureValue, RatingTable};
 
 pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> RatingTable {
     // Get unique feature values for each feature from both tables
@@ -12,28 +12,32 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
     // Collect values from both tables
     for table in [table1, table2] {
         for col_name in table.data.get_column_names() {
-            if col_name == "Rating_Factor" || col_name == "row_number"  { continue; }
+            if col_name == "Rating_Factor" || col_name == "row_number" {
+                continue;
+            }
 
             let col = table.data.column(col_name).unwrap();
             match col.dtype() {
                 DataType::Float64 => {
-                    let values = numeric_values.entry(col_name.to_string())
+                    let values = numeric_values
+                        .entry(col_name.to_string())
                         .or_insert_with(Vec::new);
                     col.f64()
                         .unwrap()
                         .into_iter()
                         .filter_map(|v| v)
                         .for_each(|v| values.push(v));
-                },
+                }
                 DataType::Int32 => {
-                    let values = categorical_values.entry(col_name.to_string())
+                    let values = categorical_values
+                        .entry(col_name.to_string())
                         .or_insert_with(Vec::new);
                     col.i32()
                         .unwrap()
                         .into_iter()
                         .filter_map(|v| v)
                         .for_each(|v| values.push(v));
-                },
+                }
                 _ => continue,
             }
         }
@@ -51,7 +55,8 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
     }
 
     // Calculate the total size needed for combinations
-    let total_combinations = numeric_values.values()
+    let total_combinations = numeric_values
+        .values()
         .map(|v| v.len())
         .chain(categorical_values.values().map(|v| v.len()))
         .product::<usize>();
@@ -117,7 +122,8 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
 
     // Add feature columns
     for (feature, _values) in &numeric_values {
-        let column_values: Vec<f64> = combinations.iter()
+        let column_values: Vec<f64> = combinations
+            .iter()
             .map(|combo| {
                 if let Some(FeatureValue::Numeric(v)) = combo.get(feature) {
                     *v
@@ -130,7 +136,8 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
     }
 
     for (feature, _) in &categorical_values {
-        let column_values: Vec<i32> = combinations.iter()
+        let column_values: Vec<i32> = combinations
+            .iter()
             .map(|combo| {
                 if let Some(FeatureValue::Categorical(v)) = combo.get(feature) {
                     *v
@@ -143,7 +150,8 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
     }
 
     // Calculate rating factors in parallel
-    let rating_factors: Vec<f64> = combinations.par_iter()
+    let rating_factors: Vec<f64> = combinations
+        .par_iter()
         .map(|combo| {
             let rf1 = table1.predict(combo);
             let rf2 = table2.predict(combo);
@@ -164,10 +172,7 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
         panic!("Mismatched series lengths");
     }
 
-    let result = RatingTable::new(
-        DataFrame::new(table_data).unwrap(),
-        None
-    );
+    let result = RatingTable::new(DataFrame::new(table_data).unwrap(), None);
 
     result
 }
@@ -185,16 +190,21 @@ pub fn combine_all_tables(mut tables: Vec<RatingTable>) -> Vec<RatingTable> {
             let combinations: Vec<_> = ((i + 1)..tables.len())
                 .into_par_iter()
                 .filter_map(|j| {
-                    let columns_i: HashSet<_> = tables[i].data.get_column_names().into_iter().collect();
-                    let columns_j: HashSet<_> = tables[j].data.get_column_names().into_iter().collect();
+                    let columns_i: HashSet<_> =
+                        tables[i].data.get_column_names().into_iter().collect();
+                    let columns_j: HashSet<_> =
+                        tables[j].data.get_column_names().into_iter().collect();
 
                     if columns_i.is_subset(&columns_j) || columns_j.is_subset(&columns_i) {
                         // Return index and combined table
-                        Some((j, if columns_i.len() > columns_j.len() {
-                            expand_and_combine_tables(&tables[i], &tables[j])
-                        } else {
-                            expand_and_combine_tables(&tables[j], &tables[i])
-                        }))
+                        Some((
+                            j,
+                            if columns_i.len() > columns_j.len() {
+                                expand_and_combine_tables(&tables[i], &tables[j])
+                            } else {
+                                expand_and_combine_tables(&tables[j], &tables[i])
+                            },
+                        ))
                     } else {
                         None
                     }

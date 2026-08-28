@@ -1,3 +1,15 @@
 /target
 /WIP
 license_key.txt
+__pycache__/
+
+# Benchmark dataset caches, downloaded from OpenML on first run.
+scripts/.fremtpl2freq.parquet
+scripts/.house_sales.parquet
+scripts/.adult.parquet
+scripts/.yellow_tripdata_2024_01.parquet
+
+# Fitted means bench_large.py hands between its child processes; 160 MB apiece.
+scripts/.bench_large/
+.venv/
+*.so

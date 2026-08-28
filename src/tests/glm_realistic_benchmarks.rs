@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod realistic_benchmarks {
-    use crate::rating_model::RatingModel;
     use crate::glm::{fit_glm, GLMOptions};
+    use crate::rating_model::RatingModel;
     use polars::prelude::*;
     use std::time::Instant;
 
@@ -15,12 +15,25 @@ mod realistic_benchmarks {
         let claim_history: Vec<i32> = (0..n).map(|i| ((i * 11) % 5) as i32).collect();
 
         // Simulate target variable (e.g., claim frequency)
-        let exposure: Vec<f64> = (0..n).map(|i| 0.1 + ((i * 13) % 90) as f64 / 100.0).collect();
-        let claims: Vec<f64> = ages.iter().zip(&vehicles).zip(&regions).zip(&claim_history).zip(&exposure)
+        let exposure: Vec<f64> = (0..n)
+            .map(|i| 0.1 + ((i * 13) % 90) as f64 / 100.0)
+            .collect();
+        let claims: Vec<f64> = ages
+            .iter()
+            .zip(&vehicles)
+            .zip(&regions)
+            .zip(&claim_history)
+            .zip(&exposure)
             .enumerate()
             .map(|(i, ((((age, veh), reg), hist), exp))| {
                 let base_rate = 0.05;
-                let age_effect = if *age < 25.0 { 1.5 } else if *age > 65.0 { 1.2 } else { 1.0 };
+                let age_effect = if *age < 25.0 {
+                    1.5
+                } else if *age > 65.0 {
+                    1.2
+                } else {
+                    1.0
+                };
                 let veh_effect = 1.0 + (*veh as f64 - 2.0) * 0.1;
                 let reg_effect = 1.0 + (*reg as f64 - 5.0) * 0.05;
                 let hist_effect = 1.0 + *hist as f64 * 0.3;
@@ -43,44 +56,49 @@ mod realistic_benchmarks {
             Series::new("claim_history".into(), claim_history).into(),
             Series::new("exposure".into(), exposure).into(),
             Series::new("claims".into(), claims).into(),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         // Create realistic model structure with multiple tables
-        let mean_table = DataFrame::new(vec![
-            Series::new("Rating_Factor".into(), vec![0.0]).into(),
-        ]).unwrap();
+        let mean_table =
+            DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![0.0]).into()]).unwrap();
 
         // Age table (common in insurance)
         let age_bins = vec![25.0, 35.0, 45.0, 55.0, 65.0, f64::INFINITY];
         let age_table = DataFrame::new(vec![
             Series::new("age".into(), age_bins.clone()).into(),
             Series::new("Rating_Factor".into(), vec![0.0; age_bins.len()]).into(),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         // Vehicle count table
         let veh_table = DataFrame::new(vec![
             Series::new("vehicles".into(), vec![-999, 1, 2, 3, 4]).into(),
             Series::new("Rating_Factor".into(), vec![0.0; 5]).into(),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         // Region table
         let reg_table = DataFrame::new(vec![
             Series::new("region".into(), vec![-999, 1, 2, 3, 4, 5, 6, 7, 8, 9]).into(),
             Series::new("Rating_Factor".into(), vec![0.0; 10]).into(),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         // Claim history table
         let hist_table = DataFrame::new(vec![
             Series::new("claim_history".into(), vec![-999, 0, 1, 2, 3, 4]).into(),
             Series::new("Rating_Factor".into(), vec![0.0; 6]).into(),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         let model = RatingModel::from_dataframes(
             vec![mean_table, age_table, veh_table, reg_table, hist_table],
             "poisson",
             None,
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         (df, model)
     }
@@ -95,6 +113,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -105,10 +124,13 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 1,000 records, 4 features, 27 total bins");
+        println!("\nðŸ“Š Realistic Dataset: 1,000 records, 4 features, 27 total bins");
         println!("   Fit time:   {:.2} ms", fit_time.as_secs_f64() * 1000.0);
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 1_000.0);
+        println!(
+            "   Per pred:   {:.2} Âµs",
+            pred_time.as_micros() as f64 / 1_000.0
+        );
     }
 
     #[test]
@@ -121,6 +143,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -131,10 +154,13 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 5,000 records, 4 features, 27 total bins");
+        println!("\nðŸ“Š Realistic Dataset: 5,000 records, 4 features, 27 total bins");
         println!("   Fit time:   {:.2} ms", fit_time.as_secs_f64() * 1000.0);
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 5_000.0);
+        println!(
+            "   Per pred:   {:.2} Âµs",
+            pred_time.as_micros() as f64 / 5_000.0
+        );
     }
 
     #[test]
@@ -147,6 +173,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -157,10 +184,13 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 10,000 records, 4 features, 27 total bins");
+        println!("\nðŸ“Š Realistic Dataset: 10,000 records, 4 features, 27 total bins");
         println!("   Fit time:   {:.2} ms", fit_time.as_secs_f64() * 1000.0);
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 10_000.0);
+        println!(
+            "   Per pred:   {:.2} Âµs",
+            pred_time.as_micros() as f64 / 10_000.0
+        );
     }
 
     #[test]
@@ -173,6 +203,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -183,10 +214,17 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 50,000 records, 4 features, 27 total bins");
-        println!("   Fit time:   {:.2} ms ({:.2} sec)", fit_time.as_secs_f64() * 1000.0, fit_time.as_secs_f64());
+        println!("\nðŸ“Š Realistic Dataset: 50,000 records, 4 features, 27 total bins");
+        println!(
+            "   Fit time:   {:.2} ms ({:.2} sec)",
+            fit_time.as_secs_f64() * 1000.0,
+            fit_time.as_secs_f64()
+        );
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 50_000.0);
+        println!(
+            "   Per pred:   {:.2} Âµs",
+            pred_time.as_micros() as f64 / 50_000.0
+        );
     }
 
     #[test]
@@ -199,6 +237,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -209,10 +248,17 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 100,000 records, 4 features, 27 total bins");
-        println!("   Fit time:   {:.2} ms ({:.2} sec)", fit_time.as_secs_f64() * 1000.0, fit_time.as_secs_f64());
+        println!("\nðŸ“Š Realistic Dataset: 100,000 records, 4 features, 27 total bins");
+        println!(
+            "   Fit time:   {:.2} ms ({:.2} sec)",
+            fit_time.as_secs_f64() * 1000.0,
+            fit_time.as_secs_f64()
+        );
         println!("   Pred time:  {:.2} ms", pred_time.as_secs_f64() * 1000.0);
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 100_000.0);
+        println!(
+            "   Per pred:   {:.2} Âµs",
+            pred_time.as_micros() as f64 / 100_000.0
+        );
     }
 
     #[test]
@@ -225,6 +271,7 @@ mod realistic_benchmarks {
             tolerance: 1e-6,
             verbose: false,
             tweedie_power: 1.5,
+            ..Default::default()
         };
 
         let start = Instant::now();
@@ -235,15 +282,25 @@ mod realistic_benchmarks {
         let _ = fitted.predict(&df).unwrap();
         let pred_time = pred_start.elapsed();
 
-        println!("\n📊 Realistic Dataset: 1,000,000 records, 4 features, 27 total bins");
-        println!("   Fit time:   {:.2} ms ({:.2} sec)", fit_time.as_secs_f64() * 1000.0, fit_time.as_secs_f64());
-        println!("   Pred time:  {:.2} ms ({:.2} sec)", pred_time.as_secs_f64() * 1000.0, pred_time.as_secs_f64());
-        println!("   Per pred:   {:.2} µs", pred_time.as_micros() as f64 / 1_000_000.0);
+        println!("\nðŸ“Š Realistic Dataset: 1,000,000 records, 4 features, 27 total bins");
+        println!(
+            "   Fit time:   {:.2} ms ({:.2} sec)",
+            fit_time.as_secs_f64() * 1000.0,
+            fit_time.as_secs_f64()
+        );
+        println!(
+            "   Pred time:  {:.2} ms ({:.2} sec)",
+            pred_time.as_secs_f64() * 1000.0,
+            pred_time.as_secs_f64()
+        );
+        println!(
+            "   Per pred:   {:.2} Âµs",
+            pred_time.as_micros() as f64 / 1_000_000.0
+        );
     }
 
     #[test]
     fn bench_all_sizes_summary() {
-
         println!("\n{}", "=".repeat(80));
         println!("REALISTIC PERFORMANCE BENCHMARKS - Multi-feature Insurance Model");
         println!("Features: age, vehicles, region, claim_history (27 total bins)");
@@ -258,6 +315,7 @@ mod realistic_benchmarks {
                 tolerance: 1e-6,
                 verbose: false,
                 tweedie_power: 1.5,
+                ..Default::default()
             };
 
             let start = Instant::now();
@@ -268,7 +326,8 @@ mod realistic_benchmarks {
             let _ = fitted.predict(&df).unwrap();
             let pred_time = pred_start.elapsed();
 
-            println!("{:>7} records | Fit: {:>8.2} ms | Predict: {:>7.2} ms | Per-pred: {:>6.2} µs",
+            println!(
+                "{:>7} records | Fit: {:>8.2} ms | Predict: {:>7.2} ms | Per-pred: {:>6.2} Âµs",
                 n,
                 fit_time.as_secs_f64() * 1000.0,
                 pred_time.as_secs_f64() * 1000.0,
