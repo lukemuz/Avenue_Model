@@ -3,6 +3,7 @@ pub mod analysis;
 pub mod glm;
 pub mod rating_model;
 pub mod table_estimator;
+pub mod validation;
 pub mod tests;
 
 // Python bindings (only when "python" feature is enabled)

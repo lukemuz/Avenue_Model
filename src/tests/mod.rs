@@ -8,6 +8,7 @@ mod glm_reference_data;
 mod glm_tests;
 mod model_tests;
 pub mod testing_utils;
+mod validation_tests;
 mod weight_distribution_test;
 
 use crate::{
