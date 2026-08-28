@@ -263,14 +263,31 @@ six. Representative results include:
 | NYC taxi, 2.75M rows, 577 parameters, Gamma | 5.22 s | **272 MB** | **3.82 s** | 479 MB |
 | house sales, 21.6k rows, 92 parameters, Gamma | **0.046 s** | **9 MB** | 0.055 s | 81 MB |
 
+glum is the hard comparison, not the naive one — it avoids a dense dummy-coded design
+matrix too. Against the rest of the field, on the same three designs (a smaller machine,
+so read the ratios rather than the seconds):
+
+| fit time, Avenue = 1.00x | Avenue | glum | scikit-learn | H2O |
+|---|---:|---:|---:|---:|
+| freMTPL2, Poisson, unpenalised | **1.00x** | 2.5x | 2.9x | 3.2x |
+| census income, Binomial, ridge | **1.00x** | 1.8x | 1.3x | 4.3x |
+| freMTPL2, Poisson, lasso | **1.00x** | 2.6x | no L1 for a Poisson GLM | different answer |
+
+A penalty is close to free: an L1 makes glum abandon its Cholesky factorisation for
+coordinate descent, while Avenue's algorithm already is coordinate descent. Where the
+problem is small enough that a few factorisations beat tens of passes over the data,
+scikit-learn's `newton-cholesky` wins, and the 21.6k-row Gamma fit goes to it.
+
 The table solver is strongest when a model has many rows and ordinary rating-factor
 structure. A direct/global solver is preferable for unpenalized Gaussian models and for
 plans where many tables share one strongly correlated direction. `solver="auto"` selects
 the global path when it supports the model.
 
-Absolute timings are machine-dependent. The full methodology, synthetic and 20-million-
-row results, memory measurements, correctness gates and reproduction commands are in the
-[GLM documentation](src/glm/README.md#benchmarks).
+Absolute timings are machine-dependent, and the two tables above were measured on
+different machines. The full methodology, synthetic and 20-million-row results, memory
+measurements, correctness gates and reproduction commands are in the
+[GLM documentation](src/glm/README.md#benchmarks); the wider comparison is
+[here](src/glm/README.md#the-rest-of-the-field).
 
 ## Known gaps
 

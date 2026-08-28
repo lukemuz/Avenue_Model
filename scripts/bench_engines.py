@@ -376,9 +376,11 @@ def run_sklearn(problem: Problem, repeats: int, alpha: float, l1_ratio: float,
     mu = (model.predict_proba(X)[:, 1] if problem.family == "binomial"
           else np.asarray(model.predict(X), dtype=np.float64))
 
-    return dict(engine=name, prep=prep_seconds, fit=fit_seconds,
-                iters=int(np.atleast_1d(getattr(model, "n_iter_", [0]))[0]),
-                converged=True, mu=mu, note=None)
+    # scikit-learn warns rather than raises when it runs out of iterations, and a run
+    # that spent its whole budget and stopped is not a fit anyone should be timing.
+    iters = int(np.atleast_1d(getattr(model, "n_iter_", [0]))[0])
+    return dict(engine=name, prep=prep_seconds, fit=fit_seconds, iters=iters,
+                converged=iters < MAX_ITER, mu=mu, note=None)
 
 
 def run_h2o(problem: Problem, repeats: int, alpha: float, l1_ratio: float) -> dict:
