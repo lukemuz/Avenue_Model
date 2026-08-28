@@ -1,6 +1,7 @@
 // Core modules (always available)
 pub mod analysis;
 pub mod glm;
+pub mod plan;
 pub mod rating_model;
 pub mod table_estimator;
 pub mod validation;
