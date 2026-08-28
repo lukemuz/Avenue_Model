@@ -655,9 +655,25 @@ reasoning is in the [module docs](src/glm/README.md#build-settings).
 
 ```bash
 cargo test --lib                  # 255 tests
-maturin develop --release         # build the Python bindings
 cargo test --features benchmarks  # include the benchmark tests
 ```
+
+**Building the Python bindings.** The extension is `abi3-py312`, so it needs Python
+3.12 or newer, and `pyo3-polars 0.21` pairs with a *specific* range of the Python polars
+package — not the latest. Newer polars fails at the first DataFrame handed across the
+boundary with ``TypeError: argument 'df': `compat_level` has invalid type: 'int'``,
+which does not name the real cause.
+
+```bash
+uv venv --python python3.12 .venv
+uv pip install --python .venv/bin/python maturin "polars==1.31.0" pyarrow
+source .venv/bin/activate
+maturin develop --release
+python -m unittest discover -s tests    # 29 tests
+```
+
+Bumping `polars` in `Cargo.toml` means bumping `pyo3-polars` and the pinned Python
+`polars` together; the three move as one.
 
 ## Documentation
 

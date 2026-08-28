@@ -77,13 +77,13 @@ mod report_tests {
 
         assert_eq!(report.verdict, Verdict::Usable, "findings: {:?}", report.findings);
         assert!(report.findings.is_empty(), "{:?}", report.findings);
-        assert!(report.fit.as_ref().unwrap().converged);
+        assert!(report.fit_summary.as_ref().unwrap().converged);
         assert!(report.validation.is_some());
 
         // The evidence a reader needs is attached, not left to be fetched.
         assert_eq!(report.rating_tables.len(), 3);
         assert_eq!(report.resolved.len(), 3);
-        assert!(report.fit.as_ref().unwrap().aic.is_some(), "model comparison needs AIC");
+        assert!(report.fit_summary.as_ref().unwrap().aic.is_some(), "model comparison needs AIC");
         assert!(!report.plan_json.is_empty());
 
         // The headline is one sentence meant to be relayed as written.

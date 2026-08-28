@@ -238,7 +238,7 @@ class OneTypeTests(unittest.TestCase):
         self.assertAlmostEqual(a.gini, b.gini, places=9)
 
         report = self.loaded.report(self.df)
-        self.assertEqual(report.fit, {})
+        self.assertEqual(report.fit_summary, {})
         self.assertIn("loaded or converted rather than fitted", report.markdown)
 
         self.loaded.to_workbook().save_json(str(self.dir / "again.json"))

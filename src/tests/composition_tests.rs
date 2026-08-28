@@ -324,7 +324,7 @@ mod composition_tests {
 
         // Report: no fit section, and a headline that says so rather than implying one.
         let report = loaded.report(Some(&df), &ValidationOptions::default()).unwrap();
-        assert!(report.fit.is_none());
+        assert!(report.fit_summary.is_none());
         assert!(report.to_markdown().contains("loaded or converted rather than fitted"));
         assert!(report.headline.contains("actual over expected"));
 

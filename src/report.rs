@@ -79,7 +79,10 @@ pub struct ModelReport {
     pub fingerprint: String,
     /// How the fit went. `None` for a model that was loaded or converted rather than
     /// fitted here, so a report never implies a fit that did not happen.
-    pub fit: Option<FitSummary>,
+    ///
+    /// Named for the noun it is: `fit` is the verb on [`crate::plan::Plan`], and one
+    /// word meaning both a thing and an action is a name a reader has to disambiguate.
+    pub fit_summary: Option<FitSummary>,
     /// Present when the report was built against data.
     pub validation: Option<Validation>,
     /// Rating tables with coefficients, standard errors, status and relativities.
@@ -196,7 +199,7 @@ impl FittedModel {
             resolved: self.resolved.clone(),
             plan_json,
             fingerprint,
-            fit,
+            fit_summary: fit,
             validation,
             rating_tables: self.rating_tables()?,
             findings,
@@ -327,7 +330,7 @@ impl ModelReport {
         }
         out.push('\n');
 
-        if let Some(fit) = self.fit.as_ref() {
+        if let Some(fit) = self.fit_summary.as_ref() {
             out.push_str("## Fit\n\n");
             out.push_str(&format!(
                 "| | |\n|---|---|\n\

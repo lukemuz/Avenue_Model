@@ -207,8 +207,8 @@ class ReportTests(unittest.TestCase):
 
         self.assertEqual(report.verdict, "usable")
         self.assertEqual(report.findings, [])
-        self.assertTrue(report.fit["converged"])
-        self.assertIsNotNone(report.fit["aic"])
+        self.assertTrue(report.fit_summary["converged"])
+        self.assertIsNotNone(report.fit_summary["aic"])
         self.assertIsNotNone(report.validation)
         self.assertEqual(len(report.rating_tables()), 3)
 

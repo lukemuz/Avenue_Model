@@ -865,9 +865,9 @@ impl PyModelReport {
     /// dispersion, n_parameters, table_conditioning. Empty for a model that was loaded
     /// or converted rather than fitted here.
     #[getter]
-    fn fit<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    fn fit_summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
-        let Some(fit) = self.inner.fit.as_ref() else {
+        let Some(fit) = self.inner.fit_summary.as_ref() else {
             // Not fitted here, so there is nothing to report rather than zeroes that
             // would read as a fit that went badly.
             return Ok(dict);
@@ -894,7 +894,8 @@ impl PyModelReport {
             .map(|v| PyValidation { inner: v.clone() })
     }
 
-    #[getter]
+    /// A method, matching `FittedModel.rating_tables()`. One name should not change
+    /// shape between classes.
     fn rating_tables(&self) -> Vec<PyDataFrame> {
         self.inner
             .rating_tables
