@@ -43,6 +43,76 @@ The Python package requires Python 3.12+ and `polars`; the crate builds on Rust 
 
 ## Quick start
 
+### State a plan, check it, fit it, report on it
+
+The shortest path from an ordinary dataframe to a model you can defend. Nothing here
+builds a table by hand.
+
+```python
+from avenue_model import Plan, GLMOptions
+
+plan = (
+    Plan.frequency("exposure")                       # Poisson, log(exposure) as offset
+    .banded("driver_age", breaks=[21, 25, 35, 50, 70])
+    .banded("vehicle_age", quantile=10)
+    .categorical("region")                            # base = most exposed level
+    .variate("vehicle_value", quantile=20, degree=2)  # a curve, two parameters
+)
+
+# What would this do, and what is wrong with the data? Before a fit is burned.
+check = plan.check(train, "claim_count")
+for issue in check.issues:
+    print(issue["severity"], issue["code"], issue["message"])
+
+fitted = plan.fit(train, "claim_count", GLMOptions())
+report = fitted.report(holdout, check)
+
+print(report.verdict)     # "usable" | "usable_with_caveats" | "not_usable"
+print(report.headline)    # one sentence, written to be shown to a person
+print(report.markdown)    # the whole document
+```
+
+Ordinary dataframes work: integer widths, booleans, strings and categoricals are
+normalised at the boundary, and the level mapping is kept on the fitted model so scoring
+assigns the same codes. `Int64` matters most — it is numpy's default integer and what
+`pandas.Categorical(...).codes` widens to.
+
+**`plan.check(df, target)`** reports rather than raises. A check that stopped at the
+first fault would leave you finding problems one failed attempt at a time, which is the
+loop it exists to replace. It returns what the plan *decided* — the band edges a
+quantile rule picked, the base level chosen, rows and parameters per term — alongside
+unmatched rows, empty and thin levels, nulls, constant features, non-positive exposure
+under a log offset, unidentified variate degrees, near-aliased table pairs, and plans
+spending more parameters than there are rows.
+
+**The plan is data.** `plan.to_json()` round-trips through `Plan.from_json`, so it can
+be saved, diffed, shown to someone for approval, edited and re-run. It is the model's
+source code, and it travels inside the report.
+
+### Measure a model against data
+
+```python
+v = fitted.validate(holdout)
+
+v.is_usable          # False if anything found should stop it being used
+v.warnings           # dicts: severity, code, message, rows
+v.ae_ratio           # actual over expected, 1.0 is calibrated
+v.gini, v.lift       # how well it orders risk
+v.calibration        # equal-exposure buckets: actual, expected, A/E per bucket
+v.actual_vs_expected # one frame per rating factor
+```
+
+One call, complete verdict. Every judgement it can make, it makes — a caller reading
+nothing but `warnings` should still never report a broken model as fine. Unmatched rows
+are the case that motivates it: scoring alone turns them into `NaN` predictions that
+average into a metric without complaint, so `validate` counts them, excludes them, and
+says so.
+
+Warnings carry a stable `code` to branch on and a `message` written to be relayed
+unchanged. That is deliberate — the goal is not that someone feels confident about a
+model, it is that their confidence is *calibrated*, so the caveats travel with the
+numbers rather than depending on whoever reports them to think of the caveats.
+
 ### Fit a GLM on rating tables
 
 ```python
@@ -227,6 +297,10 @@ adds penalties that encourage the sparse, shallow trees this workflow wants.
 - Standard errors per level, plus dispersion, deviance, AIC and BIC
 - Additive model structure, or multiplicative effects under a log link
 - LightGBM conversion with exact prediction parity
+- Declarative plans that build the tables, state every default, and round-trip as JSON
+- One-call holdout validation: calibration, lift, Gini, actual-versus-expected, and
+  severity-graded findings
+- An assembled model report with a single verdict, in Markdown or as data
 
 ---
 
@@ -462,7 +536,7 @@ reasoning is in the [module docs](src/glm/README.md#build-settings).
 ## Development
 
 ```bash
-cargo test --lib                  # 150 tests
+cargo test --lib                  # 223 tests
 maturin develop --release         # build the Python bindings
 cargo test --features benchmarks  # include the benchmark tests
 ```
@@ -473,6 +547,10 @@ cargo test --features benchmarks  # include the benchmark tests
   convergence, standard errors, and the full performance methodology
 - [Rating model module](src/rating_model/README.md) — table structure, matching rules,
   LightGBM conversion
+- `src/plan.rs` — terms, band rules, base levels, dtype normalisation, and what `check`
+  looks for
+- `src/validation.rs` — the warning set, and what each code means
+- `src/report.rs` — how a verdict is reached
 
 ## Built with
 

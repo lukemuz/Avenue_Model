@@ -2,6 +2,8 @@
 pub mod analysis;
 pub mod glm;
 pub mod plan;
+#[cfg(feature = "python")]
+pub mod python_api;
 pub mod rating_model;
 pub mod report;
 pub mod table_estimator;
@@ -572,8 +574,8 @@ impl PyRatingModel {
 #[cfg(feature = "python")]
 #[pyclass(name = "GLMOptions")]
 #[derive(Clone)]
-struct PyGLMOptions {
-    inner: glm::GLMOptions,
+pub struct PyGLMOptions {
+    pub(crate) inner: glm::GLMOptions,
 }
 
 #[cfg(feature = "python")]
@@ -1139,5 +1141,6 @@ fn avenue_model(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_glm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_glm_with_diagnostics, m)?)?;
     m.add_function(wrap_pyfunction!(table_correlations, m)?)?;
+    python_api::register(m)?;
     Ok(())
 }

@@ -857,7 +857,7 @@ Fitting rejects, rather than silently working around:
 ## Testing
 
 ```bash
-cargo test --lib                     # 150 tests
+cargo test --lib                     # 223 tests
 cargo test --lib glm                 # all GLM tests
 cargo test --lib glm_correctness     # the correctness harness specifically
 ```
