@@ -1689,13 +1689,17 @@ impl FittedPlan {
     }
 
     /// Validate against data, using the same weight and offset roles the fit used.
+    ///
+    /// The actual-versus-expected frames come back carrying each categorical column's
+    /// level text as well as its code. The exhibit is read by people, and a row
+    /// labelled `1` tells them nothing.
     pub fn validate(
         &self,
         df: &DataFrame,
         options: &ValidationOptions,
     ) -> Result<Validation, PolarsError> {
         let prepared = self.prepare(df)?;
-        validate(
+        let mut validation = validate(
             &self.model,
             &prepared.df,
             &self.target,
@@ -1705,7 +1709,39 @@ impl FittedPlan {
             self.plan.tweedie_power,
             Some(&self.diagnostics),
             options,
-        )
+        )?;
+        for frame in validation.actual_vs_expected.iter_mut() {
+            self.label_encoded_columns(frame)?;
+        }
+        Ok(validation)
+    }
+
+    /// Add a `<column>_Level` column beside every encoded code column in `frame`.
+    fn label_encoded_columns(&self, frame: &mut DataFrame) -> Result<(), PolarsError> {
+        let names: Vec<String> = frame
+            .get_column_names()
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        for name in names {
+            if !self.encoding.is_encoded(&name) {
+                continue;
+            }
+            let Ok(codes) = frame.column(&name).and_then(|c| c.i32()) else {
+                continue;
+            };
+            let labels: Vec<Option<String>> = codes
+                .into_iter()
+                .map(|code| {
+                    code.and_then(|c| self.encoding.label_for(&name, c).map(str::to_string))
+                })
+                .collect();
+            frame.with_column(Series::new(
+                format!("{}_Level", name).as_str().into(),
+                labels,
+            ))?;
+        }
+        Ok(())
     }
 
     /// Rating tables with the inference joined on: `Coefficient`, `Standard_Error`,
