@@ -1,5 +1,4 @@
 /// Utility functions for GLM fitting
-
 use polars::prelude::*;
 
 /// Computes the mean of a series with optional weights
@@ -25,9 +24,7 @@ pub fn weighted_mean(
                 0.0
             }
         }
-        None => {
-            values.mean().unwrap_or(0.0)
-        }
+        None => values.mean().unwrap_or(0.0),
     }
 }
 

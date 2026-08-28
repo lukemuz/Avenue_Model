@@ -1,7 +1,7 @@
 # Avenue Model
 
-**A GLM fitter that works directly on rating tables, plus exact conversion of LightGBM
-models into the same representation.**
+**Fast GLMs built around rating tables, plus exact conversion of LightGBM models into
+the same representation.**
 
 A rating table is a lookup: a set of levels or numeric bands, each carrying a factor.
 Insurance pricing, and a good deal of actuarial and risk modelling generally, is built out
@@ -50,23 +50,23 @@ from avenue_model import RatingModel, fit_glm_with_diagnostics, GLMOptions
 import polars as pl
 
 # Tables define the structure: levels, bands, interactions, matching rules.
-model = RatingModel(base_tables, objective="poisson")
+model = RatingModel(base_tables, family="poisson")
 
 # Frequency models normally carry exposure as an offset, not a weight.
 training_df = training_df.with_columns(pl.col("exposure").log().alias("log_exposure"))
 
-options = GLMOptions(objective="poisson", max_iterations=100, tolerance=1e-9)
-fitted_model, diag = fit_glm_with_diagnostics(
+options = GLMOptions(max_iterations=100, tolerance=1e-9)
+result = fit_glm_with_diagnostics(
     model, training_df, "claim_count",
     offset_col="log_exposure",
     options=options,
 )
 
-print(diag)                  # iterations, converged, deviance, pseudo_r2, dispersion, aic
-print(diag.standard_errors)  # per table, per row; aligns with model_tables()
+print(result.diagnostics)    # iterations, convergence, deviance, dispersion, AIC
+print(result.rating_tables()) # coefficients, relativities, SEs, and row status
 
-predictions = fitted_model.predict(new_data)
-tables = fitted_model.model_tables()   # list of Polars DataFrames
+predictions = result.predict_rate(new_data)
+expected_claims = result.predict_expected(new_data, "exposure")
 ```
 
 ### Convert a LightGBM model
@@ -127,7 +127,24 @@ Fitting and prediction use the same matching code, so they cannot disagree about
 level means. No observation-by-parameter matrix is materialised, which matters most
 exactly where design matrices hurt: high-cardinality factors and interactions.
 
-### What the fitter does
+### Choosing a solver
+
+`GLMOptions` defaults to `solver="auto"`:
+
+| Solver | Best use | Method | Memory |
+|---|---|---|---|
+| `auto` | Most fits | Prefer global; fall back to table when needed | Chosen automatically |
+| `global` | Up to a few thousand parameters | Global IRLS; direct solve or Gram coordinate descent | `O(p^2)` |
+| `table` | Very wide or specialized rating models | Block coordinate descent over tables | Scales with table rows |
+
+Global is usually fastest for unpenalized, Ridge, Lasso, and Elastic-Net fits. Table
+descent remains available for variates, locked rows, non-base normalization, models over
+6,000 parameters, and cases where predictable low memory matters more than latency.
+
+Neither solver materializes an observation-by-parameter dummy matrix. Global builds the
+much smaller `p x p` Gram matrix; table descent works directly from row matches.
+
+### What table descent does
 
 Avenue fits by **block coordinate descent over tables** — a backfit. Each sweep visits
 every table in turn and updates all of its rows at once, holding the rest of the model
@@ -159,14 +176,15 @@ difference is most of the performance story below, and its limits are the rest o
 | `aliased_rows`, `unfitted_rows` | rows whose effect is not identified, or that saw no exposure |
 | `dispersion`, `pearson_chi2`, `df_residual` | scale and residual degrees of freedom |
 | `log_likelihood`, `aic`, `bic` | model comparison |
-| `table_conditioning` | how hard this plan is for a coordinate method — see [below](#when-avenue-is-the-wrong-tool) |
+| `table_conditioning` | how hard this plan is for table descent — see [below](#when-table-descent-is-the-wrong-tool) |
 | `variate_terms` | fitted polynomial, standard errors and top-degree z for each variate |
 
 Standard errors follow R's pivoted-QR convention: an anchoring reference row is exactly
 `0`, and a row that is aliased or carries no exposure is `NaN` rather than a large
 meaningless number. A level that is perfectly separated, or whose Fisher information
 collapses during the fit, is detected and reported as aliased instead of being given a
-standard error of `1e7`.
+standard error of `1e7`. Penalized fits intentionally report no standard errors because
+ordinary Wald intervals are not defensible for shrinkage-biased estimates.
 
 ---
 
@@ -213,6 +231,33 @@ adds penalties that encourage the sparse, shallow trees this workflow wants.
 ---
 
 ## Performance
+
+### Solver and penalty comparison
+
+Release builds, best of three runs, with coefficients checked against glum. Times are
+seconds; lower is better.
+
+| Dataset / penalty | Table | Global | glum |
+|---|---:|---:|---:|
+| Census, unpenalized | 0.144 | **0.094** | 0.198 |
+| Census, Ridge | 0.083 | **0.044** | 0.076 |
+| Census, Elastic Net | 0.912 | **0.076** | 0.081 |
+| Census, Lasso | 0.500 | **0.064** | 0.093 |
+| Housing, unpenalized | 0.048 | **0.022** | 0.058 |
+| Housing, Ridge | 0.059 | **0.024** | 0.052 |
+| Housing, Elastic Net | 0.171 | 0.064 | **0.061** |
+| Housing, Lasso | 0.143 | **0.033** | 0.057 |
+| Correlated synthetic, unpenalized | 0.332 | **0.183** | 0.324 |
+| Correlated synthetic, Ridge | 0.334 | **0.178** | 0.316 |
+| Correlated synthetic, Elastic Net | 1.077 | 0.379 | **0.372** |
+| Correlated synthetic, Lasso | 1.181 | **0.348** | 0.403 |
+
+On the 200,000-row correlated design, process-isolated incremental peak RSS was roughly
+0.2-2.0 MB for table, 0.2-1.6 MB for global, and 42-43 MB for glum. Global has `O(p^2)`
+storage, however, so table remains the safe choice as `p` grows.
+
+The older tables below primarily describe the table solver and remain useful for
+understanding its scaling behavior.
 
 All benchmarks are release builds, and every one of them is **gated on the engines
 agreeing about the fitted means** before any timing is reported — a fast wrong answer
@@ -323,7 +368,7 @@ The remaining gap is ours. glum is handed 2 GB of `int8` codes, and 4 bytes per 
 row is as narrow as Avenue's matching path goes — anything narrower falls back to a slow
 path. Supporting `Int8` and `Int16` is the largest memory win still available.
 
-### When Avenue is the wrong tool
+### When table descent is the wrong tool
 
 Two situations, both worth knowing before you choose it.
 
@@ -390,17 +435,18 @@ reasoning is in the [module docs](src/glm/README.md#build-settings).
 
 ## Known gaps
 
-- **Unpenalised only.** No ridge, lasso, elastic net, credibility shrinkage, or
-  monotonicity constraints yet.
+- **Global solver coverage.** Variates, locked rows, non-base normalization, and models
+  above 6,000 parameters currently fall back to table descent under `solver="auto"`.
+- **Penalized inference.** Penalized fits intentionally omit standard errors; selective
+  or debiased inference is not implemented.
 - **Wald standard errors only.** No likelihood-ratio tests, profile intervals, or
   robust/sandwich covariance.
 - **Step lookup only.** A table cannot interpolate between its rows, so two ages in the
   same band get the same factor. Interpolating tables are designed but not built.
 - **Variate degree is not chosen for you.** Only a Wald z on the top degree; refit at
   each degree and compare `aic` yourself.
-- **Poorly conditioned plans are slow.** See [above](#when-avenue-is-the-wrong-tool). The
-  planned fix is conjugate gradient preconditioned by the sweep — `O(√κ)` iterations
-  rather than `O(κ)`, each still `O(n·T)`.
+- **Poorly conditioned table-descent plans are slow.** Use `solver="auto"` or
+  `solver="global"` when the global path supports the model.
 - **No narrow dtypes.** Feature columns may be `Int32` or `Float64` — both match at the
   same speed — but nothing narrower is recognised, so a wide design still carries 4 bytes
   per factor per row where glum is handed 1.
@@ -408,8 +454,7 @@ reasoning is in the [module docs](src/glm/README.md#build-settings).
 ## Roadmap
 
 - Automatic degree selection for variates (likelihood-ratio or AIC across a sequence)
-- Penalized regression: credibility shrinkage for sparse levels, difference penalties on
-  adjacent ordinal levels, monotonicity constraints, elastic net
+- Difference penalties on adjacent ordinal levels and monotonicity constraints
 - Narrower dtypes on the matching path, to close the memory gap on wide designs
 
 ---

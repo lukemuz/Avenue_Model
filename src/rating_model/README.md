@@ -1,8 +1,16 @@
-# Rating Model Module
+# Rating models
 
-This module provides the core rating table and model functionality for the Avenue Model library.
+This module contains Avenue's core representation: lookup tables that can be inspected,
+combined, predicted, and fitted directly as GLMs.
 
-## Module Structure
+## At a glance
+
+- `RatingTable` represents one lookup table and its matching rules.
+- `RatingModel` combines tables under identity, log, or logit links.
+- LightGBM trees can be converted exactly into the same representation.
+- Tables can be consolidated without changing predictions.
+
+## Module structure
 
 ```
 rating_model/
@@ -12,28 +20,32 @@ rating_model/
 └── README.md          - This file
 ```
 
-## Components
+## Core components
 
-### Core Models ([mod.rs](mod.rs))
+### Core types ([mod.rs](mod.rs))
 
-**RatingTable**
+#### `RatingTable`
+
 - Represents a single rating table with features and rating factors
 - Supports both numeric (Float64) and categorical (Int32) features
 - Provides row matching and prediction functionality
 - Handles metadata for offset tables and locked rows
 
-**RatingModel**
+#### `RatingModel`
+
 - Contains multiple RatingTables with a link function
 - Supports predictions on single records or DataFrames
 - Can be constructed from LightGBM JSON models or DataFrames
 - Supports model combination and consolidation
 
-**Link Functions**
+#### Link functions
+
 - `Identity` - for regression models
 - `Logit` - for binary classification
 - `Log` - for Poisson, Gamma, and Tweedie models
 
-**Metadata Types**
+#### Metadata
+
 - `TableMetadata` - Table-level configuration (name, offset status, updatability)
 - `RowMetadata` - Row-level configuration (offset/locked rows)
 
@@ -45,7 +57,8 @@ Handles conversion of LightGBM gradient boosting models to rating tables:
 - `build_consolidated_tablemodel()` - Creates maximally consolidated model
 - `build_analysis_tablemodel()` - Creates analysis-level model with internal nodes
 
-**Internal structures:**
+Internal structures:
+
 - `PathInfo` - Represents a path through a decision tree
 - `SplitNodeInfo` - Split node information (threshold, feature, decision type)
 - `LeafNodeInfo` - Leaf node with value
@@ -59,9 +72,9 @@ Algorithms for combining and consolidating rating tables:
 - `combine_all_tables()` - Iteratively combines tables with overlapping features
 - `combine_all_tables_exact()` - Combines tables with identical feature sets
 
-## Usage Examples
+## Examples
 
-### Creating a RatingModel from LightGBM
+### From LightGBM
 
 ```rust
 use avenue_model::rating_model::RatingModel;
@@ -76,7 +89,7 @@ let model = RatingModel::from_lgbm_json(
 let predictions = model.predict(&dataframe)?;
 ```
 
-### Creating a RatingModel from DataFrames
+### From DataFrames
 
 ```rust
 use avenue_model::rating_model::RatingModel;
@@ -89,7 +102,7 @@ let model = RatingModel::from_dataframes(
 )?;
 ```
 
-### Combining Models
+### Combine models
 
 ```rust
 // Combine two models with the same link function
@@ -102,7 +115,7 @@ let combined = (model1 + model2)?;
 let combined = RatingModel::combine_many(vec![model1, model2, model3])?;
 ```
 
-### Working with Offset Tables
+### Offset tables and locked rows
 
 ```rust
 // Mark entire table as offset (not updated by GLM)
@@ -115,7 +128,7 @@ model.add_offset_table(offset_table);
 table.set_row_offset(5, true);  // Lock row 5
 ```
 
-### Consolidating Tables
+### Consolidate tables
 
 ```rust
 // Consolidate all tables in a model
@@ -125,11 +138,13 @@ let consolidated = model.consolidate_tables();
 ## Feature Matching
 
 ### Categorical Features
+
 - Use Int32 type
 - Support wildcard matching with `-999` value
 - Exact match required unless wildcard present
 
 ### Numeric Features
+
 - Use Float64 type
 - Threshold-based matching (value ≤ threshold)
 - Support infinity thresholds for unbounded ranges
@@ -143,7 +158,8 @@ The module uses several optimization strategies:
 - **Unsafe Access**: Row matching uses unsafe `get_unchecked` for performance
 - **Adaptive Parallelization**: Automatically chooses parallel strategy based on data size
 
-Thresholds:
+Parallelization thresholds:
+
 - `ROW_PARALLEL_THRESHOLD = 10` - Minimum rows for parallel processing
 - `TABLE_PARALLEL_THRESHOLD = 10` - Minimum tables for parallel processing
 
@@ -172,12 +188,14 @@ pub use combine_all_tables;
 
 ## Testing
 
-Run tests with:
+Run the module tests with:
+
 ```bash
 cargo test --lib
 ```
 
-The module has comprehensive test coverage including:
+Coverage includes:
+
 - Model creation and prediction tests
 - LightGBM parsing tests
 - Table consolidation tests

@@ -179,7 +179,11 @@ impl TablePenalty {
             } else {
                 contrasts[idx - 1]
             };
-            let hi = if idx == m { f64::INFINITY } else { contrasts[idx] };
+            let hi = if idx == m {
+                f64::INFINITY
+            } else {
+                contrasts[idx]
+            };
             let sign_sum = m as f64 - 2.0 * below as f64;
             let candidate = (b + self.l1 * sign_sum) / a;
             if candidate > lo && candidate < hi {
@@ -315,10 +319,7 @@ impl PenaltyPlan {
             })
             .collect();
 
-        Some(PenaltyPlan {
-            penalty,
-            penalised,
-        })
+        Some(PenaltyPlan { penalty, penalised })
     }
 
     /// The penalty on one row of one table, or `None` where nothing is penalised.
@@ -476,10 +477,7 @@ mod tests {
             let p = TablePenalty { l1, l2 };
             for (g, h, z) in cases.iter() {
                 let f = |d: f64| {
-                    0.5 * h * d * d - g * d
-                        + z.iter()
-                            .map(|zr| p.value(zr - d))
-                            .sum::<f64>()
+                    0.5 * h * d * d - g * d + z.iter().map(|zr| p.value(zr - d)).sum::<f64>()
                 };
                 let mut work = z.clone();
                 let d = p.solve_anchor(*g, *h, &mut work);
@@ -548,13 +546,17 @@ mod tests {
         // level is entitled to, not a disagreement about where the optimum is.
         let rows: f64 = z.iter().map(|zr| p.subgradient(0.0, *zr)).sum();
         let anchor = p.anchor_subgradient(0.0, &z);
-        assert!((rows + anchor).abs() <= p.l1 + 1e-12, "gap {}", rows + anchor);
+        assert!(
+            (rows + anchor).abs() <= p.l1 + 1e-12,
+            "gap {}",
+            rows + anchor
+        );
     }
 
     #[test]
     fn variate_and_single_row_tables_are_skipped() {
-        let p = PenaltyPlan::new(0.1, 0.0, 1.0, &[1, 5, 1, 6], &[false, true, false, false])
-            .unwrap();
+        let p =
+            PenaltyPlan::new(0.1, 0.0, 1.0, &[1, 5, 1, 6], &[false, true, false, false]).unwrap();
         assert!(!p.covers(1), "a variate is constrained, not penalised");
         assert!(!p.covers(2), "a one-row table has no contrast to shrink");
         assert!(p.covers(3));

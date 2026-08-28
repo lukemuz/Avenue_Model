@@ -21,7 +21,7 @@
 #[cfg(test)]
 mod glm_penalty_tests {
     use crate::glm::penalty::soft_threshold;
-    use crate::glm::{fit_glm, fit_glm_with_diagnostics, GLMOptions, Normalization};
+    use crate::glm::{fit_glm, fit_glm_with_diagnostics, GLMOptions, GLMSolver, Normalization};
     use crate::rating_model::RatingModel;
     use polars::prelude::*;
 
@@ -140,6 +140,39 @@ mod glm_penalty_tests {
         }
     }
 
+    #[test]
+    fn global_and_table_solvers_agree_for_every_penalty_kind() {
+        let (df, model, _, _, _) = fixture();
+        for (alpha, ratio) in [(0.0, 0.0), (0.05, 0.0), (0.05, 0.5), (0.05, 1.0)] {
+            let mut table_options = options(alpha, ratio);
+            table_options.solver = GLMSolver::Table;
+            table_options.tolerance = 1e-10;
+            table_options.compute_standard_errors = false;
+            let mut global_options = table_options.clone();
+            global_options.solver = GLMSolver::Global;
+
+            let table = fit_glm(&model, &df, "y", Some("w"), None, table_options).unwrap();
+            let global = fit_glm(&model, &df, "y", Some("w"), None, global_options).unwrap();
+            assert_close(
+                &contrasts(&global),
+                &contrasts(&table),
+                2e-7,
+                &format!("global alpha={alpha}, ratio={ratio}"),
+            );
+            assert_close(
+                &factors(&global, 0),
+                &factors(&table, 0),
+                2e-7,
+                &format!("global intercept alpha={alpha}, ratio={ratio}"),
+            );
+        }
+    }
+
+    #[test]
+    fn auto_is_the_default_solver() {
+        assert_eq!(GLMOptions::default().solver, GLMSolver::Auto);
+    }
+
     // ---------------------------------------------------------------- ridge
 
     /// The closed form above, at three strengths spanning almost no shrinkage to almost
@@ -162,8 +195,8 @@ mod glm_penalty_tests {
                     }
                 })
                 .collect();
-            let b0: f64 = c.iter().zip(ybar.iter()).map(|(c, m)| c * m).sum::<f64>()
-                / c.iter().sum::<f64>();
+            let b0: f64 =
+                c.iter().zip(ybar.iter()).map(|(c, m)| c * m).sum::<f64>() / c.iter().sum::<f64>();
             let expected: Vec<f64> = (0..n.len())
                 .map(|j| {
                     if j == 0 {
@@ -174,15 +207,9 @@ mod glm_penalty_tests {
                 })
                 .collect();
 
-            let (fitted, diag) = fit_glm_with_diagnostics(
-                &model,
-                &df,
-                "y",
-                Some("w"),
-                None,
-                options(alpha, 0.0),
-            )
-            .unwrap();
+            let (fitted, diag) =
+                fit_glm_with_diagnostics(&model, &df, "y", Some("w"), None, options(alpha, 0.0))
+                    .unwrap();
             assert!(diag.converged, "alpha = {alpha}: did not converge");
             assert_close(
                 &contrasts(&fitted),
@@ -211,8 +238,7 @@ mod glm_penalty_tests {
         let norm = |c: &[f64]| c.iter().map(|v| v * v).sum::<f64>().sqrt();
         let mut previous: Option<f64> = None;
         for alpha in [0.0, 1e-3, 1e-2, 1e-1, 1.0, 10.0] {
-            let fitted =
-                fit_glm(&model, &df, "y", Some("w"), None, options(alpha, 0.0)).unwrap();
+            let fitted = fit_glm(&model, &df, "y", Some("w"), None, options(alpha, 0.0)).unwrap();
             let size = norm(&contrasts(&fitted));
             if let Some(prev) = previous {
                 assert!(
@@ -268,7 +294,10 @@ mod glm_penalty_tests {
                 }
             }
         }
-        assert!(ever_zero, "no level was ever zeroed - the sweep is not testing L1");
+        assert!(
+            ever_zero,
+            "no level was ever zeroed - the sweep is not testing L1"
+        );
         assert!(ever_nonzero, "every level was zeroed at every alpha");
     }
 
@@ -295,8 +324,7 @@ mod glm_penalty_tests {
     #[test]
     fn a_collapsed_lasso_leaves_the_weighted_mean_in_the_intercept() {
         let (df, model, _, y, w) = fixture();
-        let mean = y.iter().zip(w.iter()).map(|(y, w)| y * w).sum::<f64>()
-            / w.iter().sum::<f64>();
+        let mean = y.iter().zip(w.iter()).map(|(y, w)| y * w).sum::<f64>() / w.iter().sum::<f64>();
         let fitted = fit_glm(&model, &df, "y", Some("w"), None, options(5.0, 1.0)).unwrap();
         let intercept = factors(&fitted, 0)[0] + factors(&fitted, 1)[0];
         assert!(
@@ -476,16 +504,57 @@ mod glm_penalty_tests {
         out
     }
 
-    /// The one that matters. A penalised estimator solves `score(b) = P b`, so its
-    /// variance is the sandwich `(H + P)^-1 H (H + P)^-1`, **not** `(H + P)^-1` and not
-    /// `H^-1`. All three agree at zero penalty and diverge quickly, and reaching for the
-    /// wrong one is the natural mistake, so this checks the reported standard errors
-    /// against the sandwich and confirms they are not either alternative.
-    ///
-    /// For this design `H` is an arrow matrix that can be written down by hand: the
-    /// intercept column carries every observation, each level column carries its own.
+    /// A penalty makes the estimate biased on purpose, so no Wald interval can be
+    /// centred on it honestly and none is offered — for a ridge as much as for a lasso.
+    /// The `alpha = 0` case is there to show the refusal is about the penalty and not
+    /// about the option being set.
     #[test]
-    fn ridge_standard_errors_are_the_sandwich() {
+    fn a_penalised_fit_reports_no_standard_errors() {
+        let (df, model, _, _, _) = fixture();
+        for (alpha, ratio) in [
+            (0.0, 0.0),
+            (1e-6, 0.0),
+            (0.5, 0.0),
+            (0.02, 0.5),
+            (0.02, 1.0),
+        ] {
+            let (_, diag) =
+                fit_glm_with_diagnostics(&model, &df, "y", Some("w"), None, options(alpha, ratio))
+                    .unwrap();
+            let inf = diag.inference.expect("inference");
+            let penalised = alpha > 0.0;
+            assert_eq!(
+                inf.standard_errors_note.is_some(),
+                penalised,
+                "alpha = {alpha}, l1_ratio = {ratio}: note presence is wrong"
+            );
+            let all_nan = inf.standard_errors.iter().flatten().all(|se| se.is_nan());
+            let any_real = inf
+                .standard_errors
+                .iter()
+                .flatten()
+                .any(|se| se.is_finite() && *se > 0.0);
+            if penalised {
+                assert!(all_nan, "alpha = {alpha}: a standard error survived");
+            } else {
+                assert!(any_real, "an unpenalised fit must still report them");
+            }
+            // Everything that is well defined under a penalty is still reported.
+            assert!(inf.effective_parameters > 0.0);
+            assert!(inf.dispersion.is_finite());
+            assert!(inf.aic.is_some());
+        }
+    }
+
+    /// `effective_parameters` is the trace of the hat matrix `(H + P)^-1 H`. It survives
+    /// the removal of the standard errors because it is the one quantity a penalty
+    /// leaves well defined, and `aic` and `df_residual` both depend on it being right.
+    ///
+    /// Checked against `H` and `P` written out by hand for this design — `H` is an arrow
+    /// matrix, the intercept column carrying every observation and each level column its
+    /// own — and inverted by a routine in this file rather than the solver under test.
+    #[test]
+    fn the_effective_parameter_count_is_the_hat_trace() {
         let (df, model, level_of, y, w) = fixture();
         let (n, _, total) = level_stats(&level_of, &y, &w);
         let k = n.len(); // intercept plus one column per non-base level
@@ -493,8 +562,6 @@ mod glm_penalty_tests {
         for alpha in [0.02, 0.5] {
             let l2 = total * alpha;
 
-            // H = X'WX for [intercept, level 1 .. level 5], Gaussian so the IRLS weight
-            // is the prior weight.
             let mut h = vec![0.0; k * k];
             h[0] = n.iter().sum::<f64>();
             for j in 1..k {
@@ -507,45 +574,20 @@ mod glm_penalty_tests {
                 hp[j * k + j] += l2;
             }
 
-            let hp_inv = invert(&hp, k);
-            let sandwich = matmul(&matmul(&hp_inv, &h, k), &hp_inv, k);
-            let h_inv = invert(&h, k);
+            let hat = matmul(&invert(&hp, k), &h, k);
+            let expected: f64 = (0..k).map(|i| hat[i * k + i]).sum();
 
-            let (fitted, diag) =
+            let (_, diag) =
                 fit_glm_with_diagnostics(&model, &df, "y", Some("w"), None, options(alpha, 0.0))
                     .unwrap();
             let inf = diag.inference.expect("inference");
-            let phi = inf.dispersion;
-
-            for j in 1..k {
-                let got = inf.standard_errors[1][j];
-                let expected = (phi * sandwich[j * k + j]).sqrt();
-                assert!(
-                    (got - expected).abs() < 1e-8 * expected,
-                    "alpha = {alpha}, level {j}: got {got:.10e}, sandwich says {expected:.10e}"
-                );
-                // And it is not one of the two things it could have been by mistake.
-                let naive = (phi * hp_inv[j * k + j]).sqrt();
-                let unpenalised = (phi * h_inv[j * k + j]).sqrt();
-                assert!(
-                    (got - naive).abs() > 1e-10 * expected,
-                    "alpha = {alpha}, level {j}: reported (H+P)^-1 instead of the sandwich"
-                );
-                assert!(
-                    (got - unpenalised).abs() > 1e-10 * expected,
-                    "alpha = {alpha}, level {j}: reported H^-1, ignoring the penalty"
-                );
-            }
-            // Level 0 is the reference: fixed by construction, so exactly zero.
-            assert_eq!(inf.standard_errors[1][0], 0.0);
-            // The trace of the hat matrix, from the same two matrices.
-            let expected_edf: f64 = (0..k).map(|i| matmul(&hp_inv, &h, k)[i * k + i]).sum();
             assert!(
-                (inf.effective_parameters - expected_edf).abs() < 1e-9,
-                "alpha = {alpha}: edf {} vs {expected_edf}",
+                (inf.effective_parameters - expected).abs() < 1e-9,
+                "alpha = {alpha}: edf {} vs {expected}",
                 inf.effective_parameters
             );
-            let _ = &fitted;
+            // And it is genuinely below the parameter count it would spend unpenalised.
+            assert!(inf.effective_parameters < inf.n_parameters as f64);
         }
     }
 
@@ -569,7 +611,10 @@ mod glm_penalty_tests {
         for alpha in [1e-3, 1e-2, 1e-1, 1.0, 100.0] {
             let (used, _) = spend(alpha);
             assert!(used < previous, "alpha = {alpha}: spend rose to {used}");
-            assert!(used > 0.99, "alpha = {alpha}: spend fell below the intercept");
+            assert!(
+                used > 0.99,
+                "alpha = {alpha}: spend fell below the intercept"
+            );
             previous = used;
         }
         assert!(
@@ -578,22 +623,16 @@ mod glm_penalty_tests {
         );
     }
 
-    /// A lasso picks its levels from the data it then estimates on. A Wald interval that
-    /// ignores that is the wrong quantity rather than a wide one, so none is reported -
-    /// and the spend is the count of levels kept.
+    /// An L1 penalty adds no curvature, so the hat trace cannot see it. What a lasso
+    /// spends is the levels it kept, which is the standard unbiased estimate.
     #[test]
-    fn a_lasso_reports_no_standard_errors_and_spends_what_it_kept() {
+    fn a_lasso_spends_what_it_kept() {
         let (df, model, _, _, _) = fixture();
         for alpha in [0.02, 0.2] {
             let (fitted, diag) =
                 fit_glm_with_diagnostics(&model, &df, "y", Some("w"), None, options(alpha, 1.0))
                     .unwrap();
             let inf = diag.inference.expect("inference");
-            for (t, ses) in inf.standard_errors.iter().enumerate() {
-                for (r, se) in ses.iter().enumerate() {
-                    assert!(se.is_nan(), "alpha = {alpha}: table {t} row {r} reported {se}");
-                }
-            }
             let kept = contrasts(&fitted).iter().filter(|v| **v != 0.0).count() as f64;
             assert_eq!(
                 inf.effective_parameters,
@@ -660,7 +699,10 @@ mod glm_penalty_tests {
             let (fitted, diag) =
                 fit_glm_with_diagnostics(&model, &df, "y", None, None, poisson(alpha, 0.0))
                     .unwrap();
-            assert!(diag.converged, "poisson ridge at alpha = {alpha} did not converge");
+            assert!(
+                diag.converged,
+                "poisson ridge at alpha = {alpha} did not converge"
+            );
             let size = norm(&contrasts(&fitted));
             if let Some(prev) = previous {
                 assert!(

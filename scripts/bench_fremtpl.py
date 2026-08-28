@@ -211,7 +211,7 @@ def run_avenue(codes, levels, y, exposure, repeats, standard_errors):
         lambda: build_avenue(codes, levels, y, exposure), repeats)
 
     options = GLMOptions(
-        objective="poisson", max_iterations=MAX_ITER, tolerance=AVENUE_TOL,
+        max_iterations=MAX_ITER, tolerance=AVENUE_TOL,
         compute_standard_errors=standard_errors,
     )
 
@@ -219,7 +219,8 @@ def run_avenue(codes, levels, y, exposure, repeats, standard_errors):
         return fit_glm_with_diagnostics(
             model, df, "y", offset_col="log_exposure", options=options)
 
-    fit_seconds, (fitted, diag) = best_of(fit, repeats)
+    fit_seconds, result = best_of(fit, repeats)
+    fitted, diag = result.model, result.diagnostics
     mu = fitted.predict(df).to_series(0).to_numpy() * exposure
 
     note = f"max|score|={diag.max_gradient:.1e}"

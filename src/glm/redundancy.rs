@@ -425,7 +425,9 @@ mod tests {
     /// is invertible mod `levels`, because `i` is then recoverable from the first - an
     /// easy way to write a test that proves nothing.
     fn spread(i: usize, salt: u64, levels: u32) -> u32 {
-        let mut z = (i as u64).wrapping_add(salt).wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = (i as u64)
+            .wrapping_add(salt)
+            .wrapping_add(0x9E37_79B9_7F4A_7C15);
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
         ((z ^ (z >> 31)) % levels as u64) as u32
@@ -476,7 +478,11 @@ mod tests {
         let mut pairs = Vec::new();
         for first in 1..=n_tables {
             for second in (first + 1)..=n_tables {
-                pairs.push(TablePair { first, second, correlation: rho });
+                pairs.push(TablePair {
+                    first,
+                    second,
+                    correlation: rho,
+                });
             }
         }
         pairs
@@ -494,7 +500,9 @@ mod tests {
             assert!(
                 (strength - expected).abs() < 1e-9,
                 "{} tables: got {}, expected {}",
-                n_tables, strength, expected
+                n_tables,
+                strength,
+                expected
             );
         }
     }
@@ -524,7 +532,11 @@ mod tests {
             }
         }
         let strength = collective_strength(&pairs);
-        assert!(strength < 2.0, "one pair should stay near 1+rho, got {}", strength);
+        assert!(
+            strength < 2.0,
+            "one pair should stay near 1+rho, got {}",
+            strength
+        );
     }
 
     /// Two tables that are the same partition relabelled carry identical information, so
@@ -535,12 +547,7 @@ mod tests {
         let b: Vec<u32> = a.iter().map(|v| 2 - *v).collect();
         let weights = vec![1.0; a.len()];
 
-        let pairs = table_correlations(
-            &[a, b],
-            &weights,
-            &[3, 3],
-            &[true, true],
-        );
+        let pairs = table_correlations(&[a, b], &weights, &[3, 3], &[true, true]);
         assert_eq!(pairs.len(), 1);
         assert!(
             (pairs[0].correlation - 1.0).abs() < 1e-9,
@@ -620,19 +627,42 @@ mod tests {
         let agree_heavy = vec![100.0, 100.0, 100.0, 100.0, 1.0, 1.0, 1.0, 1.0];
         let disagree_heavy = vec![1.0, 1.0, 1.0, 1.0, 100.0, 100.0, 100.0, 100.0];
 
-        let hi = table_correlations(&[a.clone(), b.clone()], &agree_heavy, &[2, 2], &[true, true])
-            [0].correlation;
-        let lo = table_correlations(&[a, b], &disagree_heavy, &[2, 2], &[true, true])[0].correlation;
+        let hi = table_correlations(
+            &[a.clone(), b.clone()],
+            &agree_heavy,
+            &[2, 2],
+            &[true, true],
+        )[0]
+        .correlation;
+        let lo =
+            table_correlations(&[a, b], &disagree_heavy, &[2, 2], &[true, true])[0].correlation;
 
         // Both are lopsided the same way, just in opposite directions, so the magnitudes
         // match; what matters is that reweighting moves the measure at all.
-        assert!(hi > 0.9, "heavily agreeing rows should read as correlated, got {}", hi);
-        assert!(lo > 0.9, "heavily disagreeing rows are also predictable, got {}", lo);
+        assert!(
+            hi > 0.9,
+            "heavily agreeing rows should read as correlated, got {}",
+            hi
+        );
+        assert!(
+            lo > 0.9,
+            "heavily disagreeing rows are also predictable, got {}",
+            lo
+        );
 
         let balanced = vec![1.0; 8];
-        let mid = table_correlations(&[vec![0, 1, 0, 1, 0, 1, 0, 1], vec![0, 1, 0, 1, 1, 0, 1, 0]],
-                                     &balanced, &[2, 2], &[true, true])[0].correlation;
-        assert!(mid < 1e-9, "balanced agreement and disagreement cancel, got {}", mid);
+        let mid = table_correlations(
+            &[vec![0, 1, 0, 1, 0, 1, 0, 1], vec![0, 1, 0, 1, 1, 0, 1, 0]],
+            &balanced,
+            &[2, 2],
+            &[true, true],
+        )[0]
+        .correlation;
+        assert!(
+            mid < 1e-9,
+            "balanced agreement and disagreement cancel, got {}",
+            mid
+        );
     }
 
     /// Locked tables, single-row tables and one-table models have no pair to report.

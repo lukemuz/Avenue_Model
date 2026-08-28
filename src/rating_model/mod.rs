@@ -1,22 +1,24 @@
-use polars::prelude::*;
-use polars::frame::DataFrame;
-use polars::series::IntoSeries;
-use std::collections::HashMap;
-use serde_json::Value;
-use std::ops::Add;
-use rayon::prelude::*;
-use std::sync::Mutex;
 use polars::error::PolarsError;
+use polars::frame::DataFrame;
+use polars::prelude::*;
+use polars::series::IntoSeries;
+use rayon::prelude::*;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::ops::Add;
+use std::sync::Mutex;
 
 // Internal modules
-mod lgbm_parser;
 mod consolidation;
+mod lgbm_parser;
 
 // Re-export public functions from lgbm_parser
-pub use lgbm_parser::{process_lgbm_trees, build_analysis_tablemodel, build_consolidated_tablemodel};
+pub use lgbm_parser::{
+    build_analysis_tablemodel, build_consolidated_tablemodel, process_lgbm_trees,
+};
 
 // Re-export public functions from consolidation
-pub use consolidation::{expand_and_combine_tables, combine_all_tables};
+pub use consolidation::{combine_all_tables, expand_and_combine_tables};
 
 // Begin Metadata Structures
 
@@ -102,8 +104,8 @@ impl Default for TableSemantics {
 #[derive(Debug, Clone)]
 pub struct TableMetadata {
     pub name: String,
-    pub is_offset: bool,      // Table is fixed, not updated by GLM
-    pub is_updatable: bool,   // Can GLM update this table's factors?
+    pub is_offset: bool,    // Table is fixed, not updated by GLM
+    pub is_updatable: bool, // Can GLM update this table's factors?
     /// How many free parameters this table's rows represent. See [`TableSemantics`].
     pub semantics: TableSemantics,
 }
@@ -122,14 +124,12 @@ impl Default for TableMetadata {
 /// Metadata for individual rows within a RatingTable
 #[derive(Debug, Clone)]
 pub struct RowMetadata {
-    pub is_offset: bool,  // Row is locked, not updated by GLM
+    pub is_offset: bool, // Row is locked, not updated by GLM
 }
 
 impl Default for RowMetadata {
     fn default() -> Self {
-        Self {
-            is_offset: false,
-        }
+        Self { is_offset: false }
     }
 }
 
@@ -142,9 +142,9 @@ enum FeatureType {
 
 #[derive(Debug, Clone)]
 pub enum LinkFunction {
-    Identity,    // for 'regression'
-    Logit,      // for 'binary'
-    Log,        // for 'poisson', 'gamma', 'tweedie'
+    Identity, // for 'regression'
+    Logit,    // for 'binary'
+    Log,      // for 'poisson', 'gamma', 'tweedie'
 }
 
 impl LinkFunction {
@@ -202,7 +202,7 @@ impl From<i32> for FeatureValue {
 pub struct RatingTable {
     pub data: DataFrame,
     // Cache column metadata
-    numeric_columns: HashMap<String, usize>,    // column name -> index
+    numeric_columns: HashMap<String, usize>, // column name -> index
     categorical_columns: HashMap<String, usize>, // column name -> index
     // NEW: Metadata for table and row-level behavior
     pub metadata: TableMetadata,
@@ -222,20 +222,20 @@ impl RatingTable {
             match data.column(col_name).unwrap().dtype() {
                 DataType::Float64 => {
                     numeric_columns.insert(col_name.to_string(), idx);
-                },
+                }
                 DataType::Int32 => {
                     categorical_columns.insert(col_name.to_string(), idx);
-                },
+                }
                 _ => continue,
             }
         }
 
         Self {
-            data:data.clone(),
+            data: data.clone(),
             numeric_columns,
             categorical_columns,
             metadata: TableMetadata::default(),
-            row_metadata: None,  // Lazy initialization - only create if needed
+            row_metadata: None, // Lazy initialization - only create if needed
         }
     }
 
@@ -248,7 +248,9 @@ impl RatingTable {
         // ⭐ OPTIMIZATION: Pre-extract and cache input values + column references
         // CRITICAL: Iterate once to ensure consistent ordering between inputs and columns
         let mut categorical_inputs = Vec::with_capacity(self.categorical_columns.len());
-        let categorical_columns_vec: Vec<_> = self.categorical_columns.iter()
+        let categorical_columns_vec: Vec<_> = self
+            .categorical_columns
+            .iter()
             .map(|(col_name, &col_idx)| {
                 // Build inputs vector in the same iteration to guarantee order consistency
                 if let Some(FeatureValue::Categorical(input_cat)) = feature_values.get(col_name) {
@@ -262,7 +264,9 @@ impl RatingTable {
             .collect();
 
         let mut numeric_inputs = Vec::with_capacity(self.numeric_columns.len());
-        let numeric_columns_vec: Vec<_> = self.numeric_columns.iter()
+        let numeric_columns_vec: Vec<_> = self
+            .numeric_columns
+            .iter()
             .map(|(col_name, &col_idx)| {
                 // Build inputs vector in the same iteration to guarantee order consistency
                 if let Some(FeatureValue::Numeric(input_val)) = feature_values.get(col_name) {
@@ -286,9 +290,7 @@ impl RatingTable {
             // Check categorical features first
             for (idx, input_cat_opt) in categorical_inputs.iter().enumerate() {
                 if let Some(input_cat) = input_cat_opt {
-                    let col_val = unsafe {
-                        categorical_columns_vec[idx].get_unchecked(i)
-                    };
+                    let col_val = unsafe { categorical_columns_vec[idx].get_unchecked(i) };
 
                     if let Some(table_cat) = col_val {
                         if table_cat != -999 && table_cat != *input_cat {
@@ -309,9 +311,7 @@ impl RatingTable {
             // Check numeric features with cached column references
             for (idx, input_val_opt) in numeric_inputs.iter().enumerate() {
                 if let Some(input_val) = input_val_opt {
-                    let col_val = unsafe {
-                        numeric_columns_vec[idx].get_unchecked(i)
-                    };
+                    let col_val = unsafe { numeric_columns_vec[idx].get_unchecked(i) };
 
                     if let Some(threshold) = col_val {
                         if input_val > &threshold {
@@ -344,7 +344,11 @@ impl RatingTable {
     pub fn get_rating_factor(&self, row: usize) -> f64 {
         let rating_col = self.data.column("Rating_Factor").unwrap();
         unsafe {
-            rating_col.f64().unwrap().get_unchecked(row).unwrap_or(f64::NAN)
+            rating_col
+                .f64()
+                .unwrap()
+                .get_unchecked(row)
+                .unwrap_or(f64::NAN)
         }
     }
 
@@ -354,8 +358,8 @@ impl RatingTable {
             Some(row) => {
                 // Get rating factor from the matching row
                 self.get_rating_factor(row)
-            },
-            None => f64::NAN
+            }
+            None => f64::NAN,
         }
     }
 
@@ -364,7 +368,10 @@ impl RatingTable {
 
         // Create temporary row numbers for joining
         let n_rows = df.height();
-        let temp_row_numbers = Series::new("row_number".into(), (0..n_rows).map(|x| x as i32).collect::<Vec<i32>>());
+        let temp_row_numbers = Series::new(
+            "row_number".into(),
+            (0..n_rows).map(|x| x as i32).collect::<Vec<i32>>(),
+        );
         let df_with_rownums = df.with_column(temp_row_numbers)?;
 
         let mut row_number = row_nums.clone();
@@ -372,8 +379,19 @@ impl RatingTable {
         let out_df = DataFrame::new(vec![row_number.into()])?;
 
         // join using temporary row numbers
-        let joined = out_df.join(&df_with_rownums, ["row_number"], ["row_number"], JoinArgs::new(JoinType::Left), None)?;
-        Ok(joined.column("Rating_Factor")?.f64()?.into_iter().flatten().collect())
+        let joined = out_df.join(
+            &df_with_rownums,
+            ["row_number"],
+            ["row_number"],
+            JoinArgs::new(JoinType::Left),
+            None,
+        )?;
+        Ok(joined
+            .column("Rating_Factor")?
+            .f64()?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     pub fn predict_batch(&self, df: &DataFrame) -> Vec<f64> {
@@ -383,21 +401,18 @@ impl RatingTable {
         const ROW_PARALLEL_THRESHOLD: usize = 10;
         let n_rows = df.height();
         if n_rows > ROW_PARALLEL_THRESHOLD {
-            (0..n_rows).into_par_iter()
-                .map(|row_idx| {
-                    match self.extract_row_features(df, row_idx) {
-                        Ok(features) => self.predict(&features),
-                        Err(_) => f64::NAN,
-                    }
+            (0..n_rows)
+                .into_par_iter()
+                .map(|row_idx| match self.extract_row_features(df, row_idx) {
+                    Ok(features) => self.predict(&features),
+                    Err(_) => f64::NAN,
                 })
                 .collect()
         } else {
             (0..n_rows)
-                .map(|row_idx| {
-                    match self.extract_row_features(df, row_idx) {
-                        Ok(features) => self.predict(&features),
-                        Err(_) => f64::NAN,
-                    }
+                .map(|row_idx| match self.extract_row_features(df, row_idx) {
+                    Ok(features) => self.predict(&features),
+                    Err(_) => f64::NAN,
                 })
                 .collect()
         }
@@ -414,8 +429,10 @@ impl RatingTable {
             .f64()
             .unwrap()
             .apply(|x| match x {
-                Some(val) => Some((val * 10f64.powi(num_decimals)).round() / 10f64.powi(num_decimals)),
-                None => None
+                Some(val) => {
+                    Some((val * 10f64.powi(num_decimals)).round() / 10f64.powi(num_decimals))
+                }
+                None => None,
             })
             .into_series();
 
@@ -429,22 +446,36 @@ impl RatingTable {
     #[inline]
     fn has_all_required_features(&self, feature_values: &HashMap<String, FeatureValue>) -> bool {
         // Check that all features required by the table are present in the input
-        self.numeric_columns.keys().all(|k| feature_values.contains_key(k)) &&
-        self.categorical_columns.keys().all(|k| feature_values.contains_key(k))
+        self.numeric_columns
+            .keys()
+            .all(|k| feature_values.contains_key(k))
+            && self
+                .categorical_columns
+                .keys()
+                .all(|k| feature_values.contains_key(k))
     }
 
     // Add new method to get feature info
     pub fn get_feature_info(&self) -> HashMap<String, DataType> {
-        self.data.get_column_names().iter()
+        self.data
+            .get_column_names()
+            .iter()
             .filter(|&name| *name != "Rating_Factor")
             .map(|name| {
-                (name.to_string(), self.data.column(name).unwrap().dtype().clone())
+                (
+                    name.to_string(),
+                    self.data.column(name).unwrap().dtype().clone(),
+                )
             })
             .collect()
     }
 
     // Add extract_row_features method to RatingTable
-    fn extract_row_features(&self, df: &DataFrame, row_idx: usize) -> Result<HashMap<String, FeatureValue>, PolarsError> {
+    fn extract_row_features(
+        &self,
+        df: &DataFrame,
+        row_idx: usize,
+    ) -> Result<HashMap<String, FeatureValue>, PolarsError> {
         let mut feature_values = HashMap::new();
 
         for col_name in df.get_column_names() {
@@ -454,12 +485,13 @@ impl RatingTable {
                     if let Some(value) = column.f64()?.get(row_idx) {
                         feature_values.insert(col_name.to_string(), FeatureValue::Numeric(value));
                     }
-                },
+                }
                 DataType::Int32 => {
                     if let Some(value) = column.i32()?.get(row_idx) {
-                        feature_values.insert(col_name.to_string(), FeatureValue::Categorical(value));
+                        feature_values
+                            .insert(col_name.to_string(), FeatureValue::Categorical(value));
                     }
-                },
+                }
                 _ => continue,
             }
         }
@@ -469,11 +501,12 @@ impl RatingTable {
 
     pub fn one_way_analysis_table(
         &self,
-        df: &DataFrame,  // ⭐ REFERENCE
+        df: &DataFrame, // ⭐ REFERENCE
         target_column: &str,
-        weight_column: Option<&str>
+        weight_column: Option<&str>,
     ) -> Result<DataFrame, PolarsError> {
-        crate::analysis::one_way_analysis_table(self, df, target_column, weight_column)  // ⭐ NO CLONE
+        crate::analysis::one_way_analysis_table(self, df, target_column, weight_column)
+        // ⭐ NO CLONE
     }
 
     // NEW: Offset-related methods
@@ -489,10 +522,7 @@ impl RatingTable {
     pub fn set_row_offset(&mut self, row_idx: usize, is_offset: bool) {
         // Lazy initialization of row metadata
         if self.row_metadata.is_none() {
-            self.row_metadata = Some(vec![
-                RowMetadata::default();
-                self.data.height()
-            ]);
+            self.row_metadata = Some(vec![RowMetadata::default(); self.data.height()]);
         }
 
         if row_idx < self.data.height() {
@@ -566,8 +596,11 @@ impl RatingTable {
                 format!(
                     "Cannot make {} a variate: got {} values for {} rows. Supply one value \
                      per row, in row order.",
-                    label, values.len(), n_rows
-                ).into(),
+                    label,
+                    values.len(),
+                    n_rows
+                )
+                .into(),
             ));
         }
 
@@ -580,7 +613,8 @@ impl RatingTable {
                          open-ended top bin, choose a representative value such as the \
                          exposure-weighted mean.",
                         label, v, i
-                    ).into(),
+                    )
+                    .into(),
                 ));
             }
         }
@@ -591,7 +625,8 @@ impl RatingTable {
                     "Cannot make {} a variate of degree 0: that is a constant, which the \
                      intercept already carries.",
                     label
-                ).into(),
+                )
+                .into(),
             ));
         }
         if degree > MAX_VARIATE_DEGREE {
@@ -601,7 +636,8 @@ impl RatingTable {
                      polynomials oscillate between the points they pass through, which is \
                      the opposite of what a variate is for.",
                     label, degree, MAX_VARIATE_DEGREE
-                ).into(),
+                )
+                .into(),
             ));
         }
 
@@ -614,7 +650,8 @@ impl RatingTable {
                     "Cannot make {} a variate: all {} values are {}, so there is no variation \
                      to fit a curve through and no slope to estimate.",
                     label, n_rows, values[0]
-                ).into(),
+                )
+                .into(),
             ));
         }
         if distinct.len() <= degree {
@@ -623,8 +660,13 @@ impl RatingTable {
                     "Cannot make {} a variate of degree {}: its values take only {} distinct \
                      value(s), so a degree-{} polynomial already passes through every row and \
                      the higher terms are not identified. Use degree {} or lower.",
-                    label, degree, distinct.len(), distinct.len() - 1, distinct.len() - 1
-                ).into(),
+                    label,
+                    degree,
+                    distinct.len(),
+                    distinct.len() - 1,
+                    distinct.len() - 1
+                )
+                .into(),
             ));
         }
 
@@ -635,7 +677,8 @@ impl RatingTable {
                      from the fitted curve, so pinning a single row would break it. Lock the \
                      whole table with as_offset() instead.",
                     label
-                ).into(),
+                )
+                .into(),
             ));
         }
 
@@ -757,24 +800,41 @@ impl RatingModel {
 
     fn get_link_from_model_json(model_json: &str) -> Result<LinkFunction, serde_json::Error> {
         let model_json: Value = serde_json::from_str(model_json)?;
-        let objective = model_json.get("objective")
+        let objective = model_json
+            .get("objective")
             .and_then(|v| v.as_str())
             .unwrap_or("regression");
         Ok(LinkFunction::from_objective(objective))
     }
 
     //Constructor method from lgbm json
-    pub fn from_lgbm_json(model_json: &str, consolidation_level: &str) -> Result<Self, PolarsError> {
-        let tables = lgbm_parser::process_lgbm_trees(model_json).map_err(|e| PolarsError::ComputeError(format!("Error processing trees: {}", e).into()))?;
-        let link_function = Self::get_link_from_model_json(model_json).map_err(|e| PolarsError::ComputeError(format!("Error getting link function: {}", e).into()))?;
+    pub fn from_lgbm_json(
+        model_json: &str,
+        consolidation_level: &str,
+    ) -> Result<Self, PolarsError> {
+        let tables = lgbm_parser::process_lgbm_trees(model_json).map_err(|e| {
+            PolarsError::ComputeError(format!("Error processing trees: {}", e).into())
+        })?;
+        let link_function = Self::get_link_from_model_json(model_json).map_err(|e| {
+            PolarsError::ComputeError(format!("Error getting link function: {}", e).into())
+        })?;
 
         match consolidation_level.to_lowercase().as_str() {
-            "max" => Ok(lgbm_parser::build_consolidated_tablemodel(tables, link_function)),
-            "analysis" => Ok(lgbm_parser::build_analysis_tablemodel(model_json, link_function)?),
+            "max" => Ok(lgbm_parser::build_consolidated_tablemodel(
+                tables,
+                link_function,
+            )),
+            "analysis" => Ok(lgbm_parser::build_analysis_tablemodel(
+                model_json,
+                link_function,
+            )?),
             _ => Err(PolarsError::ComputeError(
-                format!("Invalid consolidation_level '{}'. Must be 'max' or 'analysis'",
-                    consolidation_level).into()
-            ))
+                format!(
+                    "Invalid consolidation_level '{}'. Must be 'max' or 'analysis'",
+                    consolidation_level
+                )
+                .into(),
+            )),
         }
     }
 
@@ -783,12 +843,12 @@ impl RatingModel {
         tables: Vec<DataFrame>,
         link_function: &str,
         feature_columns: Option<Vec<String>>,
-        existing_row_number_col: Option<&str>
+        existing_row_number_col: Option<&str>,
     ) -> Result<Self, PolarsError> {
-
         let link_function = LinkFunction::from_objective(link_function);
 
-        let rating_tables = tables.into_iter()
+        let rating_tables = tables
+            .into_iter()
             .map(|df| {
                 // If feature columns are specified, select only those plus Rating_Factor
                 let filtered_df = if let Some(features) = &feature_columns {
@@ -836,15 +896,19 @@ impl RatingModel {
             panic!("Feature validation failed: {}", err);
         }
 
-        let adjustment: f64 = self.tables.iter().enumerate()
-            .map(|(i,table)| {
-                let converted: HashMap<_, _> = feature_values.iter()
+        let adjustment: f64 = self
+            .tables
+            .iter()
+            .enumerate()
+            .map(|(i, table)| {
+                let converted: HashMap<_, _> = feature_values
+                    .iter()
                     .filter_map(|(k, &v)| {
                         if let Ok(col) = table.data.column(k) {
                             let feature_value = match col.dtype() {
                                 DataType::Int32 => FeatureValue::Categorical(v as i32),
                                 DataType::Float64 => FeatureValue::Numeric(v),
-                                _ => return None
+                                _ => return None,
                             };
                             Some((k.clone(), feature_value))
                         } else {
@@ -861,23 +925,36 @@ impl RatingModel {
         self.link_function.inverse(adjustment)
     }
 
-
     pub fn predict_linear(&self, df: &DataFrame) -> Result<Vec<f64>, PolarsError> {
         // Predicts values without applying the inverse link function
 
         // Validate DataFrame columns
-        let required_features: HashMap<String, DataType> = self.tables[1..].iter()
+        let required_features: HashMap<String, DataType> = self.tables[1..]
+            .iter()
             .flat_map(|table| table.get_feature_info())
             .collect();
 
         // Check for missing columns
-        let missing_cols: Vec<_> = required_features.keys()
-            .filter(|col| !df.get_column_names().iter().any(|c| c.as_str() == col.as_str()))
+        let missing_cols: Vec<_> = required_features
+            .keys()
+            .filter(|col| {
+                !df.get_column_names()
+                    .iter()
+                    .any(|c| c.as_str() == col.as_str())
+            })
             .collect();
 
         if !missing_cols.is_empty() {
             return Err(PolarsError::ComputeError(
-                format!("Missing required columns: {}", missing_cols.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")).into()
+                format!(
+                    "Missing required columns: {}",
+                    missing_cols
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+                .into(),
             ));
         }
 
@@ -886,8 +963,13 @@ impl RatingModel {
             let df_col = df.column(col)?;
             if df_col.dtype() != expected_type {
                 return Err(PolarsError::ComputeError(
-                    format!("Column '{}' has type {:?}, expected {:?}",
-                        col, df_col.dtype(), expected_type).into()
+                    format!(
+                        "Column '{}' has type {:?}, expected {:?}",
+                        col,
+                        df_col.dtype(),
+                        expected_type
+                    )
+                    .into(),
                 ));
             }
         }
@@ -901,30 +983,35 @@ impl RatingModel {
 
         let error_holder = Mutex::new(None);
 
-        let predictions: Vec<f64> = match (n_rows > ROW_PARALLEL_THRESHOLD, n_tables > TABLE_PARALLEL_THRESHOLD) {
+        let predictions: Vec<f64> = match (
+            n_rows > ROW_PARALLEL_THRESHOLD,
+            n_tables > TABLE_PARALLEL_THRESHOLD,
+        ) {
             (true, false) => {
                 // Many rows, few tables - parallelize rows only
-                (0..n_rows).into_par_iter()
+                (0..n_rows)
+                    .into_par_iter()
                     .map(|row_idx| self.predict_row_sequential(df, row_idx, &error_holder))
                     .collect()
-            },
+            }
             (false, true) => {
                 // Few rows, many tables - parallelize tables only
-                (0..n_rows).map(|row_idx| {
-                    self.predict_row_parallel(df, row_idx, &error_holder)
-                }).collect()
-            },
-            (true, true) => {
-                // Many of both - parallelize both
-                (0..n_rows).into_par_iter()
+                (0..n_rows)
                     .map(|row_idx| self.predict_row_parallel(df, row_idx, &error_holder))
                     .collect()
-            },
+            }
+            (true, true) => {
+                // Many of both - parallelize both
+                (0..n_rows)
+                    .into_par_iter()
+                    .map(|row_idx| self.predict_row_parallel(df, row_idx, &error_holder))
+                    .collect()
+            }
             (false, false) => {
                 // Few of both - no parallelization
-                (0..n_rows).map(|row_idx| {
-                    self.predict_row_sequential(df, row_idx, &error_holder)
-                }).collect()
+                (0..n_rows)
+                    .map(|row_idx| self.predict_row_sequential(df, row_idx, &error_holder))
+                    .collect()
             }
         };
 
@@ -943,29 +1030,45 @@ impl RatingModel {
     }
 
     pub fn round_rating_factors(&self, num_decimals: i32) -> RatingModel {
-        RatingModel::new(self.tables.iter().map(|t| t.round_rating_factor(num_decimals)).collect(), self.link_function.clone())
+        RatingModel::new(
+            self.tables
+                .iter()
+                .map(|t| t.round_rating_factor(num_decimals))
+                .collect(),
+            self.link_function.clone(),
+        )
     }
 
     pub fn validate_features(&self, features: &HashMap<String, f64>) -> Result<(), String> {
         // Collect all unique features and their types across all tables
         let mut required_features: HashMap<String, DataType> = HashMap::new();
 
-        for table in &self.tables[1..] { // Skip mean table
+        for table in &self.tables[1..] {
+            // Skip mean table
             for (feat, dtype) in table.get_feature_info() {
                 required_features.entry(feat).or_insert(dtype);
             }
         }
 
         // Check if all required features are present
-        let missing_features: Vec<_> = required_features.keys()
+        let missing_features: Vec<_> = required_features
+            .keys()
             .filter(|feat| !features.contains_key(*feat))
             .collect();
 
         if !missing_features.is_empty() {
             return Err(format!(
                 "Missing required features: {}. Required features are: {}",
-                missing_features.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
-                required_features.keys().cloned().collect::<Vec<_>>().join(", ")
+                missing_features
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                required_features
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
 
@@ -980,11 +1083,11 @@ impl RatingModel {
                             feat, value
                         ));
                     }
-                },
+                }
                 DataType::Float64 => {
                     // All f64 values are valid
                     continue;
-                },
+                }
                 _ => {
                     return Err(format!(
                         "Unsupported data type {:?} for feature '{}'",
@@ -998,11 +1101,20 @@ impl RatingModel {
     }
 
     pub fn apply_link_function(&self, linear_predictions: Vec<f64>) -> Vec<f64> {
-        linear_predictions.par_iter().map(|v| self.link_function.inverse(*v)).collect::<Vec<f64>>()
+        linear_predictions
+            .par_iter()
+            .map(|v| self.link_function.inverse(*v))
+            .collect::<Vec<f64>>()
     }
 
-    pub fn one_way_analysis(&self, df: &DataFrame, target_column: &str, weight_column: Option<&str>) -> Result<Vec<DataFrame>, PolarsError> {
-        crate::analysis::one_way_analysis(self, df, target_column, weight_column)  // ⭐ NO CLONE
+    pub fn one_way_analysis(
+        &self,
+        df: &DataFrame,
+        target_column: &str,
+        weight_column: Option<&str>,
+    ) -> Result<Vec<DataFrame>, PolarsError> {
+        crate::analysis::one_way_analysis(self, df, target_column, weight_column)
+        // ⭐ NO CLONE
     }
 
     // NEW: Offset-related methods
@@ -1012,19 +1124,25 @@ impl RatingModel {
         self.tables.push(table.as_offset());
     }
 
-    fn predict_row_sequential(&self, df: &DataFrame, row_idx: usize,
-                            error_holder: &Mutex<Option<PolarsError>>) -> f64 {
+    fn predict_row_sequential(
+        &self,
+        df: &DataFrame,
+        row_idx: usize,
+        error_holder: &Mutex<Option<PolarsError>>,
+    ) -> f64 {
         if error_holder.lock().unwrap().is_some() {
             return 0.0;
         }
 
         match self.tables[0].extract_row_features(df, row_idx) {
             Ok(feature_map) => {
-                let adjustment: f64 = self.tables.iter()
+                let adjustment: f64 = self
+                    .tables
+                    .iter()
                     .map(|table| table.predict(&feature_map))
                     .sum();
                 adjustment
-            },
+            }
             Err(e) => {
                 handle_error(error_holder, row_idx, e);
                 0.0
@@ -1032,19 +1150,25 @@ impl RatingModel {
         }
     }
 
-    fn predict_row_parallel(&self, df: &DataFrame, row_idx: usize,
-                          error_holder: &Mutex<Option<PolarsError>>) -> f64 {
+    fn predict_row_parallel(
+        &self,
+        df: &DataFrame,
+        row_idx: usize,
+        error_holder: &Mutex<Option<PolarsError>>,
+    ) -> f64 {
         if error_holder.lock().unwrap().is_some() {
             return 0.0;
         }
 
         match self.tables[0].extract_row_features(df, row_idx) {
             Ok(feature_map) => {
-                let adjustment: f64 = self.tables.par_iter()
+                let adjustment: f64 = self
+                    .tables
+                    .par_iter()
                     .map(|table| table.predict(&feature_map))
                     .sum();
                 adjustment
-            },
+            }
             Err(e) => {
                 handle_error(error_holder, row_idx, e);
                 0.0
@@ -1067,17 +1191,20 @@ impl RatingModel {
         // First check that link functions match
         if self.link_function.to_string() != other.link_function.to_string() {
             return Err(PolarsError::ComputeError(
-                format!("Cannot combine models with different link functions: {} and {}",
+                format!(
+                    "Cannot combine models with different link functions: {} and {}",
                     self.link_function.to_string(),
                     other.link_function.to_string()
-                ).into()
+                )
+                .into(),
             ));
         }
 
         // Sum the mean tables if they exist
         let combined_mean = {
             let mean1 = if !self.tables.is_empty() {
-                self.tables[0].data
+                self.tables[0]
+                    .data
                     .column("Rating_Factor")
                     .ok()
                     .and_then(|col| col.f64().ok())
@@ -1088,7 +1215,8 @@ impl RatingModel {
             };
 
             let mean2 = if !other.tables.is_empty() {
-                other.tables[0].data
+                other.tables[0]
+                    .data
                     .column("Rating_Factor")
                     .ok()
                     .and_then(|col| col.f64().ok())
@@ -1098,9 +1226,14 @@ impl RatingModel {
                 0.0
             };
 
-            RatingTable ::new(
-                DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![mean1 + mean2]).into()]).unwrap(),
-                None
+            RatingTable::new(
+                DataFrame::new(vec![Series::new(
+                    "Rating_Factor".into(),
+                    vec![mean1 + mean2],
+                )
+                .into()])
+                .unwrap(),
+                None,
             )
         };
 
@@ -1119,7 +1252,10 @@ impl RatingModel {
         // Use existing combine_all_tables function
         combined_tables.extend(consolidation::combine_all_tables(tables_to_combine));
 
-        Ok(RatingModel::new(combined_tables, self.link_function.clone()))
+        Ok(RatingModel::new(
+            combined_tables,
+            self.link_function.clone(),
+        ))
     }
 
     /// Combines multiple RatingModels into a single consolidated model
@@ -1138,7 +1274,7 @@ fn handle_error(error_holder: &Mutex<Option<PolarsError>>, row_idx: usize, e: Po
     let mut error = error_holder.lock().unwrap();
     if error.is_none() {
         *error = Some(PolarsError::ComputeError(
-            format!("Error processing row {}: {}", row_idx, e).into()
+            format!("Error processing row {}: {}", row_idx, e).into(),
         ));
     }
 }

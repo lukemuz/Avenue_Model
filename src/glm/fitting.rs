@@ -1,11 +1,11 @@
-use polars::prelude::*;
-use rayon::prelude::*;
-use crate::rating_model::{variate_basis_params, RatingModel, RatingTable, TableSemantics};
 use super::inference::{compute_inference, solve_spd, GLMInference};
 use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
-use super::penalty::{PenaltyPlan, TablePenalty, ANCHOR_ROW};
+use super::penalty::{soft_threshold, PenaltyPlan, TablePenalty, ANCHOR_ROW};
 use super::redundancy::{collective_strength, table_correlations, TablePair};
+use crate::rating_model::{variate_basis_params, RatingModel, RatingTable, TableSemantics};
+use polars::prelude::*;
+use rayon::prelude::*;
 
 /// How the fitted tables are anchored once the fit has converged.
 ///
@@ -37,9 +37,28 @@ impl Default for Normalization {
     }
 }
 
+/// Which numerical strategy fits the GLM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GLMSolver {
+    /// Prefer the global solver and fall back to table descent when the model is not
+    /// supported by the global path. This is the default.
+    Auto,
+    /// Avenue's low-memory block coordinate descent over rating tables.
+    Table,
+    /// Global IRLS over a compact treatment-coded Gram matrix.
+    Global,
+}
+
+impl Default for GLMSolver {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 /// Options for GLM fitting
 #[derive(Debug, Clone)]
 pub struct GLMOptions {
+    pub solver: GLMSolver,
     pub max_iterations: usize,
     /// Convergence threshold on the largest absolute score component, scaled by the
     /// total prior weight.
@@ -98,16 +117,17 @@ pub struct GLMOptions {
     /// The share of `alpha` spent on the L1 term: 0 is a pure ridge, 1 a pure lasso,
     /// anything between an elastic net.
     ///
-    /// An L1 component costs nothing extra to fit - a soft threshold replaces a division
-    /// in a step this fitter already takes per level - but it does turn the joint solve
-    /// for near-aliased pairs off, because that solve has no proximal form. See
-    /// [`update_pair`].
+    /// With the table solver, a soft threshold replaces a division in a step already
+    /// taken per level, but L1 disables the near-aliased pair solve because that solve
+    /// has no proximal form. The global solver instead performs coordinate descent on
+    /// its Gram matrix.
     pub l1_ratio: f64,
 }
 
 impl Default for GLMOptions {
     fn default() -> Self {
         Self {
+            solver: GLMSolver::default(),
             max_iterations: 100,
             // On the score scale. Tighter than glum's 1e-4 default because IRLS
             // converges quadratically and can afford a loose threshold - one more
@@ -309,7 +329,8 @@ impl<'a> FitContext<'a> {
     }
 
     fn deviance(&self, means: &[f64]) -> f64 {
-        self.loss_fn.total_deviance(self.target, means, self.weights)
+        self.loss_fn
+            .total_deviance(self.target, means, self.weights)
     }
 
     /// What the fit actually minimises: the deviance plus the penalty, on the deviance
@@ -324,12 +345,7 @@ impl<'a> FitContext<'a> {
         self.deviance(means) + self.penalty.map_or(0.0, |p| p.total(factors))
     }
 
-    fn max_score(
-        &self,
-        factors: &[Vec<f64>],
-        means: &[f64],
-        scratch: &mut [Vec<f64>],
-    ) -> f64 {
+    fn max_score(&self, factors: &[Vec<f64>], means: &[f64], scratch: &mut [Vec<f64>]) -> f64 {
         max_abs_score(
             self.loss_fn,
             self.target,
@@ -579,8 +595,7 @@ pub fn fit_glm(
     offset_col: Option<&str>,
     options: GLMOptions,
 ) -> Result<RatingModel, PolarsError> {
-    fit_glm_with_diagnostics(model, df, target_col, weight_col, offset_col, options)
-        .map(|(m, _)| m)
+    fit_glm_with_diagnostics(model, df, target_col, weight_col, offset_col, options).map(|(m, _)| m)
 }
 
 /// As [`fit_glm`], but also returns convergence and deviance information.
@@ -617,7 +632,11 @@ pub fn fit_glm_with_diagnostics(
     }
     if options.alpha < 0.0 || !options.alpha.is_finite() {
         return Err(PolarsError::ComputeError(
-            format!("alpha must be finite and not negative, got {}", options.alpha).into(),
+            format!(
+                "alpha must be finite and not negative, got {}",
+                options.alpha
+            )
+            .into(),
         ));
     }
     if !(0.0..=1.0).contains(&options.l1_ratio) {
@@ -637,7 +656,11 @@ pub fn fit_glm_with_diagnostics(
             let w = read_f64_column(df, col, "weight")?;
             if let Some(bad) = w.iter().position(|v| *v < 0.0) {
                 return Err(PolarsError::ComputeError(
-                    format!("Weight column '{}' has a negative value at row {}", col, bad).into(),
+                    format!(
+                        "Weight column '{}' has a negative value at row {}",
+                        col, bad
+                    )
+                    .into(),
                 ));
             }
             w
@@ -746,6 +769,51 @@ pub fn fit_glm_with_diagnostics(
         &table_shapes,
         &is_variate,
     );
+
+    let global_supported = options.normalization == Normalization::BaseLevel
+        && !factors.is_empty()
+        && factors[0].len() == 1
+        && updatable[0]
+        && factors.iter().enumerate().all(|(t, rows)| {
+            !updatable[t]
+                || (variate_values[t].is_none()
+                    && !(0..rows.len()).any(|r| working_model.tables[t].is_row_offset(r)))
+        })
+        && 1 + factors
+            .iter()
+            .enumerate()
+            .skip(1)
+            .map(|(t, rows)| {
+                if updatable[t] {
+                    (1..rows.len())
+                        .filter(|&r| row_exposure[t][r] > 0.0)
+                        .count()
+                } else {
+                    0
+                }
+            })
+            .sum::<usize>()
+            <= 6000;
+
+    if options.solver == GLMSolver::Global
+        || (options.solver == GLMSolver::Auto && global_supported)
+    {
+        return fit_global_irls(
+            working_model,
+            loss_fn,
+            target,
+            weights,
+            offset,
+            matches,
+            factors,
+            updatable,
+            variate_values,
+            row_exposure,
+            penalty,
+            null_deviance,
+            options,
+        );
+    }
 
     let pairable: Vec<bool> = (0..n_tables)
         .map(|t| updatable[t] && variate_values[t].is_none())
@@ -1083,7 +1151,16 @@ fn update_table(
 ) {
     if let TableSemantics::Variate { values, degree } = table.semantics() {
         update_variate_table(
-            t, factors, eta, means, table_matches, target, weights, offset, values, *degree,
+            t,
+            factors,
+            eta,
+            means,
+            table_matches,
+            target,
+            weights,
+            offset,
+            values,
+            *degree,
             loss_fn,
         );
         return;
@@ -1126,7 +1203,14 @@ fn update_table(
         denom.copy_from_slice(&par_denom);
     } else {
         accumulate_block(
-            table_matches, target, weights, means, power, loss_fn, numer, denom,
+            table_matches,
+            target,
+            weights,
+            means,
+            power,
+            loss_fn,
+            numer,
+            denom,
         );
     }
 
@@ -1344,6 +1428,489 @@ fn anchor_factor(
         return None;
     }
     Some((old + step.clamp(-step_limit, step_limit)).clamp(-eta_limit, eta_limit))
+}
+
+struct GlobalLayout {
+    columns: Vec<Vec<Option<usize>>>,
+    parameter_rows: Vec<Option<(usize, usize)>>,
+    fitted_tables: Vec<bool>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fit_global_irls(
+    mut model: RatingModel,
+    loss_fn: LossFunction,
+    target: Vec<f64>,
+    weights: Vec<f64>,
+    offset: Vec<f64>,
+    matches: Vec<Vec<u32>>,
+    mut factors: Vec<Vec<f64>>,
+    updatable: Vec<bool>,
+    variate_values: Vec<Option<(Vec<f64>, usize)>>,
+    row_exposure: Vec<Vec<f64>>,
+    penalty: Option<PenaltyPlan>,
+    null_deviance: f64,
+    options: GLMOptions,
+) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
+    if options.normalization != Normalization::BaseLevel {
+        return Err(PolarsError::ComputeError(
+            "The global solver currently requires normalization='base_level'.".into(),
+        ));
+    }
+    if factors.is_empty() || factors[0].len() != 1 || !updatable[0] {
+        return Err(PolarsError::ComputeError(
+            "The global solver requires one updatable intercept row.".into(),
+        ));
+    }
+    for t in 0..factors.len() {
+        if updatable[t] && variate_values[t].is_some() {
+            return Err(PolarsError::ComputeError(
+                "The global solver does not yet support variate tables; use solver='table'.".into(),
+            ));
+        }
+        if updatable[t] && (0..factors[t].len()).any(|r| model.tables[t].is_row_offset(r)) {
+            return Err(PolarsError::ComputeError(
+                "The global solver does not yet support locked rows inside an updatable table; use solver='table'."
+                    .into(),
+            ));
+        }
+    }
+
+    let n_tables = factors.len();
+    let mut columns: Vec<Vec<Option<usize>>> =
+        factors.iter().map(|rows| vec![None; rows.len()]).collect();
+    columns[0][0] = Some(0);
+    let mut parameter_rows = vec![None];
+    for t in 1..n_tables {
+        if !updatable[t] {
+            continue;
+        }
+        for r in 1..factors[t].len() {
+            if row_exposure[t][r] <= 0.0 {
+                continue;
+            }
+            let c = parameter_rows.len();
+            columns[t][r] = Some(c);
+            parameter_rows.push(Some((t, r)));
+        }
+    }
+    let layout = GlobalLayout {
+        columns,
+        parameter_rows,
+        fitted_tables: updatable.clone(),
+    };
+    let p = layout.parameter_rows.len();
+    const MAX_GLOBAL_PARAMETERS: usize = 6000;
+    if p > MAX_GLOBAL_PARAMETERS {
+        return Err(PolarsError::ComputeError(
+            format!(
+                "The global solver needs a dense {p}x{p} Gram matrix, above its limit of \
+                 {MAX_GLOBAL_PARAMETERS} parameters; use solver='table'."
+            )
+            .into(),
+        ));
+    }
+
+    let mut beta = vec![0.0; p];
+    beta[0] = factors[0][0];
+    for t in 1..n_tables {
+        if !updatable[t] {
+            continue;
+        }
+        let base = factors[t][0];
+        beta[0] += base;
+        for r in 1..factors[t].len() {
+            if let Some(c) = layout.columns[t][r] {
+                beta[c] = factors[t][r] - base;
+            }
+        }
+    }
+
+    let mut fixed_eta = vec![0.0; target.len()];
+    for t in 0..n_tables {
+        if updatable[t] {
+            continue;
+        }
+        for (i, m) in matches[t].iter().enumerate() {
+            if *m != NO_MATCH {
+                fixed_eta[i] += factors[t][*m as usize];
+            }
+        }
+    }
+
+    // IRLS is only locally quadratic. Starting a log-link fit at eta=0 means mu=1,
+    // which is catastrophic for a response measured in house prices: the first Gamma
+    // Newton step is hundreds of thousands and line search can spend hundreds of outer
+    // iterations walking it back. The table solver already avoids this through its
+    // exact intercept update. Give a fresh global fit the same closed-form null start.
+    if beta.iter().skip(1).all(|v| *v == 0.0) {
+        let effective_offset: Vec<f64> = offset
+            .iter()
+            .zip(fixed_eta.iter())
+            .map(|(a, b)| a + b)
+            .collect();
+        beta[0] = null_intercept(&loss_fn, &target, &weights, &effective_offset);
+    }
+
+    let mut l1 = vec![0.0; p];
+    let mut l2 = vec![0.0; p];
+    if let Some(plan) = penalty.as_ref() {
+        for c in 1..p {
+            if let Some((t, r)) = layout.parameter_rows[c] {
+                if let Some(term) = plan.row(t, r) {
+                    l1[c] = term.l1;
+                    l2[c] = term.l2;
+                }
+            }
+        }
+    }
+
+    let pairable: Vec<bool> = (0..n_tables)
+        .map(|t| updatable[t] && variate_values[t].is_none())
+        .collect();
+    let correlations = if options.solve_aliased_pairs_jointly {
+        let shapes: Vec<usize> = factors.iter().map(Vec::len).collect();
+        table_correlations(&matches, &weights, &shapes, &pairable)
+    } else {
+        Vec::new()
+    };
+    let table_conditioning = options
+        .solve_aliased_pairs_jointly
+        .then(|| collective_strength(&correlations));
+
+    let mut eta = vec![0.0; target.len()];
+    let mut means = vec![0.0; target.len()];
+    global_refresh(
+        &loss_fn, &beta, &layout, &matches, &fixed_eta, &offset, &mut eta, &mut means,
+    );
+    global_set_factors(&beta, &layout, &mut factors);
+
+    let mut progress = Progress {
+        iterations: 0,
+        converged: false,
+        max_gradient: f64::INFINITY,
+        deviance: f64::INFINITY,
+        sweeps_without_progress: 0,
+        deviance_history: Vec::with_capacity(options.max_iterations),
+        gradient_history: Vec::with_capacity(options.max_iterations),
+        objective_history: Vec::with_capacity(options.max_iterations),
+    };
+    let mut score_scratch: Vec<Vec<f64>> = factors.iter().map(|f| vec![0.0; f.len()]).collect();
+    loop {
+        let (gram, score) = global_quadratic(
+            &loss_fn, &target, &weights, &means, &matches, &updatable, &layout, p,
+        );
+
+        let mut q = score.clone();
+        for j in 0..p {
+            for k in 0..p {
+                q[j] += gram[j * p + k] * beta[k];
+            }
+        }
+        // An early IRLS quadratic is only a local approximation, so solving it to the
+        // final KKT tolerance wastes coordinate cycles. Tighten with the outer residual
+        // (an inexact-Newton forcing sequence), reaching full precision only near the
+        // solution.
+        let final_inner_tolerance = (options.tolerance * 0.01).max(1e-13);
+        let inner_tolerance = final_inner_tolerance.max(
+            (progress.max_gradient * 0.01)
+                .min(1e-5)
+                .max(final_inner_tolerance),
+        );
+        let proposed = if l1.iter().any(|v| *v > 0.0) {
+            solve_gram_cd(&gram, &q, &beta, &l1, &l2, p, inner_tolerance)
+        } else {
+            let mut system = gram.clone();
+            for j in 0..p {
+                system[j * p + j] += l2[j];
+            }
+            solve_spd(&system, &q, p)
+                .unwrap_or_else(|| solve_gram_cd(&gram, &q, &beta, &l1, &l2, p, inner_tolerance))
+        };
+
+        let current_objective = loss_fn.total_deviance(&target, &means, &weights)
+            + penalty.as_ref().map_or(0.0, |plan| plan.total(&factors));
+        let mut scale = 1.0;
+        let mut accepted = false;
+        let mut candidate = beta.clone();
+        for _ in 0..24 {
+            for j in 0..p {
+                candidate[j] = beta[j] + scale * (proposed[j] - beta[j]);
+            }
+            global_set_factors(&candidate, &layout, &mut factors);
+            global_refresh(
+                &loss_fn, &candidate, &layout, &matches, &fixed_eta, &offset, &mut eta, &mut means,
+            );
+            let objective = loss_fn.total_deviance(&target, &means, &weights)
+                + penalty.as_ref().map_or(0.0, |plan| plan.total(&factors));
+            if objective.is_finite()
+                && objective <= current_objective + current_objective.abs() * 1e-12
+            {
+                accepted = true;
+                break;
+            }
+            scale *= 0.5;
+        }
+        if accepted {
+            beta.copy_from_slice(&candidate);
+        } else {
+            global_set_factors(&beta, &layout, &mut factors);
+            global_refresh(
+                &loss_fn, &beta, &layout, &matches, &fixed_eta, &offset, &mut eta, &mut means,
+            );
+        }
+
+        let deviance = loss_fn.total_deviance(&target, &means, &weights);
+        let objective = deviance + penalty.as_ref().map_or(0.0, |plan| plan.total(&factors));
+        let gradient = max_abs_score(
+            &loss_fn,
+            &target,
+            &weights,
+            &means,
+            &matches,
+            &model.tables,
+            &updatable,
+            &row_exposure,
+            &variate_values,
+            &factors,
+            penalty.as_ref(),
+            &mut score_scratch,
+        );
+        if let Status::Stop = progress.record(objective, deviance, gradient, &options) {
+            break;
+        }
+    }
+
+    let mut inference_error = None;
+    let inference = if options.compute_standard_errors {
+        match compute_inference(
+            &loss_fn,
+            &target,
+            &weights,
+            &means,
+            &matches,
+            &factors,
+            &row_exposure,
+            &updatable,
+            &variate_values,
+            options.normalization,
+            penalty.as_ref(),
+        ) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                inference_error = Some(error.to_string());
+                None
+            }
+        }
+    } else {
+        None
+    };
+    for t in 0..n_tables {
+        write_back_factors(&mut model.tables[t], &factors[t])?;
+    }
+    let mut unfitted_rows = Vec::new();
+    for t in 0..n_tables {
+        if !updatable[t] {
+            continue;
+        }
+        for (r, exposure) in row_exposure[t].iter().enumerate() {
+            if *exposure <= 0.0 {
+                unfitted_rows.push((t, r));
+            }
+        }
+    }
+    Ok((
+        model,
+        GLMDiagnostics {
+            iterations: progress.iterations,
+            converged: progress.converged,
+            max_gradient: progress.max_gradient,
+            gradient_history: progress.gradient_history,
+            deviance: progress.deviance,
+            null_deviance,
+            deviance_history: progress.deviance_history,
+            unfitted_rows,
+            table_conditioning,
+            accelerated_steps: 0,
+            inference,
+            inference_error,
+        },
+    ))
+}
+
+fn global_set_factors(beta: &[f64], layout: &GlobalLayout, factors: &mut [Vec<f64>]) {
+    factors[0][0] = beta[0];
+    for t in 1..factors.len() {
+        if !layout.fitted_tables[t] {
+            continue;
+        }
+        factors[t][0] = 0.0;
+        for r in 1..factors[t].len() {
+            if let Some(c) = layout.columns[t][r] {
+                factors[t][r] = beta[c];
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn global_refresh(
+    loss_fn: &LossFunction,
+    beta: &[f64],
+    layout: &GlobalLayout,
+    matches: &[Vec<u32>],
+    fixed_eta: &[f64],
+    offset: &[f64],
+    eta: &mut [f64],
+    means: &mut [f64],
+) {
+    for i in 0..eta.len() {
+        let mut value = fixed_eta[i] + beta[0];
+        for t in 1..matches.len() {
+            let m = matches[t][i];
+            if m != NO_MATCH {
+                if let Some(c) = layout.columns[t][m as usize] {
+                    value += beta[c];
+                }
+            }
+        }
+        eta[i] = value;
+        means[i] = loss_fn.inverse_link(value + offset[i]);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn global_quadratic(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    updatable: &[bool],
+    layout: &GlobalLayout,
+    p: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    let accumulate = |start: usize, end: usize, gram: &mut [f64], score: &mut [f64]| {
+        let mut active = Vec::with_capacity(matches.len());
+        for i in start..end {
+            let prior = weights[i];
+            if !(prior > 0.0) {
+                continue;
+            }
+            active.clear();
+            active.push(0usize);
+            for t in 1..matches.len() {
+                if !updatable[t] {
+                    continue;
+                }
+                let m = matches[t][i];
+                if m != NO_MATCH {
+                    if let Some(c) = layout.columns[t][m as usize] {
+                        active.push(c);
+                    }
+                }
+            }
+            let w = prior * loss_fn.irls_weight(means[i]);
+            let wr = prior * loss_fn.weighted_link_residual(target[i], means[i]);
+            if !w.is_finite() || !(w > 0.0) || !wr.is_finite() {
+                continue;
+            }
+            for (a_pos, &a) in active.iter().enumerate() {
+                score[a] += wr;
+                gram[a * p + a] += w;
+                for &b in active.iter().skip(a_pos + 1) {
+                    gram[a * p + b] += w;
+                    gram[b * p + a] += w;
+                }
+            }
+        }
+    };
+
+    // The global matrix is deliberately bounded, and for the ordinary rating-plan
+    // widths this gives each worker a few hundred KB rather than sharing cache lines.
+    // Below 100k rows the serial loop is faster than allocating and reducing copies.
+    if target.len() >= PARALLEL_ROWS && p <= 1000 && rayon::current_num_threads() > 1 {
+        let workers = rayon::current_num_threads();
+        let chunk = (target.len() / workers).max(1);
+        (0..target.len())
+            .into_par_iter()
+            .step_by(chunk)
+            .map(|start| {
+                let end = (start + chunk).min(target.len());
+                let mut gram = vec![0.0; p * p];
+                let mut score = vec![0.0; p];
+                accumulate(start, end, &mut gram, &mut score);
+                (gram, score)
+            })
+            .reduce(
+                || (vec![0.0; p * p], vec![0.0; p]),
+                |(mut ga, mut sa), (gb, sb)| {
+                    for (a, b) in ga.iter_mut().zip(gb) {
+                        *a += b;
+                    }
+                    for (a, b) in sa.iter_mut().zip(sb) {
+                        *a += b;
+                    }
+                    (ga, sa)
+                },
+            )
+    } else {
+        let mut gram = vec![0.0; p * p];
+        let mut score = vec![0.0; p];
+        accumulate(0, target.len(), &mut gram, &mut score);
+        (gram, score)
+    }
+}
+
+fn solve_gram_cd(
+    gram: &[f64],
+    q: &[f64],
+    start: &[f64],
+    l1: &[f64],
+    l2: &[f64],
+    p: usize,
+    tolerance: f64,
+) -> Vec<f64> {
+    let mut beta = start.to_vec();
+    let mut residual = q.to_vec();
+    for j in 0..p {
+        for k in 0..p {
+            residual[j] -= gram[j * p + k] * beta[k];
+        }
+        residual[j] -= l2[j] * beta[j];
+    }
+    for _ in 0..20_000 {
+        let mut largest = 0.0f64;
+        for j in 0..p {
+            let curvature = gram[j * p + j] + l2[j];
+            if !(curvature > 0.0) {
+                continue;
+            }
+            let partial = residual[j] + curvature * beta[j];
+            let next = if j == 0 {
+                partial / curvature
+            } else {
+                soft_threshold(partial, l1[j]) / curvature
+            };
+            let change = next - beta[j];
+            if change == 0.0 {
+                continue;
+            }
+            beta[j] = next;
+            largest = largest.max(change.abs());
+            for k in 0..p {
+                residual[k] -= gram[k * p + j] * change;
+            }
+            residual[j] -= l2[j] * change;
+        }
+        // Coefficients live on the link scale, so this must not be multiplied by `q`:
+        // `q` grows with the row count and doing so made a large dataset accept a very
+        // loose inner solve, throwing away the whole point of caching the Gram matrix.
+        if largest <= tolerance {
+            break;
+        }
+    }
+    beta
 }
 
 /// The order tables are swept in: most strongly coupled first.
@@ -1676,8 +2243,7 @@ fn update_pair(
             continue;
         }
         let old = factors[t][r];
-        let new = (old + damp(step[r]).clamp(-step_limit, step_limit))
-            .clamp(-eta_limit, eta_limit);
+        let new = (old + damp(step[r]).clamp(-step_limit, step_limit)).clamp(-eta_limit, eta_limit);
         factors[t][r] = new;
         delta_t[r] = new - old;
     }
@@ -1688,8 +2254,8 @@ fn update_pair(
             continue;
         }
         let old = factors[u][s];
-        let new = (old + damp(step[k_t + s]).clamp(-step_limit, step_limit))
-            .clamp(-eta_limit, eta_limit);
+        let new =
+            (old + damp(step[k_t + s]).clamp(-step_limit, step_limit)).clamp(-eta_limit, eta_limit);
         factors[u][s] = new;
         delta_u[s] = new - old;
     }
@@ -2205,7 +2771,12 @@ fn max_abs_score(
                 .par_chunks(chunk)
                 .enumerate()
                 .fold(
-                    || (shape.iter().map(|k| vec![0.0f64; *k]).collect::<Vec<_>>(), 0.0f64),
+                    || {
+                        (
+                            shape.iter().map(|k| vec![0.0f64; *k]).collect::<Vec<_>>(),
+                            0.0f64,
+                        )
+                    },
                     |(mut rows, mut abs), (c, block)| {
                         // `matches` is indexed by table first, so the pass needs the
                         // absolute observation index rather than a chunk-local one.
@@ -2226,7 +2797,12 @@ fn max_abs_score(
                     },
                 )
                 .reduce(
-                    || (shape.iter().map(|k| vec![0.0f64; *k]).collect::<Vec<_>>(), 0.0f64),
+                    || {
+                        (
+                            shape.iter().map(|k| vec![0.0f64; *k]).collect::<Vec<_>>(),
+                            0.0f64,
+                        )
+                    },
                     |(mut rows, abs), (rows2, abs2)| {
                         for (a, b) in rows.iter_mut().zip(rows2.iter()) {
                             for (x, y) in a.iter_mut().zip(b.iter()) {
@@ -2244,8 +2820,9 @@ fn max_abs_score(
         None => {
             let mut total_abs = 0.0f64;
             for i in 0..target.len() {
-                total_abs +=
-                    score_row(i, loss_fn, target, weights, means, matches, updatable, scratch);
+                total_abs += score_row(
+                    i, loss_fn, target, weights, means, matches, updatable, scratch,
+                );
             }
             total_abs
         }
@@ -2303,15 +2880,11 @@ fn max_abs_score(
                         continue;
                     }
                     let g = match (table_penalty, r == ANCHOR_ROW) {
-                        (Some(plan), true) => plan
-                            .row(t, 1)
-                            .map_or(scratch[t][r], |pen| {
-                                pen.anchor_subgradient(scratch[t][r], &base_contrasts)
-                            }),
+                        (Some(plan), true) => plan.row(t, 1).map_or(scratch[t][r], |pen| {
+                            pen.anchor_subgradient(scratch[t][r], &base_contrasts)
+                        }),
                         (Some(plan), false) => match plan.row(t, r) {
-                            Some(pen) => {
-                                pen.subgradient(scratch[t][r], factors[t][r] - anchor)
-                            }
+                            Some(pen) => pen.subgradient(scratch[t][r], factors[t][r] - anchor),
                             None => scratch[t][r],
                         },
                         (None, _) => scratch[t][r],
@@ -2341,7 +2914,10 @@ fn max_abs_score(
 /// Deviance of the best intercept-only fit, used as the reference for `pseudo_r2`.
 fn null_deviance(loss_fn: &LossFunction, target: &[f64], weights: &[f64], offset: &[f64]) -> f64 {
     let beta = null_intercept(loss_fn, target, weights, offset);
-    let means: Vec<f64> = offset.iter().map(|o| loss_fn.inverse_link(beta + o)).collect();
+    let means: Vec<f64> = offset
+        .iter()
+        .map(|o| loss_fn.inverse_link(beta + o))
+        .collect();
     loss_fn.total_deviance(target, &means, weights)
 }
 
@@ -2368,12 +2944,7 @@ const MAX_NULL_ITERATIONS: usize = 50;
 /// (~1e-13 over 678k rows) against a threshold of `1e-14`, so it usually ran its full
 /// 200 passes. On freMTPL2 that was ~490 ms of a ~750 ms fit — twice what the sweeps
 /// themselves cost — to compute a statistic that is only reported.
-fn null_intercept(
-    loss_fn: &LossFunction,
-    target: &[f64],
-    weights: &[f64],
-    offset: &[f64],
-) -> f64 {
+fn null_intercept(loss_fn: &LossFunction, target: &[f64], weights: &[f64], offset: &[f64]) -> f64 {
     let eta_limit = loss_fn.eta_limit();
 
     if let Some(p) = loss_fn.log_link_variance_power() {
@@ -2464,7 +3035,13 @@ fn write_back_factors(table: &mut RatingTable, factors: &[f64]) -> Result<(), Po
 fn read_f64_column(df: &DataFrame, name: &str, role: &str) -> Result<Vec<f64>, PolarsError> {
     let ca = df.column(name)?.f64().map_err(|_| {
         PolarsError::ComputeError(
-            format!("{} column '{}' must be Float64, found {:?}", role, name, df.column(name).unwrap().dtype()).into(),
+            format!(
+                "{} column '{}' must be Float64, found {:?}",
+                role,
+                name,
+                df.column(name).unwrap().dtype()
+            )
+            .into(),
         )
     })?;
 
@@ -2474,7 +3051,11 @@ fn read_f64_column(df: &DataFrame, name: &str, role: &str) -> Result<Vec<f64>, P
             Some(v) if v.is_finite() => out.push(v),
             Some(v) => {
                 return Err(PolarsError::ComputeError(
-                    format!("{} column '{}' has a non-finite value ({}) at row {}", role, name, v, i).into(),
+                    format!(
+                        "{} column '{}' has a non-finite value ({}) at row {}",
+                        role, name, v, i
+                    )
+                    .into(),
                 ))
             }
             None => {
@@ -2504,11 +3085,7 @@ fn validate_matches(
             continue;
         }
         let first = table_matches.iter().position(|m| *m == NO_MATCH).unwrap();
-        let features: Vec<String> = model.tables[t]
-            .get_feature_info()
-            .keys()
-            .cloned()
-            .collect();
+        let features: Vec<String> = model.tables[t].get_feature_info().keys().cloned().collect();
         return Err(PolarsError::ComputeError(
             format!(
                 "Table {} matched no row for {} of {} observations (first at row {}). \
@@ -2516,7 +3093,11 @@ fn validate_matches(
                  those columns are present with the expected dtype, that numeric tables have \
                  a final unbounded (inf) row, and that categorical tables cover every level \
                  or carry a -999 wildcard.",
-                t, unmatched, n_rows, first, features.join(", ")
+                t,
+                unmatched,
+                n_rows,
+                first,
+                features.join(", ")
             )
             .into(),
         ));
@@ -2533,13 +3114,15 @@ fn validate_inputs(
     offset_col: Option<&str>,
 ) -> Result<(), PolarsError> {
     if df.height() == 0 {
-        return Err(PolarsError::ComputeError("Training data has no rows".into()));
+        return Err(PolarsError::ComputeError(
+            "Training data has no rows".into(),
+        ));
     }
 
     // Check target column exists
     if df.column(target_col).is_err() {
         return Err(PolarsError::ColumnNotFound(
-            format!("Target column '{}' not found", target_col).into()
+            format!("Target column '{}' not found", target_col).into(),
         ));
     }
 
@@ -2547,7 +3130,7 @@ fn validate_inputs(
     if let Some(wcol) = weight_col {
         if df.column(wcol).is_err() {
             return Err(PolarsError::ColumnNotFound(
-                format!("Weight column '{}' not found", wcol).into()
+                format!("Weight column '{}' not found", wcol).into(),
             ));
         }
     }
@@ -2556,7 +3139,7 @@ fn validate_inputs(
     if let Some(ocol) = offset_col {
         if df.column(ocol).is_err() {
             return Err(PolarsError::ColumnNotFound(
-                format!("Offset column '{}' not found", ocol).into()
+                format!("Offset column '{}' not found", ocol).into(),
             ));
         }
     }
@@ -2564,7 +3147,7 @@ fn validate_inputs(
     // Check that model has at least 2 tables (mean + at least one feature table)
     if model.tables.len() < 2 {
         return Err(PolarsError::ComputeError(
-            "Model must have at least 2 tables (mean + feature tables)".into()
+            "Model must have at least 2 tables (mean + feature tables)".into(),
         ));
     }
 
@@ -2715,7 +3298,9 @@ mod tests {
         let weights = [1.0, 1.0, 2.0, 1.0, 0.5];
         let offset = [0.2, -1.1, 0.0, 3.0, 0.7];
         let loss = LossFunction::Gamma;
-        let p = loss.log_link_variance_power().expect("gamma has a variance power");
+        let p = loss
+            .log_link_variance_power()
+            .expect("gamma has a variance power");
 
         let beta = null_intercept(&loss, &target, &weights, &offset);
 
@@ -2729,7 +3314,10 @@ mod tests {
             denom += weights[i] * base * mu;
         }
         let step = (numer / denom).ln();
-        assert!(step.abs() < 1e-12, "step {step} should be zero at the fixed point");
+        assert!(
+            step.abs() < 1e-12,
+            "step {step} should be zero at the fixed point"
+        );
     }
 
     /// A response with no positive part has no finite log-link mean to fit; the answer
@@ -2752,7 +3340,10 @@ mod tests {
         let mean: f64 = target.iter().zip(weights).map(|(y, a)| a * y).sum::<f64>()
             / weights.iter().sum::<f64>();
         let beta = null_intercept(&LossFunction::Gaussian, &target, &weights, &offset);
-        assert!((beta - mean).abs() < 1e-12, "beta {beta} is not the weighted mean {mean}");
+        assert!(
+            (beta - mean).abs() < 1e-12,
+            "beta {beta} is not the weighted mean {mean}"
+        );
     }
 
     /// The property the accelerator is built on: when the error really is a single
@@ -2774,8 +3365,8 @@ mod tests {
         };
 
         let (t0, t1, t2) = (iterate(0), iterate(1), iterate(2));
-        let alpha = squarem_steplength(&t0, &t1, &t2)
-            .expect("a geometric sequence has a steplength");
+        let alpha =
+            squarem_steplength(&t0, &t1, &t2).expect("a geometric sequence has a steplength");
 
         // alpha = -1/(1 - rho) for a pure mode.
         assert!(
@@ -2791,7 +3382,8 @@ mod tests {
             assert!(
                 (got - want).abs() < 1e-9,
                 "extrapolated to {:?}, fixed point is {:?}",
-                out, star
+                out,
+                star
             );
         }
     }
@@ -2854,7 +3446,10 @@ mod tests {
                 assert!(
                     (mu[i] - expected).abs() <= tol,
                     "{:?} row {}: carried mu = {:e}, but inverse_link(eta + offset) = {:e}",
-                    loss_fn, i, mu[i], expected
+                    loss_fn,
+                    i,
+                    mu[i],
+                    expected
                 );
             }
         }

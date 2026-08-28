@@ -158,11 +158,12 @@ def run_avenue(codes, y, exposure, levels):
     model = RatingModel(tables, "poisson")
     prep = time.perf_counter() - started
 
-    options = GLMOptions(objective="poisson", max_iterations=MAX_ITER, tolerance=TOL,
+    options = GLMOptions(max_iterations=MAX_ITER, tolerance=TOL,
                          compute_standard_errors=False)
     started = time.perf_counter()
-    fitted, diag = fit_glm_with_diagnostics(
+    result = fit_glm_with_diagnostics(
         model, frame, "y", offset_col="log_exposure", options=options)
+    fitted, diag = result.model, result.diagnostics
     fit = time.perf_counter() - started
 
     mu = fitted.predict(frame).to_series(0).to_numpy() * exposure

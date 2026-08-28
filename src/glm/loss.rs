@@ -1,5 +1,5 @@
-use polars::prelude::*;
 use crate::rating_model::LinkFunction;
+use polars::prelude::*;
 
 /// The largest magnitude a linear predictor is allowed to reach, on a *nonlinear*
 /// link.
@@ -291,8 +291,8 @@ impl LossFunction {
                     return None;
                 }
                 let phi_ml = sse / n;
-                llf = -0.5
-                    * (sse / phi_ml + n * (2.0 * std::f64::consts::PI * phi_ml).ln() - log_w);
+                llf =
+                    -0.5 * (sse / phi_ml + n * (2.0 * std::f64::consts::PI * phi_ml).ln() - log_w);
             }
             LossFunction::Poisson => {
                 for i in 0..target.len() {
@@ -328,7 +328,8 @@ impl LossFunction {
                     let mu = means[i].max(MU_FLOOR);
                     let s = shape * w;
                     let y_over_mu = target[i] / mu;
-                    llf += s * s.ln() + s * y_over_mu.ln() - s * y_over_mu
+                    llf += s * s.ln() + s * y_over_mu.ln()
+                        - s * y_over_mu
                         - ln_gamma(s)
                         - target[i].ln();
                 }
@@ -445,7 +446,9 @@ mod tests {
             assert!(
                 (naive - actual).abs() < 1e-12 * naive.abs().max(1.0),
                 "{:?}: naive {} vs actual {}",
-                f, naive, actual
+                f,
+                naive,
+                actual
             );
         }
     }
@@ -465,10 +468,23 @@ mod tests {
                 _ => 2.5,
             };
             let d = f.unit_deviance(y, y);
-            assert!(d.abs() < 1e-10, "{:?}: deviance at perfect fit was {}", f, d);
+            assert!(
+                d.abs() < 1e-10,
+                "{:?}: deviance at perfect fit was {}",
+                f,
+                d
+            );
             // And strictly positive away from it.
-            assert!(f.unit_deviance(y, y * 0.5) > 0.0, "{:?}: deviance not positive", f);
-            assert!(f.unit_deviance(y, y * 1.5) > 0.0, "{:?}: deviance not positive", f);
+            assert!(
+                f.unit_deviance(y, y * 0.5) > 0.0,
+                "{:?}: deviance not positive",
+                f
+            );
+            assert!(
+                f.unit_deviance(y, y * 1.5) > 0.0,
+                "{:?}: deviance not positive",
+                f
+            );
         }
     }
 

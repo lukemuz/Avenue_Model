@@ -1,7 +1,7 @@
+use crate::rating_model::{FeatureValue, RatingModel, RatingTable};
 use polars::prelude::*;
-use crate::rating_model::{RatingModel, RatingTable, FeatureValue};
-use std::collections::HashMap;
 use rayon::prelude::*;
+use std::collections::HashMap;
 
 /// Marks an observation that fell in no row of a table.
 ///
@@ -28,7 +28,10 @@ enum MatchPlan {
     /// The scan looks for the first row whose threshold is not below the observation's
     /// value, which is a lower bound: binary search finds it in O(log rows) without
     /// touching the rest of the table.
-    SortedNumeric { column: String, thresholds: Vec<f64> },
+    SortedNumeric {
+        column: String,
+        thresholds: Vec<f64>,
+    },
     /// One categorical column, no numerics, no null table values.
     ///
     /// The scan's answer here is decided entirely by two things: the first row carrying
@@ -316,8 +319,7 @@ fn sorted_numeric_matches(
 /// For tables no shortcut covers: the pre-resolved scan where it applies, else the
 /// row-by-row one.
 fn general_matches(table: &RatingTable, df: &DataFrame, n_rows: usize) -> Vec<u32> {
-    pre_resolved_scan(table, df, n_rows)
-        .unwrap_or_else(|| scan_matches(table, df, n_rows))
+    pre_resolved_scan(table, df, n_rows).unwrap_or_else(|| scan_matches(table, df, n_rows))
 }
 
 /// The reference implementation: build each observation's features, then ask the table.
@@ -369,7 +371,11 @@ fn pre_resolved_scan(table: &RatingTable, df: &DataFrame, n_rows: usize) -> Opti
         // `cont_slice` refuses nulls and chunked columns, which is the guard we want:
         // a null observation is a missing feature, and the scan matches it to nothing.
         let values = obs.i32().ok()?.cont_slice().ok()?;
-        let thresholds = table.data.get_columns()[col_idx].i32().ok()?.iter().collect();
+        let thresholds = table.data.get_columns()[col_idx]
+            .i32()
+            .ok()?
+            .iter()
+            .collect();
         categorical.push((thresholds, values));
     }
 
@@ -380,7 +386,11 @@ fn pre_resolved_scan(table: &RatingTable, df: &DataFrame, n_rows: usize) -> Opti
             return None;
         }
         let values = obs.f64().ok()?.cont_slice().ok()?;
-        let thresholds = table.data.get_columns()[col_idx].f64().ok()?.iter().collect();
+        let thresholds = table.data.get_columns()[col_idx]
+            .f64()
+            .ok()?
+            .iter()
+            .collect();
         numeric.push((thresholds, values));
     }
 
@@ -495,7 +505,7 @@ mod tests {
         // Int64 is numpy's default integer dtype, so this is the likely way to hit it.
         for values in [
             Series::new("g".into(), vec![0i64, 1]),
-            Series::new("g".into(), vec![0i8, 1]),
+            Series::new("g".into(), vec![0u32, 1]),
             Series::new("g".into(), vec![0.0f32, 1.0]),
         ] {
             let table = RatingTable::new(
@@ -506,7 +516,9 @@ mod tests {
                 .unwrap(),
                 None,
             );
-            let err = reject_unreadable_columns(&table, 3).unwrap_err().to_string();
+            let err = reject_unreadable_columns(&table, 3)
+                .unwrap_err()
+                .to_string();
             assert!(
                 err.contains("Table 3 column 'g'") && err.contains("Cast it to Float64"),
                 "unhelpful message for {:?}: {err}",
@@ -672,10 +684,7 @@ mod tests {
     #[test]
     fn a_nan_observation_lands_where_the_scan_puts_it() {
         let t = table("x", &[10.0, 20.0, f64::INFINITY]);
-        let df = DataFrame::new(vec![
-            Series::new("x".into(), vec![f64::NAN, 5.0]).into()
-        ])
-        .unwrap();
+        let df = DataFrame::new(vec![Series::new("x".into(), vec![f64::NAN, 5.0]).into()]).unwrap();
         agrees_with_scan(&t, &df);
     }
 

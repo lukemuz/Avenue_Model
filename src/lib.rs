@@ -1,23 +1,23 @@
 // Core modules (always available)
+pub mod analysis;
+pub mod glm;
 pub mod rating_model;
 pub mod table_estimator;
-pub mod analysis;
 pub mod tests;
-pub mod glm;
 
 // Python bindings (only when "python" feature is enabled)
 #[cfg(feature = "python")]
-use polars::frame::DataFrame;
-#[cfg(feature = "python")]
-use std::collections::HashMap;
+use polars::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
-use pyo3_polars::PyDataFrame;
-#[cfg(feature = "python")]
 use pyo3::types::PyDict;
 #[cfg(feature = "python")]
+use pyo3_polars::PyDataFrame;
+#[cfg(feature = "python")]
 use rating_model::RatingModel;
+#[cfg(feature = "python")]
+use std::collections::HashMap;
 #[cfg(feature = "python")]
 use table_estimator::estimate_number_of_tables;
 
@@ -26,6 +26,39 @@ use table_estimator::estimate_number_of_tables;
 #[derive(Clone)]
 struct PyRatingModel {
     inner: RatingModel,
+    /// Statistical family used to construct the model. Keeping this beside the
+    /// table-native core prevents the Python fitter from silently choosing a
+    /// likelihood that disagrees with the model's link.
+    family: String,
+    table_names: Vec<String>,
+}
+
+#[cfg(feature = "python")]
+fn canonical_family(value: &str) -> PyResult<String> {
+    match value.to_lowercase().as_str() {
+        "regression" | "gaussian" | "normal" => Ok("gaussian".to_string()),
+        "binary" | "binomial" | "logistic" => Ok("binary".to_string()),
+        "poisson" => Ok("poisson".to_string()),
+        "gamma" => Ok("gamma".to_string()),
+        "tweedie" => Ok("tweedie".to_string()),
+        other => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Unknown family '{}'. Expected 'gaussian', 'poisson', 'gamma', 'tweedie', or 'binary'.",
+            other
+        ))),
+    }
+}
+
+#[cfg(feature = "python")]
+fn default_table_names(count: usize) -> Vec<String> {
+    (0..count)
+        .map(|i| {
+            if i == 0 {
+                "intercept".to_string()
+            } else {
+                format!("table_{}", i)
+            }
+        })
+        .collect()
 }
 
 #[cfg(feature = "python")]
@@ -66,67 +99,127 @@ fn table_correlations(
         .map(|t| !t.metadata.is_offset && t.variate_values().is_none())
         .collect();
 
-    Ok(glm::table_correlations(&matches, &weights, &shapes, &eligible)
-        .into_iter()
-        .map(|p| (p.first, p.second, p.correlation))
-        .collect())
+    Ok(
+        glm::table_correlations(&matches, &weights, &shapes, &eligible)
+            .into_iter()
+            .map(|p| (p.first, p.second, p.correlation))
+            .collect(),
+    )
 }
 
 #[cfg(feature = "python")]
 #[pyfunction]
 fn estimate_num_tables(model_json: &str) -> PyResult<usize> {
-    estimate_number_of_tables(model_json)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            format!("Failed to estimate number of tables: {}", e)
+    estimate_number_of_tables(model_json).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Failed to estimate number of tables: {}",
+            e
         ))
+    })
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyRatingModel {
     /// Create a new RatingModel from a collection of rating tables
-    /// 
+    ///
     /// Args:
     ///     tables: List of polars DataFrames containing rating tables
     ///     objective: String indicating the model objective ("regression", "binary", etc)
     ///     feature_columns: Optional list of feature column names to use
     #[new]
-    #[pyo3(signature = (tables, objective, feature_columns=None, existing_row_number_col=None))]
+    #[pyo3(signature = (tables, family, table_names=None, feature_columns=None, existing_row_number_col=None))]
     fn new(
         tables: Vec<PyDataFrame>,
-        objective: &str,
+        family: &str,
+        table_names: Option<Vec<String>>,
         feature_columns: Option<Vec<String>>,
-        existing_row_number_col: Option<&str>
+        existing_row_number_col: Option<&str>,
     ) -> PyResult<Self> {
-        let df_vec = tables.into_iter()
+        let family = canonical_family(family)?;
+        let df_vec = tables
+            .into_iter()
             .map(|pydf| pydf.0)
             .collect::<Vec<DataFrame>>();
-        
-        RatingModel::from_dataframes(df_vec, objective, feature_columns, existing_row_number_col)
-            .map(|model| PyRatingModel { inner: model })
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Failed to create RatingModel: {}", e)
-            ))
+        let names = table_names.unwrap_or_else(|| default_table_names(df_vec.len()));
+        if names.len() != df_vec.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "table_names has {} entries but {} tables were supplied",
+                names.len(),
+                df_vec.len()
+            )));
+        }
+        let mut seen = std::collections::HashSet::new();
+        if names
+            .iter()
+            .any(|name| name.is_empty() || !seen.insert(name.clone()))
+        {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "table_names must be non-empty and unique".to_string(),
+            ));
+        }
+
+        RatingModel::from_dataframes(df_vec, &family, feature_columns, existing_row_number_col)
+            .map(|model| PyRatingModel {
+                inner: model,
+                family,
+                table_names: names,
+            })
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "Failed to create RatingModel: {}",
+                    e
+                ))
+            })
     }
 
     /// Create a RatingModel from an LightGBM JSON model string
-    /// 
+    ///
     /// Args:
     ///     model_json: JSON string representing the LightGBM model
     ///     consolidation_level: String indicating the consolidation level ("mean", "analysis")
     #[staticmethod]
     fn from_lgbm_json(model_json_str: &str, consolidation_level: &str) -> PyResult<Self> {
-        
+        let objective = serde_json::from_str::<serde_json::Value>(model_json_str)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("objective")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "gaussian".to_string());
+        let family = canonical_family(objective.split_whitespace().next().unwrap_or("gaussian"))?;
         RatingModel::from_lgbm_json(&model_json_str, consolidation_level)
-            .map(|model| PyRatingModel { inner: model })
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Failed to create model from JSON: {}", e)
-            ))
+            .map(|model| {
+                let table_names = default_table_names(model.tables.len());
+                PyRatingModel {
+                    inner: model,
+                    family,
+                    table_names,
+                }
+            })
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "Failed to create model from JSON: {}",
+                    e
+                ))
+            })
     }
 
     /// Get the link function used by the model
     fn get_link_function(&self) -> String {
         self.inner.get_link_function()
+    }
+
+    #[getter]
+    fn family(&self) -> String {
+        self.family.clone()
+    }
+
+    #[getter]
+    fn table_names(&self) -> Vec<String> {
+        self.table_names.clone()
     }
 
     /// Constrain one table's factors to a polynomial curve, so it costs the fit
@@ -174,7 +267,11 @@ impl PyRatingModel {
         model.tables[table_index] = table
             .as_polynomial_variate(values, degree)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        Ok(PyRatingModel { inner: model })
+        Ok(PyRatingModel {
+            inner: model,
+            family: self.family.clone(),
+            table_names: self.table_names.clone(),
+        })
     }
 
     /// The fitted slope of a linear variate table.
@@ -235,90 +332,237 @@ impl PyRatingModel {
     /// Predict for multiple rows in a DataFrame
     fn predict<'py>(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
         let df: DataFrame = df.0;
-        self.inner.predict(&df)
+        self.inner
+            .predict(&df)
             .map(|predictions| {
                 DataFrame::new(vec![predictions.into()])
                     .map(PyDataFrame)
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        format!("Failed to create prediction DataFrame: {}", e)
-                    ))
+                    .map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                            "Failed to create prediction DataFrame: {}",
+                            e
+                        ))
+                    })
             })
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Prediction failed: {}", e)
-            ))?
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Prediction failed: {}", e))
+            })?
+    }
+
+    /// Predict on the linear-predictor scale, before applying the inverse link.
+    fn predict_linear(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = df.0;
+        let values = self.inner.predict_linear(&df).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Prediction failed: {}", e))
+        })?;
+        DataFrame::new(vec![Series::new("linear_prediction".into(), values).into()])
+            .map(PyDataFrame)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
+    }
+
+    /// Predict a Poisson frequency rate. This is an explicit alias for predict()
+    /// that guards against accidentally treating another family as frequency.
+    fn predict_rate(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        if self.family != "poisson" {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "predict_rate() is for Poisson frequency models, not family='{}'",
+                self.family
+            )));
+        }
+        self.predict(df)
+    }
+
+    /// Predict expected claim counts as fitted frequency rate times exposure.
+    fn predict_expected(&self, df: PyDataFrame, exposure_col: &str) -> PyResult<PyDataFrame> {
+        if self.family != "poisson" {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "predict_expected() is for Poisson frequency models, not family='{}'",
+                self.family
+            )));
+        }
+        let df: DataFrame = df.0;
+        let rates = self.inner.predict(&df).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Prediction failed: {}", e))
+        })?;
+        let exposure = df.column(exposure_col).and_then(|s| s.f64()).map_err(|_| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Exposure column '{}' must exist and have dtype Float64",
+                exposure_col
+            ))
+        })?;
+        if exposure.null_count() > 0 {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Exposure column '{}' contains null values",
+                exposure_col
+            )));
+        }
+        let expected: Vec<f64> = rates
+            .f64()
+            .unwrap()
+            .into_no_null_iter()
+            .zip(exposure.into_no_null_iter())
+            .map(|(rate, exp)| rate * exp)
+            .collect();
+        DataFrame::new(vec![Series::new("expected".into(), expected).into()])
+            .map(PyDataFrame)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
+    }
+
+    /// Return each table's contribution on the linear-predictor scale.
+    fn predict_components(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = df.0;
+        // Validate the complete model first so a missing match cannot become a
+        // plausible-looking component value.
+        self.inner.predict_linear(&df).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Prediction failed: {}", e))
+        })?;
+        let columns = self
+            .inner
+            .tables
+            .iter()
+            .zip(&self.table_names)
+            .map(|(table, name)| Series::new(name.as_str().into(), table.predict_batch(&df)).into())
+            .collect();
+        DataFrame::new(columns)
+            .map(PyDataFrame)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
     }
 
     /// Consolidate the model's rating tables
     fn consolidate_tables(&self) -> PyResult<Self> {
-        Ok(PyRatingModel { 
-            inner: self.inner.consolidate_tables() 
+        let inner = self.inner.consolidate_tables();
+        let table_names = default_table_names(inner.tables.len());
+        Ok(PyRatingModel {
+            inner,
+            family: self.family.clone(),
+            table_names,
         })
     }
 
     /// Get the model's rating tables as DataFrames
     fn model_tables(&self) -> PyResult<Vec<PyDataFrame>> {
-        Ok(self.inner.model_tables()
+        Ok(self
+            .inner
+            .model_tables()
             .into_iter()
             .map(|df| PyDataFrame(df))
             .collect())
     }
 
+    /// Return one rating table by its stable name.
+    fn table(&self, name: &str) -> PyResult<PyDataFrame> {
+        let index = self
+            .table_names
+            .iter()
+            .position(|candidate| candidate == name)
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                    "Unknown table '{}'. Available tables: {}",
+                    name,
+                    self.table_names.join(", ")
+                ))
+            })?;
+        Ok(PyDataFrame(self.inner.tables[index].data.clone()))
+    }
+
     /// Combine two RatingModels
     fn __add__(&self, other: &PyRatingModel) -> PyResult<Self> {
-        self.inner.clone().combine(&other.inner)
-            .map(|combined| PyRatingModel { inner: combined })
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Failed to combine models: {}", e)
-            ))
+        if self.family != other.family {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Cannot combine {} and {} models",
+                self.family, other.family
+            )));
+        }
+        let family = self.family.clone();
+        self.inner
+            .clone()
+            .combine(&other.inner)
+            .map(|combined| {
+                let table_names = default_table_names(combined.tables.len());
+                PyRatingModel {
+                    inner: combined,
+                    family,
+                    table_names,
+                }
+            })
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "Failed to combine models: {}",
+                    e
+                ))
+            })
     }
 
     fn round_rating_factors(&self, num_decimals: i32) -> PyResult<Self> {
-        Ok(PyRatingModel { 
-            inner: self.inner.round_rating_factors(num_decimals) 
+        Ok(PyRatingModel {
+            inner: self.inner.round_rating_factors(num_decimals),
+            family: self.family.clone(),
+            table_names: self.table_names.clone(),
         })
     }
 
     /// Perform one-way analysis on the rating model
-    /// 
+    ///
     /// Args:
     ///     df: DataFrame containing the data to analyze
     ///     target_column: Column name to analyze (what we're averaging)
     ///     weight_column: Optional column name to use as weights
     #[pyo3(signature = (df, target_column, weight_column=None))]
-    fn one_way_analysis<'py>(&self, df: PyDataFrame, target_column: &str, weight_column: Option<&str>) -> PyResult<Vec<PyDataFrame>> {
+    fn one_way_analysis<'py>(
+        &self,
+        df: PyDataFrame,
+        target_column: &str,
+        weight_column: Option<&str>,
+    ) -> PyResult<Vec<PyDataFrame>> {
         let df: DataFrame = df.0;
-        // ⭐ OPTIMIZED: Pass references instead of owned values  
-        self.inner.one_way_analysis(&df, target_column, weight_column)
+        // ⭐ OPTIMIZED: Pass references instead of owned values
+        self.inner
+            .one_way_analysis(&df, target_column, weight_column)
             .map(|dfs| dfs.into_iter().map(|df| PyDataFrame(df)).collect())
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("One-way analysis failed: {}", e)
-            ))
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "One-way analysis failed: {}",
+                    e
+                ))
+            })
     }
-    
+
     /// Perform one-way analysis on a single rating table
-    /// 
+    ///
     /// Args:
     ///     table_index: Index of the table in the model
     ///     df: DataFrame containing the data to analyze
     ///     target_column: Column name to analyze (what we're averaging)
     ///     weight_column: Optional column name to use as weights
     #[pyo3(signature = (table_index, df, target_column, weight_column=None))]
-    fn one_way_analysis_table<'py>(&self, table_index: usize, df: PyDataFrame, target_column: &str, weight_column: Option<&str>) -> PyResult<PyDataFrame> {
+    fn one_way_analysis_table<'py>(
+        &self,
+        table_index: usize,
+        df: PyDataFrame,
+        target_column: &str,
+        weight_column: Option<&str>,
+    ) -> PyResult<PyDataFrame> {
         if table_index >= self.inner.tables.len() {
-            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                format!("Table index {} is out of bounds (0-{})", table_index, self.inner.tables.len() - 1)
-            ));
+            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                "Table index {} is out of bounds (0-{})",
+                table_index,
+                self.inner.tables.len() - 1
+            )));
         }
-        
+
         let table = &self.inner.tables[table_index];
         let df: DataFrame = df.0;
-        
+
         // ⭐ OPTIMIZED: Pass reference instead of owned value
-        table.one_way_analysis_table(&df, target_column, weight_column)
+        table
+            .one_way_analysis_table(&df, target_column, weight_column)
             .map(|df| PyDataFrame(df))
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("One-way analysis failed: {}", e)
-            ))
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "One-way analysis failed: {}",
+                    e
+                ))
+            })
     }
 }
 
@@ -332,9 +576,10 @@ struct PyGLMOptions {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyGLMOptions {
+    /// The statistical family is taken from RatingModel, so the likelihood and
+    /// link have one authoritative source.
+    ///
     /// Args:
-    ///     objective: Distribution family — "gaussian", "poisson", "gamma",
-    ///         "tweedie" or "binary".
     ///     max_iterations: Maximum coordinate-descent sweeps over the tables.
     ///     tolerance: Stop once the relative change in deviance falls below this.
     ///     verbose: Print deviance each sweep.
@@ -367,24 +612,26 @@ impl PyGLMOptions {
     ///         bad reference. Variate tables are not penalised - a low-degree
     ///         polynomial is already the constraint a penalty would impose.
     ///
-    ///         Requires normalization="base_level", the default.
+    ///         Requires normalization="base_level", the default. No standard
+    ///         errors are reported once it is non-zero: the estimate is biased on
+    ///         purpose, by about as much as the variance the penalty bought, so a
+    ///         Wald interval centred on it would not have the coverage it appears
+    ///         to claim. effective_parameters is still reported.
     ///     l1_ratio: How much of alpha is spent on the L1 term. 0.0 (default) is a
     ///         pure ridge, 1.0 a pure lasso, anything between an elastic net.
     ///
-    ///         An L1 component costs nothing extra to fit, since a soft threshold
-    ///         replaces a division in a step the sweep already takes per level. It
-    ///         does turn off the joint solve for near-aliased table pairs, which
-    ///         has no proximal form, so a plan carrying two tables that describe
-    ///         the same driver will need more sweeps under a lasso than under a
-    ///         ridge.
+    ///         In the table solver a soft threshold replaces a division in the
+    ///         existing per-level update. It also turns off the joint solve for
+    ///         near-aliased table pairs, so correlated plans can need many sweeps.
+    ///         The global solver uses coordinate descent on its Gram matrix instead.
     ///
-    ///         Standard errors are not reported under any L1 penalty: a lasso
-    ///         chooses its levels from the same data it estimates them on, and a
-    ///         Wald interval that ignores that is the wrong quantity rather than
-    ///         a wide one.
+    ///         No standard errors are reported under a penalty of either kind.
+    ///         See GLMDiagnostics.standard_errors_note.
+    ///     solver: "auto" (default) prefers global IRLS and falls back to the
+    ///         low-memory table solver for unsupported or very wide models.
+    ///         "global" requires the global path; "table" requires table descent.
     #[new]
     #[pyo3(signature = (
-        objective,
         max_iterations=None,
         tolerance=None,
         verbose=None,
@@ -395,9 +642,9 @@ impl PyGLMOptions {
         solve_aliased_pairs_jointly=None,
         alpha=None,
         l1_ratio=None,
+        solver=None,
     ))]
     fn new(
-        objective: String, // Required parameter
         max_iterations: Option<usize>,
         tolerance: Option<f64>,
         verbose: Option<bool>,
@@ -408,10 +655,9 @@ impl PyGLMOptions {
         solve_aliased_pairs_jointly: Option<bool>,
         alpha: Option<f64>,
         l1_ratio: Option<f64>,
+        solver: Option<&str>,
     ) -> PyResult<Self> {
         let mut options = glm::GLMOptions::default();
-
-        options.objective = objective;
 
         if let Some(max_iter) = max_iterations {
             options.max_iterations = max_iter;
@@ -432,9 +678,9 @@ impl PyGLMOptions {
                 "none" => glm::Normalization::None,
                 other => {
                     return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                        "Unknown normalization '{}'. Expected 'base_level', 'weighted_mean' or 'none'.",
-                        other
-                    )))
+                    "Unknown normalization '{}'. Expected 'base_level', 'weighted_mean' or 'none'.",
+                    other
+                )))
                 }
             };
         }
@@ -469,6 +715,20 @@ impl PyGLMOptions {
                 )));
             }
             options.l1_ratio = r;
+        }
+
+        if let Some(s) = solver {
+            options.solver = match s.to_lowercase().as_str() {
+                "auto" => glm::GLMSolver::Auto,
+                "table" => glm::GLMSolver::Table,
+                "global" => glm::GLMSolver::Global,
+                other => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "Unknown solver '{}'. Expected 'auto', 'table', or 'global'.",
+                        other
+                    )))
+                }
+            };
         }
 
         Ok(PyGLMOptions { inner: options })
@@ -527,6 +787,12 @@ struct PyGLMDiagnostics {
     /// A row with no exposure, or one that is aliased, is NaN.
     #[pyo3(get)]
     standard_errors: Option<Vec<Vec<f64>>>,
+    /// Why standard_errors is all NaN, when it is. None when they are real.
+    /// Set on every penalised fit: a penalty biases the estimate on purpose, and
+    /// a Wald interval centred on a shrunk coefficient does not have the coverage
+    /// it looks like it has.
+    #[pyo3(get)]
+    standard_errors_note: Option<String>,
     /// Table rows whose effect cannot be separated from another parameter's, as
     /// (table_index, row_index) pairs. Usually two tables keyed on the same
     /// feature, or a completely separated level.
@@ -575,7 +841,11 @@ impl PyGLMDiagnostics {
     ///
     /// Returns None for reference levels, aliased rows, and rows with no exposure.
     fn z_value(&self, table_index: usize, row_index: usize, factor: f64) -> Option<f64> {
-        let se = *self.standard_errors.as_ref()?.get(table_index)?.get(row_index)?;
+        let se = *self
+            .standard_errors
+            .as_ref()?
+            .get(table_index)?
+            .get(row_index)?;
         if se > 0.0 && se.is_finite() {
             Some(factor / se)
         } else {
@@ -626,6 +896,7 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
             accelerated_steps: d.accelerated_steps,
             pseudo_r2,
             standard_errors: inf.as_ref().map(|i| i.standard_errors.clone()),
+            standard_errors_note: inf.as_ref().and_then(|i| i.standard_errors_note.clone()),
             aliased_rows: inf.as_ref().map(|i| i.aliased_rows.clone()),
             dispersion: inf.as_ref().map(|i| i.dispersion),
             n_parameters: inf.as_ref().map(|i| i.n_parameters),
@@ -651,6 +922,118 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
                     .collect()
             }),
         }
+    }
+}
+
+/// A cohesive fitted GLM: scoring model, diagnostics, and presentation-ready
+/// rating tables stay together and share the same stable table names.
+#[cfg(feature = "python")]
+#[pyclass(name = "GLMResult")]
+#[derive(Clone)]
+struct PyGLMResult {
+    model: PyRatingModel,
+    diagnostics: PyGLMDiagnostics,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PyGLMResult {
+    #[getter]
+    fn model(&self) -> PyRatingModel {
+        self.model.clone()
+    }
+
+    #[getter]
+    fn diagnostics(&self) -> PyGLMDiagnostics {
+        self.diagnostics.clone()
+    }
+
+    #[getter]
+    fn converged(&self) -> bool {
+        self.diagnostics.converged
+    }
+
+    /// Rating tables enriched with inferential columns and an explicit row status.
+    /// Coefficient is on the linear-predictor scale; Relativity is exp(Coefficient)
+    /// for log-link models and is omitted for identity and logit links.
+    fn rating_tables(&self) -> PyResult<Vec<PyDataFrame>> {
+        let aliased = self.diagnostics.aliased_rows.as_deref().unwrap_or(&[]);
+        let mut result = Vec::with_capacity(self.model.inner.tables.len());
+        for (table_index, table) in self.model.inner.tables.iter().enumerate() {
+            let mut data = table.data.clone();
+            let coefficients: Vec<f64> = data
+                .column("Rating_Factor")
+                .and_then(|s| s.f64())
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
+                .into_no_null_iter()
+                .collect();
+            let standard_errors = self
+                .diagnostics
+                .standard_errors
+                .as_ref()
+                .and_then(|tables| tables.get(table_index))
+                .cloned()
+                .unwrap_or_else(|| vec![f64::NAN; coefficients.len()]);
+            let status: Vec<&str> = (0..coefficients.len())
+                .map(|row| {
+                    if self.diagnostics.unfitted_rows.contains(&(table_index, row)) {
+                        "no_data"
+                    } else if aliased.contains(&(table_index, row)) {
+                        "aliased"
+                    } else if standard_errors.get(row) == Some(&0.0) {
+                        "reference"
+                    } else {
+                        "estimated"
+                    }
+                })
+                .collect();
+            data.with_column(Series::new("Coefficient".into(), coefficients.clone()))
+                .and_then(|df| {
+                    df.with_column(Series::new("Standard_Error".into(), standard_errors))
+                })
+                .and_then(|df| df.with_column(Series::new("Status".into(), status)))
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+            if self.model.inner.get_link_function() == "log" {
+                data.with_column(Series::new(
+                    "Relativity".into(),
+                    coefficients.iter().map(|v| v.exp()).collect::<Vec<_>>(),
+                ))
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+            }
+            result.push(PyDataFrame(data));
+        }
+        Ok(result)
+    }
+
+    fn predict(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        self.model.predict(df)
+    }
+
+    fn predict_linear(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        self.model.predict_linear(df)
+    }
+
+    fn predict_rate(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        self.model.predict_rate(df)
+    }
+
+    fn predict_expected(&self, df: PyDataFrame, exposure_col: &str) -> PyResult<PyDataFrame> {
+        self.model.predict_expected(df, exposure_col)
+    }
+
+    fn predict_components(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        self.model.predict_components(df)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "GLMResult(family='{}', tables={}, converged={}, iterations={}, deviance={:.6})",
+            self.model.family,
+            self.model.table_names.len(),
+            self.diagnostics.converged,
+            self.diagnostics.iterations,
+            self.diagnostics.deviance,
+        )
     }
 }
 
@@ -680,19 +1063,32 @@ fn fit_glm(
     options: Option<PyGLMOptions>,
 ) -> PyResult<PyRatingModel> {
     let df: DataFrame = df.0;
-    let glm_options = options.map(|o| o.inner).unwrap_or_default();
+    let mut glm_options = options.map(|o| o.inner).unwrap_or_default();
+    glm_options.objective = model.family.clone();
 
-    glm::fit_glm(&model.inner, &df, target_col, weight_col, offset_col, glm_options)
-        .map(|fitted_model| PyRatingModel { inner: fitted_model })
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            format!("GLM fitting failed: {}", e)
-        ))
+    glm::fit_glm(
+        &model.inner,
+        &df,
+        target_col,
+        weight_col,
+        offset_col,
+        glm_options,
+    )
+    .map(|fitted_model| PyRatingModel {
+        inner: fitted_model,
+        family: model.family.clone(),
+        table_names: model.table_names.clone(),
+    })
+    .map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("GLM fitting failed: {}", e))
+    })
 }
 
-/// As `fit_glm`, but also returns convergence and deviance information.
+/// Fit a model and return a cohesive result containing the fitted scoring model,
+/// diagnostics, and presentation-ready rating tables.
 ///
 /// Returns:
-///     (RatingModel, GLMDiagnostics)
+///     GLMResult
 #[cfg(feature = "python")]
 #[pyfunction]
 #[pyo3(signature = (model, df, target_col, weight_col=None, offset_col=None, options=None))]
@@ -703,17 +1099,30 @@ fn fit_glm_with_diagnostics(
     weight_col: Option<&str>,
     offset_col: Option<&str>,
     options: Option<PyGLMOptions>,
-) -> PyResult<(PyRatingModel, PyGLMDiagnostics)> {
+) -> PyResult<PyGLMResult> {
     let df: DataFrame = df.0;
-    let glm_options = options.map(|o| o.inner).unwrap_or_default();
+    let mut glm_options = options.map(|o| o.inner).unwrap_or_default();
+    glm_options.objective = model.family.clone();
 
-    glm::fit_glm_with_diagnostics(&model.inner, &df, target_col, weight_col, offset_col, glm_options)
-        .map(|(fitted_model, diagnostics)| {
-            (PyRatingModel { inner: fitted_model }, diagnostics.into())
-        })
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            format!("GLM fitting failed: {}", e)
-        ))
+    glm::fit_glm_with_diagnostics(
+        &model.inner,
+        &df,
+        target_col,
+        weight_col,
+        offset_col,
+        glm_options,
+    )
+    .map(|(fitted_model, diagnostics)| PyGLMResult {
+        model: PyRatingModel {
+            inner: fitted_model,
+            family: model.family.clone(),
+            table_names: model.table_names.clone(),
+        },
+        diagnostics: diagnostics.into(),
+    })
+    .map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("GLM fitting failed: {}", e))
+    })
 }
 
 #[cfg(feature = "python")]
@@ -722,10 +1131,10 @@ fn avenue_model(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRatingModel>()?;
     m.add_class::<PyGLMOptions>()?;
     m.add_class::<PyGLMDiagnostics>()?;
+    m.add_class::<PyGLMResult>()?;
     m.add_function(wrap_pyfunction!(estimate_num_tables, m)?)?;
     m.add_function(wrap_pyfunction!(fit_glm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_glm_with_diagnostics, m)?)?;
     m.add_function(wrap_pyfunction!(table_correlations, m)?)?;
     Ok(())
 }
-

@@ -23,7 +23,6 @@ import argparse
 import os
 import sys
 import time
-import tracemalloc
 
 import numpy as np
 import pandas as pd
@@ -31,6 +30,7 @@ import polars as pl
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from bench_memory import PeakMemory
 
 MAX_ITER = 2000
 AVENUE_TOL = 1e-9
@@ -75,9 +75,23 @@ def load_correlated(rows=200_000, tables=25, rho=0.28, seed=7):
     return codes, levels, y, None, "poisson", "poisson"
 
 
+def load_housing():
+    from bench_housing import load_housing as load, prepare
+    codes, levels, price = prepare(load(), None)
+    return codes, levels, price.astype(np.float64), None, "gamma", "gamma"
+
+
+def load_taxi():
+    from bench_real import load_taxi as load, prepare_taxi
+    codes, levels, y, _ = prepare_taxi(load())
+    return codes, levels, y.astype(np.float64), None, "gamma", "gamma"
+
+
 DATASETS = {
     "fremtpl": ("freMTPL2 / claim count", load_fremtpl),
     "census": ("census_income / >50k", load_census),
+    "housing": ("house_sales / price", load_housing),
+    "taxi": ("nyc_taxi / fare", load_taxi),
     "correlated": ("25 correlated tables / synthetic", load_correlated),
 }
 
@@ -91,14 +105,13 @@ def timed(fn, repeats):
         start = time.perf_counter()
         payload = fn()
         best = min(best, time.perf_counter() - start)
-    tracemalloc.start()
-    fn()
-    peak = tracemalloc.get_traced_memory()[1]
-    tracemalloc.stop()
-    return best, peak / 1e6, payload
+    with PeakMemory() as memory:
+        fn()
+    return best, memory.peak_mb, payload
 
 
-def run_avenue(codes, levels, y, weight, family, alpha, l1_ratio, repeats):
+def run_avenue(codes, levels, y, weight, family, alpha, l1_ratio, repeats,
+               solver="table"):
     from avenue_model import RatingModel, fit_glm_with_diagnostics, GLMOptions
 
     frame = {n: c.astype(np.int32) for n, c in codes.items()}
@@ -114,8 +127,9 @@ def run_avenue(codes, levels, y, weight, family, alpha, l1_ratio, repeats):
         }))
     model = RatingModel(tables, family)
     options = GLMOptions(
-        objective=family, max_iterations=MAX_ITER, tolerance=AVENUE_TOL,
+        max_iterations=MAX_ITER, tolerance=AVENUE_TOL,
         alpha=alpha, l1_ratio=l1_ratio, compute_standard_errors=False,
+        solver=solver,
     )
 
     def fit():
@@ -123,8 +137,9 @@ def run_avenue(codes, levels, y, weight, family, alpha, l1_ratio, repeats):
             model, df, "y", weight_col=("w" if weight is not None else None),
             options=options)
 
-    seconds, peak, (_, diag) = timed(fit, repeats)
-    return dict(engine="avenue", seconds=seconds, peak=peak,
+    seconds, peak, result = timed(fit, repeats)
+    diag = result.diagnostics
+    return dict(engine=f"avenue[{solver}]", seconds=seconds, peak=peak,
                 iters=diag.iterations, converged=diag.converged)
 
 
@@ -173,9 +188,13 @@ def main():
                     choices=list(DATASETS) + ["all"])
     ap.add_argument("--repeats", type=int, default=3)
     ap.add_argument("--alpha", type=float, default=1e-4)
+    ap.add_argument("--engine", default="all",
+                    choices=["all", "table", "global", "glum"],
+                    help="Run one engine for cleaner process-isolated memory readings")
     args = ap.parse_args()
 
-    names = list(DATASETS) if args.dataset == "all" else [args.dataset]
+    real = ["fremtpl", "census", "housing", "taxi"]
+    names = real if args.dataset == "all" else [args.dataset]
     for name in names:
         label, loader = DATASETS[name]
         codes, levels, y, weight, family, glum_family = loader()
@@ -187,16 +206,23 @@ def main():
         for pen_label, alpha, ratio in [
             ("none", 0.0, 0.0),
             ("ridge", args.alpha, 0.0),
+            ("elastic-net", args.alpha, 0.5),
             ("lasso", args.alpha, 1.0),
         ]:
-            rows.append((pen_label, run_avenue(
-                codes, levels, y, weight, family, alpha, ratio, args.repeats)))
+            avenue_solvers = (["table", "global"] if args.engine == "all"
+                               else [args.engine] if args.engine in {"table", "global"}
+                               else [])
+            for solver in avenue_solvers:
+                rows.append((pen_label, run_avenue(
+                    codes, levels, y, weight, family, alpha, ratio, args.repeats,
+                    solver=solver)))
             # glum's Cholesky path cannot take an L1 term; it falls back to
             # coordinate descent, which is the point of the comparison.
-            solver = "irls-cd" if ratio > 0.0 else "irls-ls"
-            rows.append((pen_label, run_glum(
-                codes, y, weight, glum_family, alpha, ratio, solver,
-                args.repeats)))
+            if args.engine in {"all", "glum"}:
+                solver = "irls-cd" if ratio > 0.0 else "irls-ls"
+                rows.append((pen_label, run_glum(
+                    codes, y, weight, glum_family, alpha, ratio, solver,
+                    args.repeats)))
         report(rows)
 
     return 0

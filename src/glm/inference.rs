@@ -39,7 +39,33 @@ pub struct GLMInference {
     /// A row that is the anchoring reference has a standard error of exactly 0 — it
     /// is fixed by construction, not estimated. A row with no exposure, or one held
     /// as an offset, is `NaN`.
+    ///
+    /// **Every entry is `NaN` on a penalised fit.** See `standard_errors_note`.
     pub standard_errors: Vec<Vec<f64>>,
+    /// Why `standard_errors` is empty, when it is. `None` when they are real.
+    ///
+    /// A penalised fit reports no standard errors at all, for either kind of penalty.
+    ///
+    /// The estimator is deliberately biased — that is the entire trade a penalty makes,
+    /// and the bias `-(H + P)^-1 P b` is the same order as the variance it bought. A
+    /// Wald interval is symmetric about the estimate, so centring one on a shrunk
+    /// coefficient does not produce an interval with the coverage it claims; it produces
+    /// an interval around the wrong point. The number would be read as a significance
+    /// test, and it is not one.
+    ///
+    /// This is not fixed by using the sandwich `(H + P)^-1 H (H + P)^-1` instead of
+    /// `(H + P)^-1`. Both describe the estimator's sampling variance, and neither says
+    /// anything about the bias. An L1 penalty adds a second, independent objection —
+    /// the levels were chosen from the same data they are then estimated on — but the
+    /// bias objection alone is enough, and it applies to a pure ridge.
+    ///
+    /// The honest routes to an interval are a bootstrap over the whole fitting
+    /// procedure, a refit without the penalty on whatever the penalty selected, or a
+    /// Bayesian construction of the mgcv kind — all of which are the caller's to run,
+    /// and none of which is a covariance matrix this function could hand back. What
+    /// *is* reported is `effective_parameters`, which is well defined under a penalty
+    /// and is what model comparison actually needs.
+    pub standard_errors_note: Option<String>,
     /// Estimated dispersion. Fixed at 1 for Poisson and Binomial; Pearson chi-squared
     /// over residual degrees of freedom for Gaussian, Gamma and Tweedie.
     pub dispersion: f64,
@@ -367,17 +393,13 @@ pub fn compute_inference(
             compact[ci * k + cj] = xtwx[i * n_params + j];
         }
     }
-    // Under a penalty the covariance is not the inverse of the information. The
-    // estimator solves `score(b) = P b` rather than `score(b) = 0`, so its variance is
-    // the sandwich `(H + P)^-1 H (H + P)^-1` - smaller than `H^-1`, which is the whole
-    // trade a penalty makes. Reporting `H^-1` here would overstate the uncertainty of
-    // every shrunk level while the point estimates were biased toward the base, which is
-    // exactly the combination that reads as "significant and well measured".
-    //
-    // `trace((H + P)^-1 H)` falls out of the same product and is the effective parameter
-    // count.
-    let penalised = p_diag.iter().any(|v| *v > 0.0);
-    let (compact_cov, spent) = if penalised {
+    // Under ridge the only thing wanted from this inversion is the trace of the hat
+    // matrix `(H + P)^-1 H`, which is the effective parameter count. A pure lasso does
+    // not need an inverse at all. No covariance is formed on either penalised path - see
+    // `GLMInference::standard_errors_note`.
+    let penalty_active = penalty.is_some_and(|p| p.is_active());
+    let ridge_active = p_diag.iter().any(|v| *v > 0.0);
+    let (compact_cov, spent) = if ridge_active {
         let mut a = compact.clone();
         for (c, &j) in active.iter().enumerate() {
             a[c * k + c] += p_diag[j];
@@ -385,20 +407,22 @@ pub fn compute_inference(
         let a_inv = invert_spd(&a, k)?;
         let hat = matmul(&a_inv, &compact, k);
         let trace: f64 = (0..k).map(|i| hat[i * k + i]).sum();
-        (matmul(&hat, &a_inv, k), trace)
+        (None, trace)
+    } else if penalty_active {
+        // A pure lasso's effective parameter count comes from the number of selected
+        // levels below. There is no covariance to form because inference is deliberately
+        // unavailable on every penalised fit.
+        (None, rank as f64)
     } else {
-        (invert_spd(&compact, k)?, rank as f64)
+        (Some(invert_spd(&compact, k)?), rank as f64)
     };
 
-    // An L1 penalty adds no curvature, so it leaves no trace in the sandwich above.
+    // An L1 penalty adds no curvature, so it leaves no trace in the hat matrix above.
     // What it spends is the levels it kept: the number of non-zero coefficients is an
     // unbiased estimate of the lasso's degrees of freedom (Zou, Hastie and Tibshirani,
     // 2007), and it is what `aic` should charge for a model that also chose its levels.
     let effective_parameters = match penalty {
-        Some(plan) if plan.selects() => active
-            .iter()
-            .filter(|j| !zeroed[**j])
-            .count() as f64,
+        Some(plan) if plan.selects() => active.iter().filter(|j| !zeroed[**j]).count() as f64,
         _ => spent,
     };
 
@@ -418,9 +442,11 @@ pub fn compute_inference(
     // Scatter back into full-size coordinates; dropped columns stay zero and are
     // caught by the `compact_of` check when contrasts are formed.
     let mut cov = vec![0.0f64; n_params * n_params];
-    for (ci, &i) in active.iter().enumerate() {
-        for (cj, &j) in active.iter().enumerate() {
-            cov[i * n_params + j] = compact_cov[ci * k + cj];
+    if let Some(compact_cov) = &compact_cov {
+        for (ci, &i) in active.iter().enumerate() {
+            for (cj, &j) in active.iter().enumerate() {
+                cov[i * n_params + j] = compact_cov[ci * k + cj];
+            }
         }
     }
 
@@ -472,6 +498,18 @@ pub fn compute_inference(
                     }
                     contrast.retain(|(_, w)| *w != 0.0);
 
+                    if penalty_active {
+                        // Keep walking the layout so aliased_rows remains useful, but do
+                        // not form a covariance contrast on a penalised fit.
+                        if contrast
+                            .iter()
+                            .any(|(c, w)| *w != 0.0 && compact_of[*c].is_none())
+                        {
+                            aliased_rows.push((t, r));
+                        }
+                        continue;
+                    }
+
                     if contrast.is_empty() {
                         // A pure reference level: fixed by construction, not estimated.
                         ses[r] = 0.0;
@@ -479,7 +517,10 @@ pub fn compute_inference(
                     }
 
                     // A contrast touching an aliased parameter is not estimable.
-                    if contrast.iter().any(|(c, w)| *w != 0.0 && compact_of[*c].is_none()) {
+                    if contrast
+                        .iter()
+                        .any(|(c, w)| *w != 0.0 && compact_of[*c].is_none())
+                    {
                         ses[r] = f64::NAN;
                         aliased_rows.push((t, r));
                         continue;
@@ -503,19 +544,23 @@ pub fn compute_inference(
         standard_errors.push(ses);
     }
 
-    // A lasso chooses its levels from the same data it then estimates them on, and a
-    // Wald interval that conditions on that choice while ignoring it is famously too
-    // narrow - it is not a wide interval, it is the wrong quantity. There is no cheap
-    // correction; the honest answers are a bootstrap or a refit on the selected levels,
-    // both of which are the caller's to run. So nothing is reported rather than
-    // something that would be read as a significance test.
-    if penalty.is_some_and(|p| p.selects()) {
-        for ses in standard_errors.iter_mut() {
-            for se in ses.iter_mut() {
-                *se = f64::NAN;
-            }
-        }
-    }
+    // No standard errors on a penalised fit, of either kind. A penalty buys variance
+    // with bias, and a Wald interval is symmetric about the estimate, so it cannot
+    // describe an estimate that has been deliberately pulled off centre. See
+    // `GLMInference::standard_errors_note` for the full argument.
+    let standard_errors_note = if penalty_active {
+        Some(
+            "No standard errors are reported for a penalised fit. The estimate is \
+             deliberately biased toward the base level, by an amount comparable to the \
+             variance the penalty bought, and a Wald interval centred on it would not \
+             have the coverage it appears to claim. Use a bootstrap, or refit without a \
+             penalty, if you need intervals. `effective_parameters` is still reported \
+             and is what aic and bic charge."
+                .to_string(),
+        )
+    } else {
+        None
+    };
 
     // Without an anchor the factors are not identified, so a per-row standard error
     // would be describing a quantity the fit does not pin down.
@@ -579,19 +624,27 @@ pub fn compute_inference(
 
         // Recover the fitted coefficients on the rescaled basis from the anchored
         // factors, which lie exactly on the polynomial by construction.
-        let scaled_coefficients = fit_polynomial_to_factors(&factors[t], values, *degree, centre, scale);
+        let scaled_coefficients =
+            fit_polynomial_to_factors(&factors[t], values, *degree, centre, scale);
         let Some(scaled_coefficients) = scaled_coefficients else {
             continue;
         };
 
         let standard_errors: Vec<f64> = (0..*degree)
             .map(|m| {
+                if penalty_active {
+                    return f64::NAN;
+                }
                 let c = first_col + m;
                 if compact_of.get(c).copied().flatten().is_none() {
                     return f64::NAN;
                 }
                 let var = dispersion * cov[c * n_params + c];
-                if var >= 0.0 { var.sqrt() } else { f64::NAN }
+                if var >= 0.0 {
+                    var.sqrt()
+                } else {
+                    f64::NAN
+                }
             })
             .collect();
 
@@ -611,6 +664,7 @@ pub fn compute_inference(
         variate_terms,
         n_parameters: rank,
         effective_parameters,
+        standard_errors_note,
         df_residual,
         pearson_chi2,
         log_likelihood,
@@ -701,8 +755,8 @@ const ALIAS_DESIGN_TOL: f64 = 1e-12;
 ///
 /// `a * b` for two dense `n x n` matrices in row-major order.
 ///
-/// Only reached on a penalised fit, where it runs twice alongside the `n^3` inversion
-/// that was happening anyway.
+/// Only reached on a penalised fit, to form the hat matrix whose trace is the effective
+/// parameter count, alongside the `n^3` inversion that was happening anyway.
 fn matmul(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
     let mut out = vec![0.0f64; n * n];
     for i in 0..n {
@@ -912,7 +966,12 @@ mod tests {
         let inv = invert_spd(&a, 2).unwrap();
         let expected = [0.375, -0.25, -0.25, 0.5];
         for (got, want) in inv.iter().zip(expected.iter()) {
-            assert!((got - want).abs() < 1e-12, "got {:?}, want {:?}", inv, expected);
+            assert!(
+                (got - want).abs() < 1e-12,
+                "got {:?}, want {:?}",
+                inv,
+                expected
+            );
         }
     }
 
@@ -923,7 +982,11 @@ mod tests {
         let mut a = vec![0.0; n * n];
         for i in 0..n {
             for j in 0..n {
-                a[i * n + j] = if i == j { 5.0 + i as f64 } else { 1.0 / (1 + i + j) as f64 };
+                a[i * n + j] = if i == j {
+                    5.0 + i as f64
+                } else {
+                    1.0 / (1 + i + j) as f64
+                };
             }
         }
         let inv = invert_spd(&a, n).unwrap();

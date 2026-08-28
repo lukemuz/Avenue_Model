@@ -64,7 +64,7 @@ def make_data(rows, family, seed=0):
     return codes, levels, y, w
 
 
-def fit_avenue(codes, levels, y, w, family, alpha, l1_ratio):
+def fit_avenue(codes, levels, y, w, family, alpha, l1_ratio, solver="auto"):
     from avenue_model import RatingModel, fit_glm_with_diagnostics, GLMOptions
 
     frame = {name: codes[name] for name in levels}
@@ -82,16 +82,17 @@ def fit_avenue(codes, levels, y, w, family, alpha, l1_ratio):
         )
     model = RatingModel(tables, family)
     options = GLMOptions(
-        objective=family,
         max_iterations=MAX_ITER,
         tolerance=TOL,
         alpha=alpha,
         l1_ratio=l1_ratio,
         compute_standard_errors=False,
+        solver=solver,
     )
-    fitted, diag = fit_glm_with_diagnostics(
+    result = fit_glm_with_diagnostics(
         model, pl.DataFrame(frame), "y", weight_col="w", options=options
     )
+    fitted, diag = result.model, result.diagnostics
     out = {}
     for t, name in enumerate(levels, start=1):
         f = np.asarray(fitted.model_tables()[t]["Rating_Factor"])
@@ -140,6 +141,7 @@ def main():
                     choices=["poisson", "gamma", "gaussian"])
     ap.add_argument("--rows", type=int, default=20000)
     ap.add_argument("--tol", type=float, default=2e-5)
+    ap.add_argument("--solver", choices=["auto", "table", "global"], default="auto")
     args = ap.parse_args()
 
     codes, levels, y, w = make_data(args.rows, args.family)
@@ -159,7 +161,9 @@ def main():
         print(f"{label} (l1_ratio = {ratio})")
         print(f"  {'alpha':>8}  {'max |diff|':>11}  {'zeros A/g':>10}  {'sweeps':>6}")
         for alpha in alphas:
-            av, diag = fit_avenue(codes, levels, y, w, args.family, alpha, ratio)
+            av, diag = fit_avenue(
+                codes, levels, y, w, args.family, alpha, ratio, solver=args.solver
+            )
             gl = fit_glum(codes, levels, y, w, args.family, alpha, ratio)
             worst = 0.0
             zeros_a = zeros_g = 0

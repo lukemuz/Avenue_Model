@@ -309,7 +309,6 @@ def run_avenue(data: Dataset, case: Case, repeats: int, standard_errors: bool) -
     prep_seconds, (df, model) = best_of(prep, repeats)
 
     options = GLMOptions(
-        objective=objective,
         max_iterations=MAX_ITER,
         tolerance=AVENUE_TOL,
         tweedie_power=case.tweedie_power,
@@ -326,7 +325,8 @@ def run_avenue(data: Dataset, case: Case, repeats: int, standard_errors: bool) -
             options=options,
         )
 
-    fit_seconds, (fitted, diag) = best_of(fit, repeats)
+    fit_seconds, result = best_of(fit, repeats)
+    fitted, diag = result.model, result.diagnostics
 
     # Avenue declines to compute standard errors above a parameter cap. Without this
     # the widest cases post a suspiciously cheap "avenue+se" time that is cheap only

@@ -152,11 +152,12 @@ def run_avenue(codes, levels, y, family, repeats, accelerate=True):
 
     prep_seconds, (df, tables) = best_of(lambda: build_frame(codes, levels, y), repeats)
     model = RatingModel(tables, family)
-    options = GLMOptions(objective=family, max_iterations=MAX_ITER, tolerance=AVENUE_TOL,
+    options = GLMOptions(max_iterations=MAX_ITER, tolerance=AVENUE_TOL,
                          compute_standard_errors=False, accelerate=accelerate)
 
-    fit_seconds, (fitted, diag) = best_of(
+    fit_seconds, result = best_of(
         lambda: fit_glm_with_diagnostics(model, df, "y", options=options), repeats)
+    fitted, diag = result.model, result.diagnostics
 
     note = f"max|score|={diag.max_gradient:.1e}"
     if accelerate:
@@ -297,10 +298,10 @@ def diagnose(codes, levels, y, family):
         c = {k: v for k, v in codes.items() if k not in drop}
         l = {k: v for k, v in levels.items() if k not in drop}
         df, tables = build_frame(c, l, y)
-        options = GLMOptions(objective=family, max_iterations=MAX_ITER,
+        options = GLMOptions(max_iterations=MAX_ITER,
                              tolerance=AVENUE_TOL, compute_standard_errors=False,
                              accelerate=False)
-        _, d = fit_glm_with_diagnostics(RatingModel(tables, family), df, "y", options=options)
+        d = fit_glm_with_diagnostics(RatingModel(tables, family), df, "y", options=options).diagnostics
         return d
 
     print(f"\n  convergence shape, {family}, unaccelerated")

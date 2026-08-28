@@ -1,7 +1,7 @@
 # GLM Fitting Module
 
-Generalized linear models fitted by block coordinate descent directly on rating tables —
-no design matrix, no coefficient vector to map back.
+Generalized linear models fitted with global IRLS or directly on rating tables, without
+materializing a dummy-coded observation-by-parameter matrix.
 
 **Contents:** [How it works](#how-it-works) · [Benchmarks](#benchmarks) ·
 [Variates](#variates-continuous-drivers-in-a-table) · [Identifiability](#identifiability) ·
@@ -13,6 +13,22 @@ no design matrix, no coefficient vector to map back.
 ---
 
 ## How it works
+
+`solver="auto"` is the default. It prefers the global solver and transparently falls back
+to table descent when the model needs features the global path does not support.
+`solver="global"` is a separate IRLS implementation: it
+forms a dense treatment-coded Gram matrix, uses a direct solve for unpenalised and ridge
+fits, and coordinate descent for Lasso and Elastic Net. It is often faster for modest
+parameter counts, especially when L1 disables the table solver's joint updates, at the
+cost of `O(p^2)` memory. The global solver is currently limited to base-level-normalised
+step tables with an updatable intercept, no locked rows, and at most 6,000 parameters;
+`solver="table"` remains the general and memory-scalable path.
+
+| Setting | Behavior |
+|---|---|
+| `auto` | Use global when supported; otherwise use table descent |
+| `global` | Require global IRLS and return a clear error if unsupported |
+| `table` | Require the original low-memory table algorithm |
 
 ### The sweep
 
@@ -628,6 +644,13 @@ statsmodels or R report.
 
 `standard_errors[t][r]` aligns index-for-index with `model_tables()`:
 
+No standard errors are calculated or reported when `alpha > 0`, for ridge, lasso, or
+elastic net fits. Penalisation deliberately biases the fitted coefficients, so Wald
+intervals centred on those coefficients do not have their advertised coverage. Use a
+bootstrap over the full fitting procedure, or refit without a penalty, when intervals
+are required. `standard_errors_note` explains this on the diagnostics object;
+`effective_parameters`, AIC, and BIC remain available.
+
 | Row | Standard error |
 |-----|----------------|
 | The anchoring reference | exactly `0` — fixed by construction, not estimated |
@@ -686,24 +709,23 @@ age_table = pl.DataFrame({
     "Rating_Factor": [0.0, 0.0, 0.0, 0.0, 0.0],
 })
 
-model = RatingModel([mean_table, age_table], objective="poisson")
+model = RatingModel([mean_table, age_table], family="poisson")
 
 options = GLMOptions(
-    objective="poisson",
     max_iterations=100,
     tolerance=1e-8,
     verbose=True,
     normalization="base_level",
 )
 
-fitted, diag = fit_glm_with_diagnostics(
+result = fit_glm_with_diagnostics(
     model, training_data,
     target_col="claims",
     weight_col="exposure",
     options=options,
 )
-print(diag)          # iterations, converged, deviance, pseudo_r2, dispersion, aic
-predictions = fitted.predict(test_data)
+print(result.diagnostics)
+predictions = result.predict(test_data)
 ```
 
 `GLMOptions` also carries `accelerate` (SQUAREM, default on) and
@@ -718,36 +740,31 @@ age_table = pl.DataFrame({
     "Age": [20.0, 30.0, 40.0, 50.0, float("inf")],   # inclusive upper bounds
     "Rating_Factor": [0.0] * 5,
 })
-model = RatingModel([mean_table, age_table], objective="poisson")
+model = RatingModel([mean_table, age_table], family="poisson")
 model = model.as_variate(1, [20.0, 30.0, 40.0, 50.0, 65.0])
 
-fitted, diag = fit_glm_with_diagnostics(model, df, "claims", "exposure", options=options)
-print(fitted.variate_slope(1))     # the one estimated parameter
-print(fitted.model_tables()[1])    # five factors, all on that line
+result = fit_glm_with_diagnostics(model, df, "claims", "exposure", options=options)
+print(result.model.variate_slope(1))     # the one estimated parameter
+print(result.rating_tables()[1])         # factors, relativities, and diagnostics
 
 # A curve instead of a line: same table, two parameters.
 model = model.as_variate(1, [20.0, 30.0, 40.0, 50.0, 65.0], degree=2)
-fitted, diag = fit_glm_with_diagnostics(model, df, "claims", "exposure", options=options)
+result = fit_glm_with_diagnostics(model, df, "claims", "exposure", options=options)
 
-print(fitted.variate_coefficients(1))      # [beta_1, beta_2] on the raw age scale
-for table_index, degree, coefs, ses, z in diag.variate_terms:
+print(result.model.variate_coefficients(1)) # [beta_1, beta_2] on the raw age scale
+for table_index, degree, coefs, ses, z in result.diagnostics.variate_terms:
     print(f"table {table_index}: degree {degree}, top-degree z = {z:.2f}")
     # |z| < 2 suggests the bend is not earning its parameter; try degree=1.
 ```
 
 ### Reading the standard errors
 
-`diag.standard_errors` lines up index-for-index with `model_tables()`:
+`result.rating_tables()` joins inference to the corresponding rows and adds
+`Coefficient`, `Standard_Error`, `Status`, and (for log links) `Relativity`:
 
 ```python
-for t, table in enumerate(fitted.model_tables()):
-    for r, factor in enumerate(table["Rating_Factor"]):
-        se = diag.standard_errors[t][r]
-        z = diag.z_value(t, r, factor)          # None for reference/aliased rows
-        flag = " (base)"    if se == 0          else \
-               " (aliased)" if (t, r) in diag.aliased_rows else \
-               " (no data)" if (t, r) in diag.unfitted_rows else ""
-        print(f"table {t} row {r}: {factor:+.4f}  se={se:.4f}  z={z}{flag}")
+for name, table in zip(result.model.table_names, result.rating_tables()):
+    print(name, table)
 ```
 
 ### Exposure as an offset
@@ -773,26 +790,26 @@ for i, j, rho in table_correlations(model, df, weight_col="exposure"):
     if rho > 0.9:
         print(f"tables {i} and {j} are near-aliased at {rho:.4f}")
 
-fitted, diag = fit_glm_with_diagnostics(model, df, "claims", options=options)
-print(diag.table_conditioning)   # > 10: expect hundreds of sweeps
-print(diag.accelerated_steps)    # SQUAREM jumps accepted
+result = fit_glm_with_diagnostics(model, df, "claims", options=options)
+print(result.diagnostics.table_conditioning) # > 10: expect hundreds of sweeps
+print(result.diagnostics.accelerated_steps)  # SQUAREM jumps accepted
 ```
 
 ### Distribution-specific examples
 
 ```python
 # Counts
-fit_glm(model, df, "claim_count", "exposure", options=GLMOptions(objective="poisson"))
+fit_glm(model, df, "claim_count", "exposure", options=GLMOptions())
 
 # Severity, weighted by claim count
-fit_glm(model, df, "severity", "claim_count", options=GLMOptions(objective="gamma"))
+fit_glm(model, df, "severity", "claim_count", options=GLMOptions())
 
 # Pure premium
 fit_glm(model, df, "loss_amount", "exposure",
-        options=GLMOptions(objective="tweedie", tweedie_power=1.5))
+        options=GLMOptions(tweedie_power=1.5))
 
 # Binary; predictions come back as probabilities in [0, 1]
-fit_glm(model, df, "is_claim", options=GLMOptions(objective="binary"))
+fit_glm(model, df, "is_claim", options=GLMOptions())
 ```
 
 ## Rust API
@@ -882,8 +899,8 @@ src/glm/
 
 ## Known gaps
 
-- **No regularisation.** No ridge, lasso, elastic net, credibility shrinkage, or
-  monotonicity constraints.
+- **No credibility shrinkage or monotonicity constraints.** Ridge, lasso, and elastic
+  net penalties are available through `alpha` and `l1_ratio`.
 - **Poorly conditioned plans are slow.** `table_conditioning` above ~10 costs hundreds of
   sweeps; see [above](#where-it-loses-correlated-tables) for the measurements and the
   planned fix.

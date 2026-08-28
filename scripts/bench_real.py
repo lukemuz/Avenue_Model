@@ -261,18 +261,19 @@ def encoding_check(codes, levels, y, family, repeats):
     """
     from avenue_model import fit_glm_with_diagnostics, GLMOptions
 
-    full = GLMOptions(objective=family, max_iterations=MAX_ITER,
+    full = GLMOptions(max_iterations=MAX_ITER,
                       tolerance=AVENUE_TOL, compute_standard_errors=False)
     # Matching happens once, so it is a fixed cost and a full fit dilutes it: on census
     # it is 24% of a 36-sweep fit but 92% of a one-sweep fit. Timing one sweep is what
     # makes this check sensitive enough to catch a regression in the lookup itself.
-    single = GLMOptions(objective=family, max_iterations=1,
+    single = GLMOptions(max_iterations=1,
                         tolerance=AVENUE_TOL, compute_standard_errors=False)
     out = {}
     for label, encoding in (("Float64 bands", "float"), ("Int32 categories", "int32")):
         df, model = build_avenue(codes, levels, y, family, encoding=encoding)
-        seconds, (fitted, diag) = best_of(
+        seconds, result = best_of(
             lambda: fit_glm_with_diagnostics(model, df, "y", options=full), repeats)
+        fitted, diag = result.model, result.diagnostics
         fixed, _ = best_of(
             lambda: fit_glm_with_diagnostics(model, df, "y", options=single), repeats)
         out[label] = (seconds, fixed, diag.iterations,
@@ -308,14 +309,15 @@ def run_avenue(codes, levels, y, family, repeats, standard_errors, categorical=(
     prep_seconds, (df, model) = best_of(
         lambda: build_avenue(codes, levels, y, family, categorical), repeats)
 
-    options = GLMOptions(objective=family, max_iterations=MAX_ITER,
+    options = GLMOptions(max_iterations=MAX_ITER,
                          tolerance=AVENUE_TOL,
                          compute_standard_errors=standard_errors)
 
     def fit():
         return fit_glm_with_diagnostics(model, df, "y", options=options)
 
-    fit_seconds, (fitted, diag) = best_of(fit, repeats)
+    fit_seconds, result = best_of(fit, repeats)
+    fitted, diag = result.model, result.diagnostics
 
     note = f"max|score|={diag.max_gradient:.1e}"
     if standard_errors and diag.inference_error is not None:
