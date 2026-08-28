@@ -16,6 +16,7 @@ authors = [
 keywords = ["actuarial", "glm", "insurance", "lightgbm", "rating-tables"]
 dependencies = [
     "polars==1.31.0",
+    "pyarrow>=14.0.1",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
