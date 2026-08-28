@@ -11,9 +11,13 @@
 
 #![cfg(feature = "python")]
 
-use crate::plan::{Base, Breaks, ExposureRole, FittedPlan, Plan, PlanCheck, ResolvedTerm, Term};
+use crate::plan::{
+    Base, Breaks, ExposureRole, FittedPlan, GivenRole, Plan, PlanCheck, ResolvedTerm, Term,
+};
 use crate::report::{ModelReport, Verdict};
+use crate::rating_model::RatingModel;
 use crate::validation::{Severity, Validation, ValidationOptions};
+use crate::workbook::{Scale, Workbook};
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -40,6 +44,18 @@ fn breaks_from(
         _ => Err(value_error(
             "Give exactly one of breaks=[...], quantile=n or equal_width=n, not several.",
         )),
+    }
+}
+
+fn scale_from(scale: Option<&str>) -> PyResult<Option<Scale>> {
+    match scale {
+        None => Ok(None),
+        Some("relativity") => Ok(Some(Scale::Relativity)),
+        Some("factor") => Ok(Some(Scale::Factor)),
+        Some(other) => Err(value_error(format!(
+            "scale must be 'relativity' or 'factor', got '{}'.",
+            other
+        ))),
     }
 }
 
@@ -214,6 +230,59 @@ impl PyPlan {
         Ok(PyPlan {
             inner: self.inner.clone().with(Term::Interaction { columns, breaks }),
         })
+    }
+
+    /// A table supplied outright, whose levels and bands define the term and whose
+    /// factors are re-estimated. The way to keep a plan's shape and refresh its numbers.
+    fn given(&self, name: &str, table: PyDataFrame) -> PyResult<Self> {
+        let table: DataFrame = table.into();
+        Ok(PyPlan {
+            inner: self
+                .inner
+                .clone()
+                .with(Term::given(name, &table).map_err(value_error)?),
+        })
+    }
+
+    /// A table supplied outright and held fixed: an existing rating plan that the new
+    /// factors are fitted on top of. It contributes to every prediction and spends no
+    /// parameters.
+    fn offset(&self, name: &str, table: PyDataFrame) -> PyResult<Self> {
+        let table: DataFrame = table.into();
+        Ok(PyPlan {
+            inner: self
+                .inner
+                .clone()
+                .with(Term::offset(name, &table).map_err(value_error)?),
+        })
+    }
+
+    /// Carry every table of a loaded model as a fixed offset.
+    ///
+    /// `prefix` namespaces the carried names — `"prior"` makes last year's `region`
+    /// arrive as `prior.region`. It is required: the carried intercept would otherwise
+    /// collide with this plan's own, and a report listing `region` twice says nothing
+    /// about which is which.
+    #[pyo3(signature = (model, prefix="prior"))]
+    fn offset_model(&self, model: &PyLoadedModel, prefix: &str) -> PyResult<Self> {
+        let plan = self
+            .inner
+            .clone()
+            .with_offset_model(&model.model, &model.table_names, prefix)
+            .map_err(value_error)?;
+        // The carried tables hold category codes, so the plan must encode string
+        // columns the same way or the same level could take a different code.
+        Ok(PyPlan {
+            inner: plan.with_encoding(model.encoding.clone()),
+        })
+    }
+
+    /// Encode string columns with these codes rather than deriving them from the data.
+    /// Needed whenever the plan carries tables built elsewhere.
+    fn with_encoding(&self, encoding: &PyLoadedModel) -> Self {
+        PyPlan {
+            inner: self.inner.clone().with_encoding(encoding.encoding.clone()),
+        }
     }
 
     #[getter]
@@ -567,6 +636,20 @@ impl PyFittedPlan {
             .collect())
     }
 
+    /// The fitted model as an editable, portable artifact.
+    ///
+    /// `scale` defaults to `"relativity"` under a log link, which is what a pricing
+    /// actuary reads and edits, and `"factor"` otherwise.
+    #[pyo3(signature = (scale=None))]
+    fn to_workbook(&self, scale: Option<&str>) -> PyResult<PyWorkbook> {
+        Ok(PyWorkbook {
+            inner: self
+                .inner
+                .to_workbook(scale_from(scale)?)
+                .map_err(value_error)?,
+        })
+    }
+
     /// Measure the model against data, in one call.
     #[pyo3(signature = (df, bins=None, bucket_tolerance=None, calibration_tolerance=None))]
     fn validate(
@@ -747,6 +830,185 @@ impl PyModelReport {
     }
 }
 
+// ---------------------------------------------------------------- workbook
+
+/// A model as a file you can open, edit and load back.
+#[pyclass(name = "Workbook")]
+#[derive(Clone)]
+pub struct PyWorkbook {
+    inner: Workbook,
+}
+
+#[pymethods]
+impl PyWorkbook {
+    /// Save as one self-contained JSON document.
+    fn save_json(&self, path: &str) -> PyResult<()> {
+        self.inner.save_json(path).map_err(value_error)
+    }
+
+    /// Save as a directory of CSVs plus `manifest.json` — the form to hand someone who
+    /// will edit it in a spreadsheet.
+    ///
+    /// The manifest is not optional decoration: it carries the family, the scale, which
+    /// tables are offsets, which rows are locked, the variates and the category codes.
+    /// A directory of CSVs without it is not a model.
+    fn save_csv_dir(&self, path: &str) -> PyResult<()> {
+        self.inner.save_csv_dir(path).map_err(value_error)
+    }
+
+    #[staticmethod]
+    fn load_json(path: &str) -> PyResult<Self> {
+        Ok(PyWorkbook {
+            inner: Workbook::load_json(path).map_err(value_error)?,
+        })
+    }
+
+    #[staticmethod]
+    fn load_csv_dir(path: &str) -> PyResult<Self> {
+        Ok(PyWorkbook {
+            inner: Workbook::load_csv_dir(path).map_err(value_error)?,
+        })
+    }
+
+    /// Turn the workbook back into a model, checking every table first.
+    ///
+    /// Raises if the structure is unusable, listing every fault at once rather than
+    /// stopping at the first — a hand-edited file should be repairable in one pass.
+    fn to_model(&self) -> PyResult<PyLoadedModel> {
+        let loaded = self.inner.to_model().map_err(value_error)?;
+        Ok(PyLoadedModel {
+            model: loaded.model,
+            table_names: loaded.table_names,
+            encoding: loaded.encoding,
+            family: loaded.family,
+            tweedie_power: loaded.tweedie_power,
+            issues: loaded.issues,
+        })
+    }
+
+    /// The tables as they are written in the file, one frame each.
+    #[getter]
+    fn tables(&self) -> Vec<PyDataFrame> {
+        self.inner.tables.iter().cloned().map(PyDataFrame).collect()
+    }
+
+    #[getter]
+    fn table_names(&self) -> Vec<String> {
+        self.inner
+            .manifest
+            .tables
+            .iter()
+            .map(|t| t.name.clone())
+            .collect()
+    }
+
+    /// `"relativity"` or `"factor"` — which scale the factor column is on.
+    #[getter]
+    fn scale(&self) -> String {
+        match self.inner.manifest.scale {
+            Scale::Relativity => "relativity".to_string(),
+            Scale::Factor => "factor".to_string(),
+        }
+    }
+
+    #[getter]
+    fn family(&self) -> String {
+        self.inner.manifest.family.clone()
+    }
+
+    #[getter]
+    fn link(&self) -> String {
+        self.inner.manifest.link.clone()
+    }
+
+    /// The version of Avenue that wrote this file.
+    #[getter]
+    fn avenue_version(&self) -> String {
+        self.inner.manifest.avenue_version.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Workbook(family='{}', tables={}, scale='{}')",
+            self.inner.manifest.family,
+            self.inner.tables.len(),
+            self.scale()
+        )
+    }
+}
+
+/// A model loaded from a workbook.
+#[pyclass(name = "LoadedModel")]
+#[derive(Clone)]
+pub struct PyLoadedModel {
+    pub(crate) model: RatingModel,
+    pub(crate) table_names: Vec<String>,
+    pub(crate) encoding: crate::plan::Encoding,
+    pub(crate) family: String,
+    pub(crate) tweedie_power: f64,
+    pub(crate) issues: Vec<crate::workbook::TableIssue>,
+}
+
+#[pymethods]
+impl PyLoadedModel {
+    #[getter]
+    fn table_names(&self) -> Vec<String> {
+        self.table_names.clone()
+    }
+
+    #[getter]
+    fn family(&self) -> String {
+        self.family.clone()
+    }
+
+    #[getter]
+    fn tweedie_power(&self) -> f64 {
+        self.tweedie_power
+    }
+
+    /// Non-blocking observations from the load: `table`, `row`, `code`, `message`.
+    /// Anything blocking was raised instead.
+    #[getter]
+    fn issues<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let list = PyList::empty(py);
+        for issue in &self.issues {
+            let dict = PyDict::new(py);
+            dict.set_item("table", &issue.table)?;
+            dict.set_item("row", issue.row)?;
+            dict.set_item("code", &issue.code)?;
+            dict.set_item("message", &issue.message)?;
+            list.append(dict)?;
+        }
+        Ok(list)
+    }
+
+    /// The rating tables, on the model's own factor scale.
+    fn model_tables(&self) -> Vec<PyDataFrame> {
+        self.model.model_tables().into_iter().map(PyDataFrame).collect()
+    }
+
+    /// Fitted means for a dataframe.
+    fn predict(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = df.into();
+        let predictions = self.model.predict(&df).map_err(value_error)?;
+        DataFrame::new(vec![predictions.into()])
+            .map(PyDataFrame)
+            .map_err(value_error)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LoadedModel(family='{}', tables={}, notes={})",
+            self.family,
+            self.table_names.len(),
+            self.issues.len()
+        )
+    }
+}
+
+// `GivenRole` is reached through Term::given and Term::offset above.
+const _: Option<GivenRole> = None;
+
 /// Register everything in this module on the extension module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPlan>()?;
@@ -754,6 +1016,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyValidation>()?;
     m.add_class::<PyFittedPlan>()?;
     m.add_class::<PyModelReport>()?;
+    m.add_class::<PyWorkbook>()?;
+    m.add_class::<PyLoadedModel>()?;
     Ok(())
 }
 

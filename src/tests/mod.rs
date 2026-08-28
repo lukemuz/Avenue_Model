@@ -1,4 +1,5 @@
 mod analysis_tests;
+mod composition_tests;
 mod glm_benchmarks;
 mod glm_correctness_tests;
 mod glm_distribution_tests;
@@ -12,6 +13,7 @@ mod plan_tests;
 mod report_tests;
 mod validation_tests;
 mod weight_distribution_test;
+mod workbook_tests;
 
 use crate::{
     rating_model::{

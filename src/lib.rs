@@ -8,6 +8,7 @@ pub mod rating_model;
 pub mod report;
 pub mod table_estimator;
 pub mod validation;
+pub mod workbook;
 pub mod tests;
 
 // Python bindings (only when "python" feature is enabled)

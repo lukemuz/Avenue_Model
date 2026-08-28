@@ -130,6 +130,42 @@ pub enum Term {
         columns: Vec<String>,
         breaks: Vec<Option<Breaks>>,
     },
+    /// A table supplied outright rather than derived from the data.
+    ///
+    /// This is how an existing rating plan enters a new model: as an
+    /// [`GivenRole::Offset`] it is carried in every prediction and never updated, so
+    /// the new factors are fitted *on top of* what is already filed. As
+    /// [`GivenRole::Structure`] its levels and bands define the table and its factors
+    /// are re-estimated — the way to keep a plan's shape while refreshing its numbers.
+    ///
+    /// The table travels inside the plan rather than by reference, so a plan remains a
+    /// complete description of its model.
+    Given {
+        name: String,
+        /// The table's rows, in the same record form a workbook uses.
+        table: Vec<BTreeMap<String, serde_json::Value>>,
+        #[serde(default)]
+        role: GivenRole,
+    },
+}
+
+/// What a supplied table is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GivenRole {
+    /// Its levels and bands define the table; its factors are re-estimated. The
+    /// supplied factors become starting values, which do not affect where the fit
+    /// lands.
+    Structure,
+    /// Both structure and factors are held fixed. The table contributes to every
+    /// prediction and spends no parameters.
+    Offset,
+}
+
+impl Default for GivenRole {
+    fn default() -> Self {
+        GivenRole::Structure
+    }
 }
 
 impl Term {
@@ -166,6 +202,25 @@ impl Term {
         }
     }
 
+    /// A table supplied outright, whose factors will be re-estimated.
+    pub fn given(name: &str, table: &DataFrame) -> Result<Self, PolarsError> {
+        Ok(Term::Given {
+            name: name.to_string(),
+            table: crate::workbook::frame_to_records(table)?,
+            role: GivenRole::Structure,
+        })
+    }
+
+    /// A table supplied outright and held fixed: an existing rating plan the new
+    /// factors are fitted on top of.
+    pub fn offset(name: &str, table: &DataFrame) -> Result<Self, PolarsError> {
+        Ok(Term::Given {
+            name: name.to_string(),
+            table: crate::workbook::frame_to_records(table)?,
+            role: GivenRole::Offset,
+        })
+    }
+
     /// Every data column this term reads.
     pub fn columns(&self) -> Vec<&str> {
         match self {
@@ -173,6 +228,9 @@ impl Term {
             | Term::Categorical { column, .. }
             | Term::Variate { column, .. } => vec![column.as_str()],
             Term::Interaction { columns, .. } => columns.iter().map(String::as_str).collect(),
+            // A supplied table names its own columns; they are read off the frame at
+            // build time rather than declared here.
+            Term::Given { .. } => Vec::new(),
         }
     }
 
@@ -183,6 +241,7 @@ impl Term {
             | Term::Categorical { column, .. }
             | Term::Variate { column, .. } => column.clone(),
             Term::Interaction { columns, .. } => columns.join(" x "),
+            Term::Given { name, .. } => name.clone(),
         }
     }
 }
@@ -217,6 +276,15 @@ pub struct Plan {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exposure_role: Option<ExposureRole>,
     pub terms: Vec<Term>,
+    /// Category codes to encode string columns with, rather than deriving them from
+    /// the data.
+    ///
+    /// Set this when the plan carries supplied tables: those tables hold codes, and a
+    /// freshly derived encoding could give the same level a different code — which
+    /// would not fail, it would price the wrong level. A workbook hands you the
+    /// encoding its tables were built with for exactly this purpose.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<Encoding>,
 }
 
 fn default_tweedie() -> f64 {
@@ -231,6 +299,7 @@ impl Plan {
             exposure: None,
             exposure_role: None,
             terms: Vec::new(),
+            encoding: None,
         }
     }
 
@@ -269,6 +338,60 @@ impl Plan {
     pub fn with_tweedie_power(mut self, power: f64) -> Self {
         self.tweedie_power = power;
         self
+    }
+
+    /// Encode string columns with these codes rather than deriving them from the data.
+    /// Required whenever the plan carries supplied tables built elsewhere.
+    pub fn with_encoding(mut self, encoding: Encoding) -> Self {
+        self.encoding = Some(encoding);
+        self
+    }
+
+    /// Carry every table of an existing model as a fixed offset, so new factors are
+    /// fitted on top of a plan that is already in force.
+    ///
+    /// The existing model's intercept comes across as an offset like any other table:
+    /// it contributes its constant to every risk, and the new model fits its *own*
+    /// intercept on top, which is what lets the new fit express a rate-level change
+    /// against the carried plan.
+    ///
+    /// `prefix` namespaces the carried names — pass `"prior"` and last year's `region`
+    /// table arrives as `prior.region`. It is required rather than defaulted because
+    /// the carried tables and the new ones share one namespace, the carried intercept
+    /// would always collide with the plan's own, and a report that lists `region`
+    /// twice tells a reader nothing about which is which.
+    pub fn with_offset_model(
+        mut self,
+        model: &RatingModel,
+        table_names: &[String],
+        prefix: &str,
+    ) -> Result<Self, PolarsError> {
+        if table_names.len() != model.tables.len() {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Got {} names for {} tables.",
+                    table_names.len(),
+                    model.tables.len()
+                )
+                .into(),
+            ));
+        }
+        if prefix.is_empty() {
+            return Err(PolarsError::ComputeError(
+                "with_offset_model needs a prefix to namespace the carried tables, such \
+                 as \"prior\". The carried intercept would otherwise collide with the \
+                 plan's own."
+                    .into(),
+            ));
+        }
+        for (index, table) in model.tables.iter().enumerate() {
+            self.terms.push(Term::Given {
+                name: format!("{}.{}", prefix, table_names[index]),
+                table: crate::workbook::frame_to_records(&table.data)?,
+                role: GivenRole::Offset,
+            });
+        }
+        Ok(self)
     }
 
     /// How exposure enters, resolving the family default when unset.
@@ -358,6 +481,8 @@ impl Plan {
     ) -> Result<Prepared, PolarsError> {
         let mut out = df.clone();
         let mut built = Encoding::default();
+        // An encoding passed in wins; otherwise the plan's own, if it carries one.
+        let encoding = encoding.or(self.encoding.as_ref());
 
         for term in &self.terms {
             let numeric_columns: HashSet<&str> = match term {
@@ -371,7 +496,59 @@ impl Plan {
                     .filter(|(_, b)| b.is_some())
                     .map(|(c, _)| c.as_str())
                     .collect(),
+                // A supplied table arrives already in the dtypes the matcher reads;
+                // its own columns are normalised below, from the frame itself.
+                Term::Given { .. } => HashSet::new(),
             };
+
+            // A supplied table names its columns in its own frame, and each is banded
+            // or categorical according to the dtype it was saved with.
+            let given_columns: Vec<(String, bool)> = match term {
+                Term::Given { table, .. } => {
+                    let frame = crate::workbook::records_to_frame(table)?;
+                    frame
+                        .get_column_names()
+                        .iter()
+                        .filter(|c| c.as_str() != "Rating_Factor")
+                        .map(|c| {
+                            let numeric = frame
+                                .column(c)
+                                .map(|col| col.dtype() == &DataType::Float64)
+                                .unwrap_or(false);
+                            (c.to_string(), numeric)
+                        })
+                        .collect()
+                }
+                _ => Vec::new(),
+            };
+            for (column, numeric) in &given_columns {
+                let series = out
+                    .column(column.as_str())
+                    .map_err(|_| missing_column(column, df))?;
+                let cast = if *numeric {
+                    series.cast(&DataType::Float64)
+                } else {
+                    encode_categorical(series, column, encoding).map(|(c, map)| {
+                        if let Some(map) = map {
+                            built.maps.insert(column.clone(), map);
+                        }
+                        c
+                    })
+                }
+                .map_err(|_| {
+                    PolarsError::ComputeError(
+                        format!(
+                            "Column '{}' is rated by the supplied table '{}' but cannot be \
+                             read as {}.",
+                            column,
+                            term.name(),
+                            if *numeric { "a number" } else { "a category" }
+                        )
+                        .into(),
+                    )
+                })?;
+                out.with_column(cast)?;
+            }
 
             for column in term.columns() {
                 let series = out.column(column).map_err(|_| missing_column(column, df))?;
@@ -931,6 +1108,71 @@ impl Plan {
                         edges: Some(edges),
                         base_level: Some("lowest band".to_string()),
                         variate_values: Some(variate_values),
+                    },
+                ))
+            }
+
+            Term::Given { name, table, role } => {
+                let frame = crate::workbook::records_to_frame(table)?;
+                // The same structural checks a workbook load applies, so a table
+                // pasted into a plan cannot smuggle in an out-of-order band.
+                // A one-row table with no feature columns is a constant: legitimate
+                // as a carried-over intercept, and checked by the intercept's rules
+                // rather than rejected for having nothing to rate on.
+                let is_constant = frame.height() == 1
+                    && frame
+                        .get_column_names()
+                        .iter()
+                        .all(|c| c.as_str() == "Rating_Factor");
+                let faults: Vec<String> = crate::workbook::check_table(
+                    &frame,
+                    name,
+                    "Rating_Factor",
+                    is_constant,
+                )
+                .into_iter()
+                .filter(|issue| issue.blocking)
+                .map(|issue| issue.describe())
+                .collect();
+                if !faults.is_empty() {
+                    return Err(PolarsError::ComputeError(
+                        format!(
+                            "The supplied table '{}' cannot be used. {} problem{} found:\n  {}",
+                            name,
+                            faults.len(),
+                            if faults.len() == 1 { "" } else { "s" },
+                            faults.join("\n  ")
+                        )
+                        .into(),
+                    ));
+                }
+
+                let rows = frame.height();
+                let mut built = RatingTable::new(frame, None).with_name(name);
+                if *role == GivenRole::Offset {
+                    built = built.as_offset();
+                }
+                Ok((
+                    built,
+                    ResolvedTerm {
+                        name: name.clone(),
+                        kind: match role {
+                            GivenRole::Offset => "offset".to_string(),
+                            GivenRole::Structure => "given".to_string(),
+                        },
+                        columns: Vec::new(),
+                        rows,
+                        // An offset spends nothing: it is carried, never estimated.
+                        parameters: match role {
+                            GivenRole::Offset => 0,
+                            GivenRole::Structure => rows.saturating_sub(1),
+                        },
+                        edges: None,
+                        base_level: match role {
+                            GivenRole::Offset => Some("fixed".to_string()),
+                            GivenRole::Structure => Some("first row".to_string()),
+                        },
+                        variate_values: None,
                     },
                 ))
             }
@@ -1677,6 +1919,25 @@ impl Plan {
 }
 
 impl FittedPlan {
+    /// The fitted model as an editable, portable artifact.
+    ///
+    /// `scale` defaults to relativities under a log link. Save it with
+    /// [`crate::workbook::Workbook::save_csv_dir`] to hand someone a spreadsheet, or
+    /// [`crate::workbook::Workbook::save_json`] for one self-contained file.
+    pub fn to_workbook(
+        &self,
+        scale: Option<crate::workbook::Scale>,
+    ) -> Result<crate::workbook::Workbook, PolarsError> {
+        crate::workbook::Workbook::from_model(
+            &self.model,
+            &self.plan.family,
+            &self.table_names,
+            &self.encoding,
+            self.plan.tweedie_power,
+            scale,
+        )
+    }
+
     /// Prepare scoring data with the encoding this model was fitted with.
     pub fn prepare(&self, df: &DataFrame) -> Result<Prepared, PolarsError> {
         self.plan.prepare(df, Some(&self.encoding))

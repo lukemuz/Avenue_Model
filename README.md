@@ -113,6 +113,76 @@ unchanged. That is deliberate — the goal is not that someone feels confident a
 model, it is that their confidence is *calibrated*, so the caveats travel with the
 numbers rather than depending on whoever reports them to think of the caveats.
 
+### Hand the model to someone as a file
+
+The tables are the model, so the model is a file — one you can open, change, and load
+back as the model it now says it is.
+
+```python
+fitted.to_workbook().save_csv_dir("plan_2026")
+```
+
+```
+plan_2026/
+  manifest.json        family, link, scale, offsets, locks, variates, category codes
+  00_intercept.csv
+  01_driver_age.csv    driver_age,Relativity
+  02_region.csv        region,Relativity
+```
+
+```python
+from avenue_model import Workbook
+
+loaded = Workbook.load_csv_dir("plan_2026").to_model()   # after someone edits it
+loaded.predict(new_business)
+```
+
+**One factor column, named for its scale.** Log-link models write `Relativity`, because
+that is the number an actuary edits; everything else writes `Rating_Factor`. Two columns
+encoding one truth is how an edit gets silently ignored, so a workbook never carries
+both — the manifest records which scale it is on. (`Rating_Factor` round-trips bit for
+bit; `Relativity` goes through `exp`/`ln` and agrees to a couple of units in the last
+place. Use the factor scale when reproducing a fit exactly.)
+
+**The manifest is not decoration.** It carries what a table cannot say about itself:
+which tables are offsets, which rows are locked, which are variates, and how category
+levels map to codes. A directory of CSVs without it is not a model.
+
+**A bad edit is refused, and every fault is named at once.** Out-of-order bands, a
+deleted `inf` row, a blank factor, a duplicated level, a dtype the matcher cannot read —
+each of those otherwise mis-prices in silence rather than failing:
+
+```
+This workbook cannot be loaded as a model. 2 problems found:
+  [bounds_not_ascending] table 'driver_age' row 1: Band bound 'driver_age' is 25 but the
+  row above it is 45. Bounds must ascend down the table: lookup takes the first row whose
+  bound is not below the value, so an out-of-order row silently returns the wrong band.
+  Sort the rows by 'driver_age'.
+  [no_unbounded_band] table 'vehicle_value': Band bounds stop at 40000. The largest band
+  must be unbounded (inf), or anything above 40000 matches no row and scores as NaN.
+```
+
+### Fit on top of a plan that is already in force
+
+```python
+prior = Workbook.load_csv_dir("plan_2025").to_model()
+
+plan = (
+    Plan.frequency("exposure")
+    .offset_model(prior, prefix="prior")   # carried, fixed, costs no parameters
+    .categorical("telematics")             # the new factor, fitted on top
+)
+fitted = plan.fit(train, "claim_count")
+```
+
+An offset table contributes to every prediction and is never updated, so the new factors
+are estimated *against* what is already filed. The plan's own intercept is still fitted,
+which is what lets the refit express a rate-level change. Use `.given(name, table)`
+instead to keep a table's levels and bands while re-estimating its numbers.
+
+Supplied tables travel inside the plan's JSON, so a plan stays a complete description of
+its model, and they are checked exactly as strictly as one loaded from disk.
+
 ### Fit a GLM on rating tables
 
 ```python
@@ -297,6 +367,8 @@ adds penalties that encourage the sparse, shallow trees this workflow wants.
 - Standard errors per level, plus dispersion, deviance, AIC and BIC
 - Additive model structure, or multiplicative effects under a log link
 - LightGBM conversion with exact prediction parity
+- Models save and load as an editable workbook: JSON, or CSVs plus a manifest
+- Existing tables compose in as fixed offsets or as model structure
 - Declarative plans that build the tables, state every default, and round-trip as JSON
 - One-call holdout validation: calibration, lift, Gini, actual-versus-expected, and
   severity-graded findings
@@ -536,7 +608,7 @@ reasoning is in the [module docs](src/glm/README.md#build-settings).
 ## Development
 
 ```bash
-cargo test --lib                  # 223 tests
+cargo test --lib                  # 247 tests
 maturin develop --release         # build the Python bindings
 cargo test --features benchmarks  # include the benchmark tests
 ```
