@@ -1699,6 +1699,12 @@ impl FittedPlan {
         options: &ValidationOptions,
     ) -> Result<Validation, PolarsError> {
         let prepared = self.prepare(df)?;
+        // Findings name the tables rather than numbering them; a reader should not
+        // have to resolve "table 2" against anything.
+        let mut options = options.clone();
+        if options.table_names.is_none() {
+            options.table_names = Some(self.table_names.clone());
+        }
         let mut validation = validate(
             &self.model,
             &prepared.df,
@@ -1708,7 +1714,7 @@ impl FittedPlan {
             &self.plan.family,
             self.plan.tweedie_power,
             Some(&self.diagnostics),
-            options,
+            &options,
         )?;
         for frame in validation.actual_vs_expected.iter_mut() {
             self.label_encoded_columns(frame)?;

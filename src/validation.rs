@@ -92,6 +92,9 @@ pub struct ValidationOptions {
     pub thin_exposure_share: f64,
     /// A Gini below this means the model barely orders risk at all.
     pub min_gini: f64,
+    /// Table names, so findings can say `region` rather than `table 2`. Aligned with
+    /// the model's tables; falls back to the index when absent.
+    pub table_names: Option<Vec<String>>,
 }
 
 impl Default for ValidationOptions {
@@ -103,6 +106,7 @@ impl Default for ValidationOptions {
             bucket_tolerance: 0.10,
             thin_exposure_share: 0.001,
             min_gini: 0.05,
+            table_names: None,
         }
     }
 }
@@ -169,6 +173,14 @@ impl Validation {
     /// True when nothing was found that should stop the model being used.
     pub fn is_usable(&self) -> bool {
         !self.warnings.iter().any(|w| w.severity == Severity::High)
+    }
+}
+
+/// How to refer to a table in a message a person will read.
+fn table_label(options: &ValidationOptions, index: usize) -> String {
+    match options.table_names.as_ref().and_then(|n| n.get(index)) {
+        Some(name) => format!("'{}'", name),
+        None => format!("table {}", index),
     }
 }
 
@@ -314,7 +326,14 @@ pub fn validate(
             .iter()
             .enumerate()
             .max_by_key(|(_, c)| **c)
-            .map(|(t, c)| format!(" The largest contributor is table {} with {} rows.", t, c))
+            .filter(|(_, c)| **c > 0)
+            .map(|(t, c)| {
+                format!(
+                    " The largest contributor is {} with {} rows.",
+                    table_label(options, t),
+                    c
+                )
+            })
             .unwrap_or_default();
         warnings.push(Warning::new(
             Severity::High,
