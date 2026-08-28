@@ -509,4 +509,83 @@ mod workbook_tests {
         assert!(!issue.blocking, "an edited curve is a note, not a refusal");
         assert!(issue.message.contains("refit"), "{}", issue.message);
     }
+
+    /// A file that names its levels `3` forces the reader to the manifest before they
+    /// can change anything. The label is the key, not a second copy of the factor.
+    #[test]
+    fn categorical_levels_are_written_by_name_and_read_back_by_name() {
+        let workbook = book(&model(), None);
+        let region = &workbook.tables[2];
+        assert_eq!(
+            region.column("region").unwrap().dtype(),
+            &DataType::String,
+            "levels must be written as text"
+        );
+        let labels: Vec<&str> = region
+            .column("region")
+            .unwrap()
+            .str()
+            .unwrap()
+            .into_no_null_iter()
+            .collect();
+        assert_eq!(labels, vec!["east", "north", "west"]);
+
+        // And they come back as the codes the matcher needs.
+        let loaded = workbook.to_model().unwrap();
+        let codes: Vec<i32> = loaded.model.tables[2]
+            .data
+            .column("region")
+            .unwrap()
+            .i32()
+            .unwrap()
+            .into_no_null_iter()
+            .collect();
+        assert_eq!(codes, vec![0, 1, 2]);
+        assert_eq!(predictions(&loaded.model).len(), 4);
+    }
+
+    #[test]
+    fn a_level_the_encoding_has_never_seen_is_reported_by_name() {
+        let mut workbook = book(&model(), Some(Scale::Factor));
+        let mut edited = workbook.tables[2].clone();
+        edited
+            .with_column(Series::new(
+                "region".into(),
+                vec!["east", "notaregion", "west"],
+            ))
+            .unwrap();
+        workbook.tables[2] = edited;
+
+        let error = expect_err(workbook.to_model());
+        assert!(error.contains("unknown_level"), "{}", error);
+        assert!(error.contains("notaregion"), "the message must quote it: {}", error);
+        assert!(
+            error.contains("east") && error.contains("north"),
+            "and list the levels that do exist: {}",
+            error
+        );
+    }
+
+    /// A hand-written file that uses codes instead of names still works, so nobody is
+    /// forced to look up a label they already know the code for.
+    #[test]
+    fn raw_codes_are_still_accepted_where_a_name_was_expected() {
+        let mut workbook = book(&model(), Some(Scale::Factor));
+        let mut edited = workbook.tables[2].clone();
+        edited
+            .with_column(Series::new("region".into(), vec!["0", "1", "2"]))
+            .unwrap();
+        workbook.tables[2] = edited;
+
+        let loaded = workbook.to_model().unwrap();
+        let codes: Vec<i32> = loaded.model.tables[2]
+            .data
+            .column("region")
+            .unwrap()
+            .i32()
+            .unwrap()
+            .into_no_null_iter()
+            .collect();
+        assert_eq!(codes, vec![0, 1, 2]);
+    }
 }

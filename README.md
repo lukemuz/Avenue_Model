@@ -124,11 +124,21 @@ fitted.to_workbook().save_csv_dir("plan_2026")
 
 ```
 plan_2026/
-  manifest.json        family, link, scale, offsets, locks, variates, category codes
+  manifest.json    family, link, scale, offsets, locks, variates, category codes
   00_intercept.csv
-  01_driver_age.csv    driver_age,Relativity
-  02_region.csv        region,Relativity
+  01_driver_age.csv          02_region.csv
+    driver_age,Relativity      region,Relativity
+    25,1                       west,1
+    45,1.0118                  east,0.8692
+    65,1.6118                  north,0.5729
+    inf,1.6318                 south,0.7188
 ```
+
+Levels are written by **name**, not by code — a file whose region column reads `3` sends
+the reader to the manifest before they can change anything. Names resolve back through
+the manifest's encoding on load, and a name it has never seen is refused by name rather
+than dropped. Raw codes are still accepted, so nobody is forced to look up a label they
+already know.
 
 ```python
 from avenue_model import Workbook
@@ -608,7 +618,7 @@ reasoning is in the [module docs](src/glm/README.md#build-settings).
 ## Development
 
 ```bash
-cargo test --lib                  # 247 tests
+cargo test --lib                  # 250 tests
 maturin develop --release         # build the Python bindings
 cargo test --features benchmarks  # include the benchmark tests
 ```

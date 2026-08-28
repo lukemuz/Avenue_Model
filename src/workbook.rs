@@ -554,6 +554,39 @@ impl Workbook {
             // factor column. Nothing derived: a second column encoding the same truth
             // is a second place for an edit to be silently ignored.
             let mut frame = table.data.drop("Rating_Factor")?;
+            // Where a column has an encoding, write the level *text*. A file whose
+            // region column reads `3` forces the reader to the manifest before they can
+            // change anything; one that reads `west` does not. The label is the key,
+            // not a second copy of the factor, so this adds no place for an edit to be
+            // silently ignored.
+            for column in frame
+                .get_column_names()
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<String>>()
+            {
+                let Some(levels) = encoding.maps.get(&column) else {
+                    continue;
+                };
+                let Ok(codes) = frame.column(&column).and_then(|c| c.i32().cloned()) else {
+                    continue;
+                };
+                let labels: Vec<Option<String>> = codes
+                    .into_iter()
+                    .map(|code| {
+                        code.and_then(|c| {
+                            levels
+                                .iter()
+                                .find(|(_, mapped)| *mapped == c)
+                                // A code with no level is left as its number rather
+                                // than blanked, so nothing is lost.
+                                .map(|(text, _)| text.clone())
+                                .or_else(|| Some(c.to_string()))
+                        })
+                    })
+                    .collect();
+                frame.with_column(Series::new(column.as_str().into(), labels))?;
+            }
             frame.with_column(Series::new(
                 scale.column().into(),
                 factors.iter().map(|f| scale.from_factor(*f)).collect::<Vec<f64>>(),
@@ -627,7 +660,18 @@ impl Workbook {
         let factor_column = scale.column();
         let mut issues = Vec::new();
 
+        // Level text becomes codes again before anything inspects the frame, so the
+        // structural checks see the dtypes the matcher will.
+        let mut decoded = Vec::with_capacity(self.tables.len());
         for (index, frame) in self.tables.iter().enumerate() {
+            decoded.push(self.decode_levels(
+                frame,
+                &self.manifest.tables[index].name,
+                &mut issues,
+            )?);
+        }
+
+        for (index, frame) in decoded.iter().enumerate() {
             issues.extend(check_table(
                 frame,
                 &self.manifest.tables[index].name,
@@ -637,7 +681,7 @@ impl Workbook {
         }
 
         if scale == Scale::Relativity {
-            for (index, frame) in self.tables.iter().enumerate() {
+            for (index, frame) in decoded.iter().enumerate() {
                 if let Ok(values) = frame.column(factor_column).and_then(|c| c.f64().cloned()) {
                     for (row, value) in values.into_iter().enumerate() {
                         if matches!(value, Some(v) if v <= 0.0) {
@@ -676,7 +720,7 @@ impl Workbook {
 
         // ---- structure is sound; build the tables
         let mut tables = Vec::with_capacity(self.tables.len());
-        for (index, frame) in self.tables.iter().enumerate() {
+        for (index, frame) in decoded.iter().enumerate() {
             let entry = &self.manifest.tables[index];
             let factors: Vec<f64> = frame
                 .column(factor_column)?
@@ -777,6 +821,75 @@ impl Workbook {
             tweedie_power: self.manifest.tweedie_power,
             issues,
         })
+    }
+}
+
+impl Workbook {
+    /// Turn any level text in `frame` back into the codes it stands for.
+    ///
+    /// A value that is not a known level but reads as a whole number is taken as a
+    /// code, so a file written by hand still works. Anything else is a level the
+    /// encoding has never seen, which is reported rather than guessed at: silently
+    /// dropping it would leave the row matching nothing.
+    fn decode_levels(
+        &self,
+        frame: &DataFrame,
+        table: &str,
+        issues: &mut Vec<TableIssue>,
+    ) -> Result<DataFrame, PolarsError> {
+        let mut out = frame.clone();
+        for column in frame
+            .get_column_names()
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>()
+        {
+            let Some(levels) = self.manifest.encodings.get(&column) else {
+                continue;
+            };
+            let Ok(text) = frame.column(&column).and_then(|c| c.str().cloned()) else {
+                continue; // already codes
+            };
+            let codes: Vec<Option<i32>> = text
+                .into_iter()
+                .enumerate()
+                .map(|(row, value)| match value {
+                    None => None,
+                    Some(value) => {
+                        let trimmed = value.trim();
+                        match levels.iter().find(|(name, _)| name == trimmed) {
+                            Some((_, code)) => Some(*code),
+                            None => match trimmed.parse::<i32>() {
+                                Ok(code) => Some(code),
+                                Err(_) => {
+                                    issues.push(TableIssue::blocking(
+                                        table,
+                                        Some(row),
+                                        "unknown_level",
+                                        format!(
+                                            "'{}' is not a level of '{}'. The manifest knows \
+                                             {}. Add it to the manifest's encodings, or \
+                                             correct the spelling.",
+                                            trimmed,
+                                            column,
+                                            levels
+                                                .iter()
+                                                .map(|(name, _)| name.as_str())
+                                                .take(20)
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        ),
+                                    ));
+                                    None
+                                }
+                            },
+                        }
+                    }
+                })
+                .collect();
+            out.with_column(Series::new(column.as_str().into(), codes))?;
+        }
+        Ok(out)
     }
 }
 
@@ -921,18 +1034,26 @@ pub(crate) fn records_to_frame(
             .map(|r| r.get(name).unwrap_or(&serde_json::Value::Null))
             .collect();
 
-        // A column of whole numbers is a category code; anything else is numeric.
-        // Strings only appear for the infinities, which belong to a numeric column.
-        let all_integral = cells.iter().all(|v| match v {
-            serde_json::Value::Number(n) => n.is_i64() || n.is_u64(),
-            serde_json::Value::Null => true,
-            _ => false,
-        });
-        let any_text = cells
-            .iter()
-            .any(|v| matches!(v, serde_json::Value::String(_)));
+        // Three shapes, decided by what the values actually are. A column of whole
+        // numbers is a category code. A column of numbers, or of the text spellings of
+        // infinity, is a numeric band. Anything else is level text — which a workbook
+        // writes for every encoded column, so this is the common case rather than an
+        // edge one.
+        let populated = cells.iter().any(|v| !v.is_null());
+        let all_integral = populated
+            && cells.iter().all(|v| match v {
+                serde_json::Value::Number(n) => n.is_i64() || n.is_u64(),
+                serde_json::Value::Null => true,
+                _ => false,
+            });
+        let all_numeric = populated
+            && cells.iter().all(|v| match v {
+                serde_json::Value::Number(_) | serde_json::Value::Null => true,
+                serde_json::Value::String(s) => parse_number(s).is_some(),
+                _ => false,
+            });
 
-        if all_integral && !any_text && cells.iter().any(|v| !v.is_null()) {
+        if all_integral {
             columns.push(
                 Series::new(
                     name.as_str().into(),
@@ -943,7 +1064,7 @@ pub(crate) fn records_to_frame(
                 )
                 .into(),
             );
-        } else {
+        } else if all_numeric {
             columns.push(
                 Series::new(
                     name.as_str().into(),
@@ -955,6 +1076,21 @@ pub(crate) fn records_to_frame(
                             _ => None,
                         })
                         .collect::<Vec<Option<f64>>>(),
+                )
+                .into(),
+            );
+        } else {
+            columns.push(
+                Series::new(
+                    name.as_str().into(),
+                    cells
+                        .iter()
+                        .map(|v| match v {
+                            serde_json::Value::String(s) => Some(s.clone()),
+                            serde_json::Value::Null => None,
+                            other => Some(other.to_string()),
+                        })
+                        .collect::<Vec<Option<String>>>(),
                 )
                 .into(),
             );
