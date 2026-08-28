@@ -9,6 +9,7 @@ mod glm_tests;
 mod model_tests;
 pub mod testing_utils;
 mod plan_tests;
+mod report_tests;
 mod validation_tests;
 mod weight_distribution_test;
 

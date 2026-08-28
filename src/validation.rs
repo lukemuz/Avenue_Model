@@ -676,15 +676,28 @@ fn calibration_table(
         ));
     }
 
+    // Observations the model scores identically go in the same bucket. Splitting a
+    // tie group across a boundary gives each part the same expected but a different
+    // actual, so the bucket's actual-over-expected moves with wherever the cut landed
+    // rather than with the model — manufacturing miscalibration that is not there.
+    // The cost is buckets of slightly unequal exposure, which is the honest trade.
     let mut bin_of = vec![0usize; n];
     let mut cumulative = 0.0;
-    for (rank, &i) in order.iter().enumerate() {
-        // Assign on the exposure *entering* this observation so a single heavy row
-        // cannot push the whole bucket boundary past itself.
-        let bucket = ((cumulative / total_weight) * bins as f64).floor() as usize;
-        bin_of[i] = bucket.min(bins - 1);
-        cumulative += w[i];
-        let _ = rank;
+    let mut start = 0usize;
+    while start < n {
+        let value = mu[order[start]];
+        let mut end = start + 1;
+        while end < n && mu[order[end]] == value {
+            end += 1;
+        }
+        // Placed on the exposure *entering* the group, so a single heavy group cannot
+        // push the boundary past itself.
+        let bucket = (((cumulative / total_weight) * bins as f64).floor() as usize).min(bins - 1);
+        for &i in &order[start..end] {
+            bin_of[i] = bucket;
+            cumulative += w[i];
+        }
+        start = end;
     }
 
     let mut b_n = vec![0i64; bins];

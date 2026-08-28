@@ -3,6 +3,7 @@ pub mod analysis;
 pub mod glm;
 pub mod plan;
 pub mod rating_model;
+pub mod report;
 pub mod table_estimator;
 pub mod validation;
 pub mod tests;
