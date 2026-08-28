@@ -133,8 +133,14 @@ impl FittedModel {
                     stage: stage_of(warning).to_string(),
                 });
             }
-        } else if let Some(diagnostics) = self.diagnostics.as_ref() {
-            if !diagnostics.converged {
+        } else {
+            findings.push(Finding {
+                severity: Severity::Medium,
+                code: "not_validated".to_string(),
+                message: "The model has not been measured against held-out data. Validate it before treating it as ready for use.".to_string(),
+                stage: "validation".to_string(),
+            });
+            if let Some(diagnostics) = self.diagnostics.as_ref().filter(|d| !d.converged) {
                 // Without validation the convergence flag would otherwise go unreported.
                 findings.push(Finding {
                     severity: Severity::High,
@@ -185,11 +191,20 @@ impl FittedModel {
             Some(plan) => plan.to_json()?,
             None => String::new(),
         };
-        let fingerprint = fingerprint(if plan_json.is_empty() {
-            &self.family
+        let fingerprint_source = if plan_json.is_empty() {
+            // A loaded or converted model has no plan, so fingerprint the artifact
+            // itself. Remove volatile provenance first: two saves of the same model
+            // must identify the same model.
+            let mut workbook = self.to_workbook(Some(crate::workbook::Scale::Factor))?;
+            workbook.manifest.created = None;
+            for table in &mut workbook.manifest.tables {
+                table.file = None;
+            }
+            workbook.to_json()?
         } else {
-            &plan_json
-        });
+            plan_json.clone()
+        };
+        let fingerprint = fingerprint(&fingerprint_source);
         let headline = headline(verdict, fit.as_ref(), validation.as_ref(), &findings);
 
         Ok(ModelReport {

@@ -124,8 +124,8 @@ impl PyPlan {
         Ok(PyPlan { inner: plan })
     }
 
-    /// Claim counts: Poisson with `log(exposure)` as an offset, so the fitted factors
-    /// are rates and the target is a count.
+    /// Claim frequency: Poisson on claims per unit exposure, weighted by exposure.
+    /// Predictions are frequencies; multiply by exposure for expected claim counts.
     #[staticmethod]
     fn frequency(exposure: &str) -> Self {
         PyPlan {

@@ -281,6 +281,43 @@ mod report_tests {
     }
 
     #[test]
+    fn planless_models_fingerprint_their_tables_not_only_their_family() {
+        let df = motor(240);
+        let first = plan().fit(&df, "claims", options()).unwrap();
+        let mut changed_model = first.model.clone();
+        let changed_intercept = changed_model.tables[0].get_rating_factor(0) + 0.01;
+        changed_model.tables[0]
+            .data
+            .with_column(Series::new(
+                "Rating_Factor".into(),
+                vec![changed_intercept],
+            ))
+            .unwrap();
+
+        let a = crate::plan::FittedModel::from_model(
+            first.model.clone(),
+            &first.family,
+            first.table_names.clone(),
+            first.encoding.clone(),
+        );
+        let b = crate::plan::FittedModel::from_model(
+            changed_model,
+            &first.family,
+            first.table_names.clone(),
+            first.encoding.clone(),
+        );
+        let ra = a.report(None, &ValidationOptions::default()).unwrap();
+        let rb = b.report(None, &ValidationOptions::default()).unwrap();
+
+        assert_ne!(ra.fingerprint, rb.fingerprint);
+        assert_eq!(
+            ra.fingerprint,
+            a.report(None, &ValidationOptions::default()).unwrap().fingerprint,
+            "volatile workbook provenance must not change the model identity"
+        );
+    }
+
+    #[test]
     fn the_markdown_carries_the_plan_back_out_so_the_report_is_reproducible() {
         let df = motor(240);
         let plan = plan();

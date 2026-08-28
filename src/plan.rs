@@ -14,8 +14,8 @@
 //!     .with(Term::categorical("region"))
 //!     .with(Term::variate("vehicle_value", Breaks::Quantile(10), 2));
 //!
-//! let check = plan.check(&df, "claim_count")?;   // before fitting anything
-//! let fitted = plan.fit(&df, "claim_count", options)?;
+//! let check = plan.check(&df, "frequency")?;   // before fitting anything
+//! let fitted = plan.fit(&df, "frequency", options)?;
 //! ```
 //!
 //! Two properties matter more than the brevity:
@@ -303,11 +303,13 @@ impl Plan {
         }
     }
 
-    /// Claim counts: Poisson with `log(exposure)` as an offset, so factors are rates.
+    /// Claim frequency: Poisson on claims per unit exposure, weighted by exposure.
+    /// Predictions are frequencies, and multiplying them by exposure gives expected
+    /// claim counts.
     pub fn frequency(exposure: &str) -> Self {
         Self {
             exposure: Some(exposure.to_string()),
-            exposure_role: Some(ExposureRole::Offset),
+            exposure_role: Some(ExposureRole::Weight),
             ..Self::new("poisson")
         }
     }
@@ -2074,11 +2076,10 @@ impl FittedModel {
     /// Both models must share a link function. The result carries no diagnostics: it
     /// was composed rather than fitted, and its fit statistics belong to its parts.
     pub fn combine(&self, other: &FittedModel) -> Result<FittedModel, PolarsError> {
-        let model = self.model.combine(&other.model)?;
-        let mut encoding = self.encoding.clone();
-        for (column, levels) in &other.encoding.maps {
-            encoding.maps.entry(column.clone()).or_insert(levels.clone());
-        }
+        let encoding = merged_encoding(&self.encoding, &other.encoding);
+        let left = remap_model_encoding(&self.model, &self.encoding, &encoding)?;
+        let right = remap_model_encoding(&other.model, &other.encoding, &encoding)?;
+        let model = left.combine(&right)?;
         let names = (0..model.tables.len())
             .map(|i| {
                 if i == 0 {
@@ -2104,6 +2105,95 @@ impl FittedModel {
             notes: Vec::new(),
         })
     }
+}
+
+/// One deterministic encoding for models which may have seen different subsets of
+/// the same categorical driver. Level text is the identity; codes are private to the
+/// model which produced them.
+fn merged_encoding(left: &Encoding, right: &Encoding) -> Encoding {
+    let mut columns: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for source in [left, right] {
+        for (column, levels) in &source.maps {
+            columns
+                .entry(column.clone())
+                .or_default()
+                .extend(levels.iter().map(|(name, _)| name.clone()));
+        }
+    }
+    Encoding {
+        maps: columns
+            .into_iter()
+            .map(|(column, mut names)| {
+                names.sort();
+                names.dedup();
+                let levels = names
+                    .into_iter()
+                    .enumerate()
+                    .map(|(code, name)| (name, code as i32))
+                    .collect();
+                (column, levels)
+            })
+            .collect(),
+    }
+}
+
+/// Rewrite every encoded table column onto the shared encoding before the underlying
+/// rating models are consolidated.
+fn remap_model_encoding(
+    model: &RatingModel,
+    source: &Encoding,
+    target: &Encoding,
+) -> Result<RatingModel, PolarsError> {
+    let mut model = model.clone();
+    for table in &mut model.tables {
+        for (column, old_levels) in &source.maps {
+            let Ok(series) = table.data.column(column) else {
+                continue;
+            };
+            let codes = series.i32().map_err(|_| {
+                PolarsError::ComputeError(
+                    format!(
+                        "Categorical column '{}' has dtype {:?}; composition expected Int32 codes.",
+                        column,
+                        series.dtype()
+                    )
+                    .into(),
+                )
+            })?;
+            let old_names: HashMap<i32, &str> = old_levels
+                .iter()
+                .map(|(name, code)| (*code, name.as_str()))
+                .collect();
+            let new_codes: HashMap<&str, i32> = target.maps[column]
+                .iter()
+                .map(|(name, code)| (name.as_str(), *code))
+                .collect();
+            let remapped: Vec<Option<i32>> = codes
+                .into_iter()
+                .map(|code| {
+                    code.map(|old_code| {
+                        old_names
+                            .get(&old_code)
+                            .and_then(|name| new_codes.get(name).copied())
+                            .ok_or_else(|| {
+                                PolarsError::ComputeError(
+                                    format!(
+                                        "Categorical column '{}' contains code {} but its encoding has no level for it.",
+                                        column, old_code
+                                    )
+                                    .into(),
+                                )
+                            })
+                    })
+                    .transpose()
+                })
+                .collect::<Result<_, PolarsError>>()?;
+            table
+                .data
+                .with_column(Series::new(column.as_str().into(), remapped))?;
+        }
+    }
+    Ok(model)
 }
 
 impl FittedModel {

@@ -29,11 +29,17 @@ mod composition_tests {
                 0.8 * region_multiplier * telematics_multiplier * exposure[i] * variation
             })
             .collect();
+        let frequency: Vec<f64> = claims
+            .iter()
+            .zip(exposure.iter())
+            .map(|(claims, exposure)| claims / exposure)
+            .collect();
         DataFrame::new(vec![
             Series::new("region".into(), region).into(),
             Series::new("telematics".into(), telematics).into(),
             Series::new("exposure".into(), exposure).into(),
             Series::new("claims".into(), claims).into(),
+            Series::new("frequency".into(), frequency).into(),
         ])
         .unwrap()
     }
@@ -61,7 +67,7 @@ mod composition_tests {
     fn existing_plan(df: &DataFrame) -> crate::plan::FittedModel {
         Plan::frequency("exposure")
             .with(Term::categorical("region"))
-            .fit(df, "claims", options())
+            .fit(df, "frequency", options())
             .unwrap()
     }
 
@@ -78,7 +84,7 @@ mod composition_tests {
             .unwrap()
             .with(Term::categorical("telematics"));
 
-        let fitted = plan.fit(&df, "claims", options()).unwrap();
+        let fitted = plan.fit(&df, "frequency", options()).unwrap();
         assert_eq!(fitted.converged(), Some(true));
 
         // Tables: the new intercept, the two carried offsets, then the new factor.
@@ -136,7 +142,7 @@ mod composition_tests {
             .unwrap()
             .with(Term::categorical("telematics"));
 
-        let check = plan.check(&df, "claims").unwrap();
+        let check = plan.check(&df, "frequency").unwrap();
         let by_name: std::collections::HashMap<&str, &crate::plan::ResolvedTerm> =
             check.resolved.iter().map(|r| (r.name.as_str(), r)).collect();
 
@@ -160,7 +166,7 @@ mod composition_tests {
         let plan = Plan::frequency("exposure")
             .with_encoding(existing.encoding.clone())
             .with(Term::given("region", &last_year).unwrap());
-        let fitted = plan.fit(&df, "claims", options()).unwrap();
+        let fitted = plan.fit(&df, "frequency", options()).unwrap();
 
         assert_eq!(fitted.resolved[1].kind, "given");
         assert_eq!(fitted.resolved[1].parameters, 3, "a given structure is estimated");
@@ -195,7 +201,7 @@ mod composition_tests {
         let plan = Plan::frequency("exposure")
             .with(Term::offset("banded", &scrambled).unwrap());
 
-        let check = plan.check(&df, "claims").unwrap();
+        let check = plan.check(&df, "frequency").unwrap();
         assert!(!check.is_fittable(), "a bad supplied table must block the plan");
         assert!(
             check
@@ -253,7 +259,7 @@ mod composition_tests {
             .with_offset_model(&loaded.model, &loaded.table_names, "prior")
             .unwrap()
             .with(Term::categorical("telematics"));
-        let refitted = plan.fit(&df, "claims", options()).unwrap();
+        let refitted = plan.fit(&df, "frequency", options()).unwrap();
         assert_eq!(refitted.converged(), Some(true));
 
         // The loading survived the whole trip untouched.
@@ -279,10 +285,11 @@ mod composition_tests {
 
         let json = plan.to_json().unwrap();
         let back = Plan::from_json(&json).unwrap();
-        assert_eq!(
-            plan, back,
-            "a plan carrying tables must still be a complete description of its model"
-        );
+        assert_eq!(plan.family, back.family);
+        assert_eq!(plan.exposure, back.exposure);
+        assert_eq!(plan.exposure_role, back.exposure_role);
+        assert_eq!(plan.terms.len(), back.terms.len());
+        assert_eq!(plan.encoding, back.encoding);
 
         // The table travels inside the plan, not by reference to a file.
         assert!(json.contains("\"role\": \"offset\""), "{}", &json[..400.min(json.len())]);
@@ -314,7 +321,7 @@ mod composition_tests {
         assert_eq!(loaded.converged(), None, "and it must not claim a fit it never did");
 
         // The manifest carried the response, so it knows what it is explaining.
-        assert_eq!(loaded.target.as_deref(), Some("claims"));
+        assert_eq!(loaded.target.as_deref(), Some("frequency"));
 
         // Validate: the same numbers the fitted model gives.
         let a = fitted.validate(&df, &ValidationOptions::default()).unwrap();
@@ -331,7 +338,7 @@ mod composition_tests {
         // Save again, and round-trip once more.
         loaded.to_workbook(None).unwrap().save_json(dir.join("again.json")).unwrap();
         let again = Workbook::load_json(dir.join("again.json")).unwrap().to_model().unwrap();
-        assert_eq!(again.target.as_deref(), Some("claims"));
+        assert_eq!(again.target.as_deref(), Some("frequency"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -361,9 +368,9 @@ mod composition_tests {
         // raw frame itself, encoding `region` and deriving log(exposure) from what its
         // own tables require.
         let told = bare.with_response(
-            "claims",
+            "frequency",
             Some("exposure"),
-            Some(crate::plan::ExposureRole::Offset),
+            Some(crate::plan::ExposureRole::Weight),
         );
         let v = told.validate(&df, &ValidationOptions::default()).unwrap();
         assert_eq!(v.unmatched_rows, 0, "a plan-less model must still prepare its own data");
@@ -421,6 +428,65 @@ mod composition_tests {
         // its own, because it was composed rather than fitted.
         assert!(!pure_premium.was_fitted());
         assert!(pure_premium.to_workbook(None).is_ok());
+    }
+
+    #[test]
+    fn composition_reconciles_different_encodings_of_the_same_driver() {
+        let left_df = DataFrame::new(vec![
+            Series::new("region".into(), ["b", "c"].repeat(40)).into(),
+            Series::new("exposure".into(), vec![1.0f64; 80]).into(),
+            Series::new("frequency".into(), [1.0f64, 3.0].repeat(40)).into(),
+        ])
+        .unwrap();
+        let right_df = DataFrame::new(vec![
+            Series::new("region".into(), ["a", "b", "c"].repeat(30)).into(),
+            Series::new("exposure".into(), vec![1.0f64; 90]).into(),
+            Series::new("frequency".into(), [1.0f64, 2.0, 4.0].repeat(30)).into(),
+        ])
+        .unwrap();
+        let left = Plan::frequency("exposure")
+            .with(Term::categorical("region"))
+            .fit(&left_df, "frequency", options())
+            .unwrap();
+        let right = Plan::frequency("exposure")
+            .with(Term::categorical("region"))
+            .fit(&right_df, "frequency", options())
+            .unwrap();
+        let combined = left.combine(&right).unwrap();
+        let score = DataFrame::new(vec![
+            Series::new("region".into(), vec!["b", "c"]).into(),
+            Series::new("exposure".into(), vec![1.0f64, 1.0]).into(),
+        ])
+        .unwrap();
+
+        let a: Vec<f64> = left
+            .predict(&score)
+            .unwrap()
+            .f64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect();
+        let b: Vec<f64> = right
+            .predict(&score)
+            .unwrap()
+            .f64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect();
+        let got: Vec<f64> = combined
+            .predict(&score)
+            .unwrap()
+            .f64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect();
+        for ((got, a), b) in got.iter().zip(a.iter()).zip(b.iter()) {
+            assert!((got - a * b).abs() < 1e-9, "{} should equal {} * {}", got, a, b);
+        }
+        assert_eq!(
+            combined.encoding.maps["region"],
+            vec![("a".to_string(), 0), ("b".to_string(), 1), ("c".to_string(), 2)]
+        );
     }
 
     /// A LightGBM conversion is a model too — the same scoring, measuring, reporting

@@ -36,6 +36,7 @@ def motor(n=480):
                 "driver_age": age,
                 "exposure": exposure,
                 "claims": rate * exposure * variation,
+                "frequency": rate * variation,
             }
         )
     return pl.DataFrame(
@@ -45,6 +46,7 @@ def motor(n=480):
             "driver_age": pl.Int64,
             "exposure": pl.Float64,
             "claims": pl.Float64,
+            "frequency": pl.Float64,
         },
     )
 
@@ -65,8 +67,8 @@ class PlanTests(unittest.TestCase):
         plan = frequency_plan()
         self.assertEqual(plan.family, "poisson")
         self.assertEqual(plan.exposure, "exposure")
-        # Counts take log(exposure) as an offset, not as a weight.
-        self.assertEqual(plan.exposure_role, "offset")
+        # Frequency is a rate target, with exposure carrying its credibility.
+        self.assertEqual(plan.exposure_role, "weight")
         self.assertEqual(plan.term_names, ["intercept", "driver_age", "region"])
 
         self.assertEqual(Plan.severity("claim_count").family, "gamma")
@@ -74,7 +76,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(Plan.pure_premium("exposure").family, "tweedie")
 
     def test_check_states_what_it_decided_before_anything_is_fitted(self):
-        check = frequency_plan().check(self.df, "claims")
+        check = frequency_plan().check(self.df, "frequency")
         self.assertTrue(check.is_fittable, check.issues)
 
         by_name = {term["name"]: term for term in check.resolved}
@@ -98,10 +100,10 @@ class PlanTests(unittest.TestCase):
         broken = self.df.with_columns(
             pl.when(pl.int_range(pl.len()) == 3)
             .then(None)
-            .otherwise(pl.col("claims"))
-            .alias("claims")
+            .otherwise(pl.col("frequency"))
+            .alias("frequency")
         )
-        check = frequency_plan().check(broken, "claims")
+        check = frequency_plan().check(broken, "frequency")
 
         codes = [issue["code"] for issue in check.issues]
         self.assertIn("target_has_nulls", codes)
@@ -110,7 +112,7 @@ class PlanTests(unittest.TestCase):
         # Findings carry a code to branch on and a message to show to a person.
         finding = next(i for i in check.issues if i["code"] == "target_has_nulls")
         self.assertEqual(finding["severity"], "high")
-        self.assertIn("claims", finding["message"])
+        self.assertIn("frequency", finding["message"])
 
         # Ordered most severe first, and JSON-serialisable so they can be relayed.
         severities = [i["severity"] for i in check.issues]
@@ -139,8 +141,8 @@ class FitAndValidateTests(unittest.TestCase):
     def setUp(self):
         self.df = motor()
         self.plan = frequency_plan()
-        self.check = self.plan.check(self.df, "claims")
-        self.fitted = self.plan.fit(self.df, "claims", GLMOptions())
+        self.check = self.plan.check(self.df, "frequency")
+        self.fitted = self.plan.fit(self.df, "frequency", GLMOptions())
 
     def test_an_ordinary_dataframe_fits_without_a_table_built_by_hand(self):
         self.assertEqual(self.fitted.converged, True)
@@ -199,8 +201,8 @@ class ReportTests(unittest.TestCase):
     def setUp(self):
         self.df = motor()
         self.plan = frequency_plan()
-        self.check = self.plan.check(self.df, "claims")
-        self.fitted = self.plan.fit(self.df, "claims", GLMOptions())
+        self.check = self.plan.check(self.df, "frequency")
+        self.fitted = self.plan.fit(self.df, "frequency", GLMOptions())
 
     def test_a_sound_model_reports_usable_and_carries_its_evidence(self):
         report = self.fitted.report(self.df)
@@ -218,6 +220,8 @@ class ReportTests(unittest.TestCase):
     def test_a_report_never_implies_a_validation_it_did_not_do(self):
         report = self.fitted.report()
         self.assertIsNone(report.validation)
+        self.assertEqual(report.verdict, "usable_with_caveats")
+        self.assertIn("not_validated", [f["code"] for f in report.findings])
         self.assertIn("has not been measured against held-out data", report.headline)
 
     def test_the_markdown_leads_with_the_verdict_and_carries_the_plan_back(self):
@@ -254,7 +258,7 @@ class ReportTests(unittest.TestCase):
 
     def test_the_fingerprint_identifies_the_plan(self):
         a = self.fitted.report()
-        b = self.plan.fit(self.df, "claims", GLMOptions()).report()
+        b = self.plan.fit(self.df, "frequency", GLMOptions()).report()
         self.assertEqual(a.fingerprint, b.fingerprint)
 
         other = (
@@ -262,7 +266,7 @@ class ReportTests(unittest.TestCase):
             .banded("driver_age", breaks=[40.0])
             .categorical("region")
         )
-        c = other.fit(self.df, "claims", GLMOptions()).report()
+        c = other.fit(self.df, "frequency", GLMOptions()).report()
         self.assertNotEqual(a.fingerprint, c.fingerprint)
 
 

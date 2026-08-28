@@ -168,31 +168,21 @@ mod plan_tests {
     }
 
     #[test]
-    fn exposure_enters_as_an_offset_for_counts_and_a_weight_otherwise() {
+    fn every_rate_preset_uses_its_denominator_as_a_weight() {
         let df = motor(240);
 
         let frequency = Plan::frequency("exposure");
-        assert_eq!(frequency.resolved_exposure_role(), ExposureRole::Offset);
+        assert_eq!(frequency.resolved_exposure_role(), ExposureRole::Weight);
         let prepared = frequency.prepare(&df, None).unwrap();
-        assert!(prepared.offset_col.is_some(), "counts take log(exposure)");
-        assert!(prepared.weight_col.is_none());
-        let logs: Vec<f64> = prepared
-            .df
-            .column(prepared.offset_col.as_deref().unwrap())
-            .unwrap()
-            .f64()
-            .unwrap()
-            .into_no_null_iter()
-            .collect();
-        let exposure: Vec<f64> = df.column("exposure").unwrap().f64().unwrap().into_no_null_iter().collect();
-        for (l, e) in logs.iter().zip(exposure.iter()) {
-            assert!((l - e.ln()).abs() < 1e-12);
-        }
+        assert!(prepared.offset_col.is_none());
+        assert_eq!(prepared.weight_col.as_deref(), Some("exposure"));
 
         let severity = Plan::severity("claim_count");
         assert_eq!(severity.resolved_exposure_role(), ExposureRole::Weight);
         assert_eq!(severity.family, "gamma");
-        assert_eq!(Plan::pure_premium("exposure").family, "tweedie");
+        let pure_premium = Plan::pure_premium("exposure");
+        assert_eq!(pure_premium.family, "tweedie");
+        assert_eq!(pure_premium.resolved_exposure_role(), ExposureRole::Weight);
     }
 
     #[test]

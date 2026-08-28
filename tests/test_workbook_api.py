@@ -37,6 +37,7 @@ def motor(n=720):
                 "telematics": (i // 4) % 3,
                 "exposure": exposure,
                 "claims": rate * exposure,
+                "frequency": rate,
             }
         )
     return pl.DataFrame(
@@ -46,6 +47,7 @@ def motor(n=720):
             "telematics": pl.Int32,
             "exposure": pl.Float64,
             "claims": pl.Float64,
+            "frequency": pl.Float64,
         },
     )
 
@@ -57,7 +59,7 @@ class WorkbookTests(unittest.TestCase):
         self.fitted = (
             Plan.frequency("exposure")
             .categorical("region")
-            .fit(self.df, "claims", GLMOptions())
+            .fit(self.df, "frequency", GLMOptions())
         )
 
     def tearDown(self):
@@ -152,7 +154,7 @@ class CompositionTests(unittest.TestCase):
         existing = (
             Plan.frequency("exposure")
             .categorical("region")
-            .fit(self.df, "claims", GLMOptions())
+            .fit(self.df, "frequency", GLMOptions())
         )
         existing.to_workbook().save_csv_dir(str(self.dir))
         self.loaded = Workbook.load_csv_dir(str(self.dir)).to_model()
@@ -167,13 +169,13 @@ class CompositionTests(unittest.TestCase):
             .categorical("telematics")
         )
 
-        check = plan.check(self.df, "claims")
+        check = plan.check(self.df, "frequency")
         self.assertTrue(check.is_fittable, check.issues)
         by_name = {term["name"]: term for term in check.resolved}
         self.assertEqual(by_name["prior.region"]["kind"], "offset")
         self.assertEqual(by_name["prior.region"]["parameters"], 0)
 
-        fitted = plan.fit(self.df, "claims", GLMOptions())
+        fitted = plan.fit(self.df, "frequency", GLMOptions())
         self.assertTrue(fitted.converged)
 
         # The carried table came out exactly as it went in.
@@ -192,7 +194,7 @@ class CompositionTests(unittest.TestCase):
         region = self.loaded.rating_model.model_tables()[self.loaded.table_names.index("region")]
         plan = Plan.frequency("exposure").given("region", region)
 
-        fitted = plan.fit(self.df, "claims", GLMOptions())
+        fitted = plan.fit(self.df, "frequency", GLMOptions())
         by_name = {term["name"]: term for term in fitted.resolved}
         self.assertEqual(by_name["region"]["kind"], "given")
         # A given structure is estimated; an offset is not.
@@ -218,7 +220,7 @@ class OneTypeTests(unittest.TestCase):
         self.fitted = (
             Plan.frequency("exposure")
             .categorical("region")
-            .fit(self.df, "claims", GLMOptions())
+            .fit(self.df, "frequency", GLMOptions())
         )
         self.fitted.to_workbook().save_csv_dir(str(self.dir))
         self.loaded = Workbook.load_csv_dir(str(self.dir)).to_model()
@@ -230,7 +232,7 @@ class OneTypeTests(unittest.TestCase):
         self.assertFalse(self.loaded.was_fitted)
         # Not fitted here, so it must not claim a fit that did or did not converge.
         self.assertIsNone(self.loaded.converged)
-        self.assertEqual(self.loaded.target, "claims")
+        self.assertEqual(self.loaded.target, "frequency")
 
         a = self.fitted.validate(self.df)
         b = self.loaded.validate(self.df)
@@ -243,7 +245,7 @@ class OneTypeTests(unittest.TestCase):
 
         self.loaded.to_workbook().save_json(str(self.dir / "again.json"))
         again = Workbook.load_json(str(self.dir / "again.json")).to_model()
-        self.assertEqual(again.target, "claims")
+        self.assertEqual(again.target, "frequency")
 
     def test_frequency_plus_severity_is_pure_premium(self):
         severity = (
@@ -269,10 +271,10 @@ class OneTypeTests(unittest.TestCase):
 
     def test_an_unfittable_plan_is_refused_rather_than_fitted(self):
         broken = self.df.with_columns(
-            pl.when(pl.int_range(pl.len()) == 0).then(None).otherwise(pl.col("claims")).alias("claims")
+            pl.when(pl.int_range(pl.len()) == 0).then(None).otherwise(pl.col("frequency")).alias("frequency")
         )
         with self.assertRaises(ValueError) as caught:
-            Plan.frequency("exposure").categorical("region").fit(broken, "claims", GLMOptions())
+            Plan.frequency("exposure").categorical("region").fit(broken, "frequency", GLMOptions())
         self.assertIn("cannot be fitted", str(caught.exception))
 
 
