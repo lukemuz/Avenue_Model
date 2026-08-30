@@ -15,6 +15,7 @@ from . import avenue_model as _rust
 # the ImportError is raised when the function is called, with an actionable message.
 from .tuning import (  # noqa: F401
     TuningResult,
+    resolve_lightgbm,
     supports_interaction_penalties,
     tune_lgbm,
 )
@@ -23,6 +24,7 @@ __all__ = [
     *(getattr(_rust, "__all__", None) or
       [n for n in dir(_rust) if not n.startswith("_")]),
     "TuningResult",
+    "resolve_lightgbm",
     "supports_interaction_penalties",
     "tune_lgbm",
     "tuning",

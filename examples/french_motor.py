@@ -121,13 +121,15 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=SEED)
     args = parser.parse_args()
 
-    import lightgbm as lgb
+    from avenue_model import (FittedModel, resolve_lightgbm,
+                              supports_interaction_penalties, tune_lgbm)
 
-    from avenue_model import FittedModel, supports_interaction_penalties, tune_lgbm
-
+    # The fork is importable as `avenue_lightgbm` or as `lightgbm` depending on how it
+    # was packaged, so the module is resolved rather than named.
+    lgb, build = resolve_lightgbm()
     forked = supports_interaction_penalties()
-    print("\n  LightGBM:", "avenue-lightgbm — interaction penalties available" if forked
-          else "stock — interaction penalties NOT available, see this file's docstring")
+    print(f"\n  LightGBM build: {build} — interaction penalties "
+          f"{'available' if forked else 'NOT available, see this file docstring'}")
 
     features, claims, exposure = prepare(load())
     names = list(features)

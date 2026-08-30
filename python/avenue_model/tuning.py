@@ -20,10 +20,13 @@ aimed at the table count directly rather than at tree size:
     interaction_complexity   penalises each feature newly introduced within one tree,
                              preferring main effects and low-order interactions
 
-Both default to zero and cost nothing when unused. When the installed LightGBM is stock,
+Both default to zero and cost nothing when unused. When the LightGBM in play is stock,
 they are dropped from the search with a warning rather than tuned silently — an unknown
 parameter is warned about and ignored by LightGBM, so tuning one that does not exist
 would otherwise burn the whole budget on a knob wired to nothing.
+
+The fork is packaged two ways, importable as either `avenue_lightgbm` or `lightgbm`, so
+nothing here hardcodes an import name — see `resolve_lightgbm`.
 
 The method and the case studies behind it are in *GBMs as Factor Tables* (Muzynoski,
 2025), <https://avenue-analytics.com/research/avenue-analytics-methodology.pdf>.
@@ -40,7 +43,19 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Sequence
 
-__all__ = ["TuningResult", "supports_interaction_penalties", "tune_lgbm"]
+__all__ = ["TuningResult", "resolve_lightgbm", "supports_interaction_penalties",
+           "tune_lgbm"]
+
+# The fork is packaged two ways in the wild, and which one is installed decides both
+# the import name and whether the penalties exist at all:
+#
+#   avenue_lightgbm   distribution `avenue-lightgbm`, coexists with stock LightGBM
+#   lightgbm          distribution `lightgbm`, replaces it as a drop-in
+#
+# Guessing wrong is silent rather than loud - a Dataset built by one build cannot be
+# trained by the other, and probing the wrong module reports the wrong answer about the
+# penalties - so nothing here imports a module by a hardcoded name.
+LIGHTGBM_MODULES = ("avenue_lightgbm", "lightgbm")
 
 
 _EXTRA_HINT = (
@@ -91,13 +106,43 @@ _DEFAULT_METRIC = {
 _DEGENERATE_TABLES = 10_000
 
 
-def _require_deps():
+def resolve_lightgbm(dataset=None):
+    """The LightGBM module to use, and its name.
+
+    When a `Dataset` is given its own defining module wins, always. The two builds ship
+    separate compiled libraries and separate `Dataset` classes, so a frame built by one
+    cannot be trained by the other, and preferring the fork here because it happens to
+    be installed would break a caller who deliberately built with stock LightGBM.
+
+    With no `Dataset` to go on, the fork is preferred: installing `avenue_lightgbm`
+    alongside stock LightGBM is a deliberate act, and the penalties are the reason to
+    do it.
+    """
+    import importlib
+
+    if dataset is not None:
+        name = type(dataset).__module__.split(".")[0]
+        if name in LIGHTGBM_MODULES:
+            return importlib.import_module(name), name
+        # Not a LightGBM Dataset at all, or a build under an unfamiliar name; fall
+        # through rather than guessing, so the error names the real problem.
+
+    for name in LIGHTGBM_MODULES:
+        try:
+            return importlib.import_module(name), name
+        except ImportError:
+            continue
+    raise ImportError(f"{_EXTRA_HINT} (missing: no LightGBM found; tried "
+                      f"{' and '.join(LIGHTGBM_MODULES)})")
+
+
+def _require_deps(dataset=None):
     try:
-        import lightgbm  # noqa: F401
         import optuna  # noqa: F401
     except ImportError as exc:  # pragma: no cover - exercised by the error path only
         raise ImportError(f"{_EXTRA_HINT} (missing: {exc.name})") from exc
-    return lightgbm, optuna
+    lightgbm, name = resolve_lightgbm(dataset)
+    return lightgbm, optuna, name
 
 
 class _LogProbe:
@@ -112,8 +157,11 @@ class _LogProbe:
     info = warning = error = debug = _record
 
 
-def supports_interaction_penalties() -> bool:
-    """Is the installed LightGBM the `avenue-lightgbm` fork?
+def supports_interaction_penalties(dataset=None) -> bool:
+    """Does the LightGBM in play accept the interaction penalties?
+
+    Pass the `Dataset` you intend to train on, so the answer is about the build that
+    will actually run rather than about whichever module imports first.
 
     LightGBM does not raise on an unrecognised parameter — it logs
     ``Unknown parameter: <name>`` and carries on with the default, so a caller who sets
@@ -124,10 +172,9 @@ def supports_interaction_penalties() -> bool:
     So the probe trains a one-round booster on six rows with the parameter set, and
     reads LightGBM's log rather than its return value.
     """
-    lightgbm, _ = _require_deps()
+    lightgbm, _, module_name = _require_deps(dataset)
 
     probe = _LogProbe()
-    previous = None
     try:
         # register_logger has no getter, so the stock logger is restored by re-registering
         # lightgbm's module-level default rather than by saving the current one.
@@ -150,7 +197,9 @@ def supports_interaction_penalties() -> bool:
     finally:
         import logging
 
-        lightgbm.register_logger(previous or logging.getLogger("lightgbm"))
+        # register_logger has no getter, so the default is restored by name rather
+        # than by saving whatever was there.
+        lightgbm.register_logger(logging.getLogger(module_name))
 
     return not any("Unknown parameter" in line and "interaction_penalty" in line
                    for line in probe.lines)
@@ -187,6 +236,7 @@ class TuningResult:
     trials: list[Trial]
     metric: str
     tuned_interaction_penalties: bool
+    lightgbm: str = "lightgbm"
     study: Any = field(default=None, repr=False)
 
     @property
@@ -217,10 +267,11 @@ class TuningResult:
     def summary(self) -> str:
         lines = [
             f"  {len(self.trials)} trials, {len(self.frontier)} on the frontier"
-            f"   metric: {self.metric}",
+            f"   metric: {self.metric}   build: {self.lightgbm}",
         ]
         if not self.tuned_interaction_penalties:
-            lines.append("  interaction penalties were NOT tuned (stock LightGBM)")
+            lines.append(f"  interaction penalties were NOT tuned - {self.lightgbm} "
+                         f"does not accept them")
         lines.append(f"  {'tables':>8}{'cv loss':>14}   parameters")
         for t in self.frontier:
             shown = {k: v for k, v in t.params.items() if k in DEFAULT_SPACE}
@@ -267,7 +318,7 @@ def tune_lgbm(
         to pick under a budget, and `.best_cv` for the most accurate configuration
         regardless of size.
     """
-    lightgbm, optuna = _require_deps()
+    lightgbm, optuna, module_name = _require_deps(dataset)
 
     if "objective" not in params:
         raise ValueError("params must include 'objective'")
@@ -279,7 +330,7 @@ def tune_lgbm(
 
     search_space = {**DEFAULT_SPACE, **(space or {})}
 
-    forked = supports_interaction_penalties()
+    forked = supports_interaction_penalties(dataset)
     if tunable is None:
         tunable = ["num_leaves", "max_depth", "learning_rate", "min_data_in_leaf",
                    "feature_fraction", "lambda_l2"]
@@ -293,7 +344,8 @@ def tune_lgbm(
             f"{', '.join(asked_for)} not supported by the installed LightGBM, so they "
             f"are dropped from the search. LightGBM ignores unknown parameters with a "
             f"log warning rather than an error, so tuning them here would spend the "
-            f"budget on knobs wired to nothing. Install avenue-lightgbm to use them: "
+            f"budget on knobs wired to nothing. The build in use is {module_name!r}; "
+            f"install avenue-lightgbm to use them: "
             f"https://github.com/lukemuz/avenue-lightgbm",
             RuntimeWarning,
             stacklevel=2,
@@ -385,4 +437,5 @@ def tune_lgbm(
         study.optimize(run_trial, n_trials=n_trials)
 
     return TuningResult(trials=trials, metric=metric,
-                        tuned_interaction_penalties=forked, study=study)
+                        tuned_interaction_penalties=forked, lightgbm=module_name,
+                        study=study)

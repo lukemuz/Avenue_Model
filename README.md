@@ -314,10 +314,16 @@ booster = lgb.train({**base, **trial.params}, dataset)
 
 `result.frontier` is sorted by table count, `result.best_cv` ignores size entirely, and
 `select(max_tables=...)` raises rather than quietly returning something over budget. When
-the installed LightGBM is stock, the two interaction penalties are dropped from the search
+the LightGBM in play is stock, the two interaction penalties are dropped from the search
 with a warning instead of being tuned silently — LightGBM ignores an unknown parameter
 with only a log line, so a search over one would otherwise spend its whole budget on a
 knob wired to nothing.
+
+The fork is packaged two ways — importable as `avenue_lightgbm` beside stock LightGBM, or
+as `lightgbm` replacing it — so no import name is hardcoded. `resolve_lightgbm(dataset)`
+returns the module and its name, taking the answer from the `Dataset` you pass whenever
+you pass one: the two builds ship separate compiled libraries and separate `Dataset`
+classes, so the one that built your frame is the only one that can train on it.
 
 Converted models do not inherently know which observed response they explain. Add that
 metadata before validation:
