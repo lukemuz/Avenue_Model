@@ -256,7 +256,7 @@ neighbourhood rather than a like-for-like result.
 
 Keeping the tables that small is a modelling choice with its own controls — table size,
 tuning, category names and refitting are covered in
-**[docs/lightgbm.md](docs/lightgbm.md)**, along with a recidivism case study.
+**[docs/lightgbm.md](docs/lightgbm.md)**.
 
 Conversion changes the representation, not the prediction — the fitted means agree with
 the booster's to floating-point noise, and `scripts/bench_lgbm.py` asserts that before
@@ -395,8 +395,8 @@ pinned in `pyproject.toml`.
 ## Documentation
 
 - [GLM internals and benchmarks](src/glm/README.md)
-- [LightGBM as rating tables](docs/lightgbm.md) — table size, tuning, category names,
-  refitting as a GLM, and the recidivism case study
+- [LightGBM as rating tables](docs/lightgbm.md) — table size, tuning, category names
+  and refitting as a GLM
 - [Rating tables, matching and LightGBM conversion](src/rating_model/README.md)
 - Rust API documentation: `cargo doc --open`
 - Python API documentation is available through `help(avenue_model)` and

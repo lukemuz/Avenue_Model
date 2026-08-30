@@ -10,8 +10,7 @@ Tables: Achieving Both Transparency and Interpretability Without Approximation*
 
 **Contents:** [Table size](#making-the-tables-small-enough-to-read) ·
 [Tuning](#tuning-for-interpretability) · [Category names](#naming-the-levels-behind-the-codes) ·
-[Refitting as a GLM](#file-a-glm-instead-of-the-booster) ·
-[Case study: Broward recidivism](#case-study-broward-recidivism)
+[Refitting as a GLM](#file-a-glm-instead-of-the-booster)
 
 ---
 
@@ -174,33 +173,3 @@ not. They are there for convenience if someone asks for them, rather than as a g
 they are exact only for a model specified in advance and fitted without a penalty, and
 neither holds here — the bands were chosen from the same data, and a penalised fit omits
 the errors entirely.
-
----
-
-## Case study: Broward recidivism
-
-The most compact illustration of what the representation does, and the one furthest from
-Avenue's own subject matter — so read it as a demonstration of the conversion rather than
-as a contribution to the debate about recidivism prediction.
-
-On the ProPublica COMPAS data, with preprocessing following Rudin et al., the paper
-reports a 123-tree booster converting into **two factor tables** over three features —
-age, sex, and prior charge count. Test-set AUC:
-
-| | COMPAS | Random Forest | EBM | This method |
-|---|---:|---:|---:|---:|
-| AUC | 0.6961 | 0.6757 | **0.7278** | 0.7258 |
-
-Two numbers looked up and added, against a proprietary instrument requiring a
-137-question survey. EBM edges it on AUC while using every feature and seven interaction
-terms.
-
-Three caveats, because this is a domain where they matter more than the numbers. These
-figures are the paper's, not this repository's — there is no script here that reproduces
-them, unlike the French motor results. "Beats COMPAS" is a statement about AUC on one
-test split of one dataset, and nothing else: it is not a claim about fairness, calibration
-across groups, or fitness for any decision about a person. And the underlying dataset has
-a long methodological literature of its own that this comparison does not engage with.
-
-The transferable finding is the representational one — a 123-tree ensemble was expressible
-as two lookup tables at essentially unchanged accuracy.
