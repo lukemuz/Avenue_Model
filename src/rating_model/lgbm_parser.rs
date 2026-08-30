@@ -402,23 +402,20 @@ fn process_tree(
             tables.push(rating_table);
         } else {
             // Process internal node (split node)
-            let feature_idx = current_node["split_feature"]
-                .as_i64()
-                .ok_or_else(|| {
-                    // Reached whenever a node carries no `split_feature`, which in
-                    // practice means the booster is a bare leaf: LightGBM rejected every
-                    // candidate split and returned a constant. A heavy
-                    // `interaction_penalty` is the usual way to arrive here, so the
-                    // message names that rather than the JSON key.
-                    PolarsError::ComputeError(
-                        "this booster has no splits - every candidate was rejected, so \
+            let feature_idx = current_node["split_feature"].as_i64().ok_or_else(|| {
+                // Reached whenever a node carries no `split_feature`, which in
+                // practice means the booster is a bare leaf: LightGBM rejected every
+                // candidate split and returned a constant. A heavy
+                // `interaction_penalty` is the usual way to arrive here, so the
+                // message names that rather than the JSON key.
+                PolarsError::ComputeError(
+                    "this booster has no splits - every candidate was rejected, so \
                          it predicts a constant and has no rating tables to convert. \
                          Lower interaction_penalty / interaction_complexity, or relax \
                          min_gain_to_split and min_data_in_leaf."
-                            .into(),
-                    )
-                })?
-                as usize;
+                        .into(),
+                )
+            })? as usize;
 
             let feature_name = model["feature_names"][feature_idx]
                 .as_str()
@@ -610,23 +607,20 @@ fn process_tree_analysis(
         // Process internal nodes with splits
         else if current_node.get("split_feature").is_some() {
             // Extract split feature information
-            let feature_idx = current_node["split_feature"]
-                .as_i64()
-                .ok_or_else(|| {
-                    // Reached whenever a node carries no `split_feature`, which in
-                    // practice means the booster is a bare leaf: LightGBM rejected every
-                    // candidate split and returned a constant. A heavy
-                    // `interaction_penalty` is the usual way to arrive here, so the
-                    // message names that rather than the JSON key.
-                    PolarsError::ComputeError(
-                        "this booster has no splits - every candidate was rejected, so \
+            let feature_idx = current_node["split_feature"].as_i64().ok_or_else(|| {
+                // Reached whenever a node carries no `split_feature`, which in
+                // practice means the booster is a bare leaf: LightGBM rejected every
+                // candidate split and returned a constant. A heavy
+                // `interaction_penalty` is the usual way to arrive here, so the
+                // message names that rather than the JSON key.
+                PolarsError::ComputeError(
+                    "this booster has no splits - every candidate was rejected, so \
                          it predicts a constant and has no rating tables to convert. \
                          Lower interaction_penalty / interaction_complexity, or relax \
                          min_gain_to_split and min_data_in_leaf."
-                            .into(),
-                    )
-                })?
-                as usize;
+                        .into(),
+                )
+            })? as usize;
 
             let feature_name = model["feature_names"][feature_idx]
                 .as_str()

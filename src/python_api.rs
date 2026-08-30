@@ -18,10 +18,10 @@ use crate::report::{ModelReport, Verdict};
 use crate::validation::{Severity, Validation, ValidationOptions};
 use crate::workbook::{Scale, Workbook};
 use polars::prelude::*;
-use std::collections::BTreeMap;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use pyo3_polars::PyDataFrame;
+use std::collections::BTreeMap;
 
 fn value_error<E: std::fmt::Display>(error: E) -> PyErr {
     PyErr::new::<pyo3::exceptions::PyValueError, _>(error.to_string())
@@ -719,7 +719,10 @@ impl PyFittedModel {
                     .map(|(index, name)| (name, index as i32))
                     .collect()
             } else if let Ok(by_code) = value.extract::<BTreeMap<i32, String>>() {
-                by_code.into_iter().map(|(code, name)| (name, code)).collect()
+                by_code
+                    .into_iter()
+                    .map(|(code, name)| (name, code))
+                    .collect()
             } else {
                 return Err(value_error(format!(
                     "levels for '{}' must be a list of names, where a name's position \
