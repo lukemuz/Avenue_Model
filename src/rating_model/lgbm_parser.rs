@@ -404,7 +404,20 @@ fn process_tree(
             // Process internal node (split node)
             let feature_idx = current_node["split_feature"]
                 .as_i64()
-                .ok_or_else(|| PolarsError::ComputeError("Missing split feature".into()))?
+                .ok_or_else(|| {
+                    // Reached whenever a node carries no `split_feature`, which in
+                    // practice means the booster is a bare leaf: LightGBM rejected every
+                    // candidate split and returned a constant. A heavy
+                    // `interaction_penalty` is the usual way to arrive here, so the
+                    // message names that rather than the JSON key.
+                    PolarsError::ComputeError(
+                        "this booster has no splits - every candidate was rejected, so \
+                         it predicts a constant and has no rating tables to convert. \
+                         Lower interaction_penalty / interaction_complexity, or relax \
+                         min_gain_to_split and min_data_in_leaf."
+                            .into(),
+                    )
+                })?
                 as usize;
 
             let feature_name = model["feature_names"][feature_idx]
@@ -486,7 +499,15 @@ pub fn process_lgbm_trees(model_json: &str) -> Result<Vec<RatingTable>, PolarsEr
     // Extract overall mean from first tree's root node
     let mean_adjustment =
         if let Some(first_tree) = model["tree_info"][0]["tree_structure"].as_object() {
-            if let Some(mean) = first_tree["internal_value"].as_f64() {
+            // `.get`, not `[..]`: indexing a serde_json::Map panics with "no entry
+            // found for key" on a missing key, and a tree that is a bare leaf has no
+            // `internal_value` at all. LightGBM emits exactly that when every candidate
+            // split is rejected, which a heavy `interaction_penalty` does routinely - so
+            // a Pareto search over that parameter walks straight into it.
+            if let Some(mean) = first_tree
+                .get("internal_value")
+                .and_then(|value| value.as_f64())
+            {
                 let mean_df =
                     DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![mean]).into()])?;
                 tables.push(RatingTable::new(mean_df, None));
@@ -591,7 +612,20 @@ fn process_tree_analysis(
             // Extract split feature information
             let feature_idx = current_node["split_feature"]
                 .as_i64()
-                .ok_or_else(|| PolarsError::ComputeError("Missing split feature".into()))?
+                .ok_or_else(|| {
+                    // Reached whenever a node carries no `split_feature`, which in
+                    // practice means the booster is a bare leaf: LightGBM rejected every
+                    // candidate split and returned a constant. A heavy
+                    // `interaction_penalty` is the usual way to arrive here, so the
+                    // message names that rather than the JSON key.
+                    PolarsError::ComputeError(
+                        "this booster has no splits - every candidate was rejected, so \
+                         it predicts a constant and has no rating tables to convert. \
+                         Lower interaction_penalty / interaction_complexity, or relax \
+                         min_gain_to_split and min_data_in_leaf."
+                            .into(),
+                    )
+                })?
                 as usize;
 
             let feature_name = model["feature_names"][feature_idx]
@@ -716,7 +750,15 @@ pub fn build_analysis_tablemodel(
     // (This will become the mean table.)
     let mean_adjustment =
         if let Some(first_tree) = model["tree_info"][0]["tree_structure"].as_object() {
-            if let Some(mean) = first_tree["internal_value"].as_f64() {
+            // `.get`, not `[..]`: indexing a serde_json::Map panics with "no entry
+            // found for key" on a missing key, and a tree that is a bare leaf has no
+            // `internal_value` at all. LightGBM emits exactly that when every candidate
+            // split is rejected, which a heavy `interaction_penalty` does routinely - so
+            // a Pareto search over that parameter walks straight into it.
+            if let Some(mean) = first_tree
+                .get("internal_value")
+                .and_then(|value| value.as_f64())
+            {
                 let mean_df =
                     DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![mean]).into()])?;
                 let mean_table = RatingTable::new(mean_df, None);
