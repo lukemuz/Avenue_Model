@@ -15,3 +15,7 @@ scripts/.yellow_tripdata_2024_01.parquet
 scripts/.bench_large/
 .venv/
 *.so
+
+# Example dataset cache and the tables the examples write.
+examples/.fremtpl2freq.parquet
+french_motor_tables/

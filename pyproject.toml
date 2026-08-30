@@ -35,5 +35,15 @@ Homepage = "https://github.com/lukemuz/Avenue_Model"
 Repository = "https://github.com/lukemuz/Avenue_Model"
 Issues = "https://github.com/lukemuz/Avenue_Model/issues"
 
+[project.optional-dependencies]
+# `avenue_model.tune_lgbm` and the LightGBM examples. Kept optional because the core
+# package is a GLM engine and most users of it never touch a booster.
+tuning = [
+    "lightgbm>=4.0",
+    "optuna>=3.0",
+]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
+python-source = "python"
+module-name = "avenue_model.avenue_model"

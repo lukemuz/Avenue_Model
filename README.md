@@ -1,22 +1,30 @@
 # Avenue Model
 
-**Fast, defensible insurance models built directly from rating tables.**
+**Models you can hand to a regulator, from a GLM or from LightGBM.**
 
-Avenue turns an ordinary dataframe into a model that remains understandable after it is
-fitted. State the rating plan, inspect what it will do, fit it, validate it, and hand it
-to someone as editable tables. The same table representation also converts LightGBM
-models exactly, without changing their predictions.
+The rating table is the model. Avenue fits one — directly on the tables, with no
+dummy-coded design matrix anywhere in the process — or converts a LightGBM booster into
+one, exactly, without changing a single prediction. Either way what comes out is a set of
+CSVs a person can read, edit, file and load back.
 
+- **LightGBM becomes inspectable.** A tree ensemble converts into the same rating tables a
+  GLM produces, with predictions preserved to floating-point noise. Trained under
+  [interaction penalties](#making-the-tables-small-enough-to-read) that target the table
+  count directly, a 123-tree booster on the Broward recidivism data becomes **two lookup
+  tables** that beat the proprietary COMPAS score.
+- **The engine is fast.** Avenue fits on rating tables without materializing an
+  observation-by-parameter matrix. It takes eight of nine cases against glum,
+  scikit-learn and H2O across three families and three penalty settings.
 - **The plan is data.** Levels, bands, interactions, reference levels and exposure
   treatment are explicit, serializable and reproducible.
 - **Problems are found before fitting.** `check()` reports data faults, thin levels,
   unidentified terms and redundant tables together, with actionable messages.
 - **The fitted model is an artifact.** Save it as JSON or readable CSV tables, edit it,
   load it again, validate it and compose it with other models.
-- **The engine is fast.** Avenue fits on rating tables without materializing a dummy-coded
-  observation-by-parameter matrix, and includes global and table-native solvers.
-- **LightGBM becomes inspectable.** Tree ensembles convert exactly into the same rating
-  table representation used by GLMs.
+
+The method, the penalties and the case studies are described in
+[*GBMs as Factor Tables: Achieving Both Transparency and Interpretability Without
+Approximation*](https://avenue-analytics.com/research/avenue-analytics-methodology.pdf).
 
 ## Installation
 
@@ -39,6 +47,25 @@ avenue_model = "0.1.0"
 
 Python requires 3.12 or newer. The compatible Python Polars version is installed with
 the package.
+
+The LightGBM route needs two more packages, and the interaction penalties need the fork:
+
+```bash
+pip install "avenue-model[tuning]"                  # + lightgbm and optuna
+pip install avenue-lightgbm                         # optional; adds the penalties
+```
+
+## See it work
+
+```bash
+python examples/french_motor.py
+```
+
+Tunes a booster on claim frequency for accuracy *and* table count, converts the model it
+picks into rating tables, scores it on held-out policies, and writes the tables as CSV.
+About a minute, and the last thing it prints is the model itself. A 30-trial run reaches
+roughly ten tables at 0.589 held-out Poisson deviance — past the 0.599 the paper reports
+for EBM — and reports its conversion drift, which should read about `1e-15`.
 
 ## Quick start
 
@@ -199,10 +226,98 @@ converted = FittedModel.from_lgbm_json(
 predictions = converted.predict(new_business)
 ```
 
-Conversion changes the representation, not the prediction. `consolidation="max"`
-produces the smallest consolidated set of tables; `"analysis"` preserves one table per
-tree node for inspection. Shallow trees convert most compactly because table size grows
-with the number of feature combinations represented by a path.
+What comes back is rating tables, not an explanation of a model that stays a black box:
+
+```text
+02_prior_charge_count__sex.csv        03_sex__age.csv
+  Prior_Charge_Count  Sex  Factor       Sex   Age   Factor
+                 0.0    F  -1.1001        F  20.5   1.4170
+                 1.5    F  -0.4956        F  21.5   1.0817
+                 2.5    F   0.0441        F  22.5   0.8567
+                 ...                      ...
+```
+
+Add the intercept to one factor from each table and apply the inverse link. That is the
+whole model — the same arithmetic a filed rating plan uses, and on the Broward recidivism
+data it scores better out of sample than the instrument it replaces:
+
+| Broward, test set | COMPAS | Random Forest | EBM | Avenue |
+|---|---:|---:|---:|---:|
+| AUC | 0.6961 | 0.6757 | **0.7278** | 0.7258 |
+
+COMPAS needs a 137-question survey and its formula is a trade secret; EBM edges the AUC
+but uses every feature, seven interaction terms and a plotting library to interpret.
+Avenue's model is three features and two tables you can read on paper.
+
+Conversion changes the representation, not the prediction — the fitted means agree with
+the booster's to floating-point noise, and `scripts/bench_lgbm.py` asserts that before
+reporting anything. `consolidation="max"` produces the smallest consolidated set of
+tables; `"analysis"` preserves one table per tree node for inspection.
+
+### Making the tables small enough to read
+
+A booster converts exactly whatever its shape, but not every exact model is a readable
+one. Two quantities decide that, and neither is the tree count — on freMTPL2 at a fixed
+30 trees:
+
+| max depth | tables | rows across them | widest table |
+|---:|---:|---:|---:|
+| 2 | 5 | 57 | 28 |
+| 3 | 11 | 397 | 192 |
+| 4 | 14 | 4,145 | 960 |
+
+Table *count* is the number of distinct feature combinations the ensemble uses. *Rows*
+are the cross product of every threshold along a path, so they grow much faster, and they
+are what decides whether anyone can read the result. Both are modelling choices rather
+than facts of the data, and `scripts/bench_lgbm.py` reproduces the table above.
+
+```python
+from avenue_model import estimate_num_tables
+
+estimate_num_tables(json.dumps(booster.dump_model()))   # -> 20
+```
+
+`estimate_num_tables` reads a LightGBM dump and returns the number of consolidated tables
+the conversion would produce, without doing the conversion. It is cheap enough to call on
+every trial of a hyperparameter search, which is exactly what it is for:
+[`avenue_model.tune_lgbm`](#tuning-for-interpretability) optimises cross-validated loss
+and table count together and returns the Pareto frontier, so the trade-off is chosen
+rather than stumbled into.
+
+Depth and leaf count are the blunt levers and work with stock LightGBM.
+[`avenue-lightgbm`](https://github.com/lukemuz/avenue-lightgbm), a small fork, adds two
+that target the table count directly:
+
+| parameter | effect |
+|---|---|
+| `interaction_penalty` | penalises a split whose feature combination is new to the ensemble |
+| `interaction_complexity` | penalises each feature newly introduced within one tree |
+
+Both are zero by default and cost nothing when unused. On the French motor data the
+model selected for interpretability — four features — still beats EBM on out-of-sample
+Poisson deviance (0.5934 against 0.5994), and the best cross-validated one reaches 0.5834.
+
+### Tuning for interpretability
+
+`tune_lgbm` runs an Optuna study against both objectives at once and hands back the
+frontier, so the trade-off is chosen rather than discovered afterwards:
+
+```python
+from avenue_model import tune_lgbm
+
+result = tune_lgbm(dataset, {"objective": "poisson"}, n_trials=50)
+print(result.summary())
+
+trial = result.select(max_tables=10)     # most accurate model within a budget
+booster = lgb.train({**base, **trial.params}, dataset)
+```
+
+`result.frontier` is sorted by table count, `result.best_cv` ignores size entirely, and
+`select(max_tables=...)` raises rather than quietly returning something over budget. When
+the installed LightGBM is stock, the two interaction penalties are dropped from the search
+with a warning instead of being tuned silently — LightGBM ignores an unknown parameter
+with only a log line, so a search over one would otherwise spend its whole budget on a
+knob wired to nothing.
 
 Converted models do not inherently know which observed response they explain. Add that
 metadata before validation:
@@ -249,6 +364,7 @@ For direct control, the lower-level `RatingModel`, `fit_glm` and
 - Structured model reports with a single severity-graded verdict
 - Editable JSON and CSV workbook formats
 - Exact LightGBM conversion and model composition
+- Bi-objective LightGBM tuning on loss and rating-table count
 
 ## Performance at a glance
 
@@ -306,7 +422,13 @@ measurements, correctness gates and reproduction commands are in the
 cargo test --no-default-features
 maturin develop --release
 python -m unittest discover -s tests
+
+python scripts/bench_lgbm.py        # conversion exactness and table size
+python examples/french_motor.py     # the end-to-end LightGBM route
 ```
+
+Python-side code lives in `python/avenue_model/`; the compiled engine is
+`avenue_model.avenue_model` and is re-exported from the package root.
 
 The extension uses Python's stable ABI for Python 3.12 and newer. `pyo3-polars`, Rust
 Polars and Python Polars must be upgraded together; the compatible Python package is
