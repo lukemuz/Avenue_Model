@@ -426,9 +426,15 @@ def tune_lgbm(
         for booster in result["cvbooster"].boosters:
             try:
                 counts.append(float(estimate_num_tables(_model_json(booster))))
-            except Exception:
-                # A booster with no usable trees — every split rejected — is not a
-                # one-table model, it is a failed fit.
+            except BaseException:  # noqa: BLE001 - see below
+                # A booster with no usable trees — every split rejected under a heavy
+                # penalty — is not a one-table model, it is a failed fit, and a search
+                # that scored it as one would drive straight at it.
+                #
+                # BaseException rather than Exception on purpose: the conversion path
+                # raises pyo3_runtime.PanicException on this input, which derives from
+                # BaseException, so `except Exception` does not catch it and one
+                # degenerate trial would abort the whole study.
                 counts.append(float(_DEGENERATE_TABLES))
         tables = sum(counts) / len(counts)
 

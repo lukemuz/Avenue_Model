@@ -170,7 +170,15 @@ def main() -> int:
         booster = lgb.train({**base, **trial.params, "num_iterations": trial.num_iterations},
                             dataset)
         dumped = json.dumps(booster.dump_model())
-        converted = FittedModel.from_lgbm_json(dumped, consolidation="max")
+        try:
+            converted = FittedModel.from_lgbm_json(dumped, consolidation="max")
+        except BaseException as exc:  # noqa: BLE001
+            # A booster whose splits were all rejected is a single stump, and the
+            # converter panics on it rather than raising - a PanicException derives
+            # from BaseException, so a bare `except Exception` would not hold here.
+            print(f"  {label}: booster has no usable trees, so it cannot be converted "
+                  f"({type(exc).__name__}). Lower the penalties or widen the search.")
+            continue
 
         predicted = converted.predict(frame).to_series(0).to_numpy()
         reference = booster.predict(design[test])
