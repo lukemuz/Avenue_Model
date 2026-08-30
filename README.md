@@ -1,6 +1,6 @@
 # Avenue Model
 
-**Models you can hand to a regulator, from a GLM or from LightGBM.**
+**Models represented as rating tables, from a GLM or from LightGBM.**
 
 The rating table is the model. Avenue fits one — directly on the tables, with no
 dummy-coded design matrix anywhere in the process — or converts a LightGBM booster into
@@ -9,12 +9,14 @@ CSVs a person can read, edit, file and load back.
 
 - **LightGBM becomes inspectable.** A tree ensemble converts into the same rating tables a
   GLM produces, with predictions preserved to floating-point noise. Trained under
-  [interaction penalties](#making-the-tables-small-enough-to-read) that target the table
-  count directly, a 123-tree booster on the Broward recidivism data becomes **two lookup
-  tables** that beat the proprietary COMPAS score.
+  [interaction penalties](docs/lightgbm.md) that target the table count directly, a
+  300-tree booster on French motor claims becomes **five tables** at essentially
+  unchanged accuracy.
 - **The engine is fast.** Avenue fits on rating tables without materializing an
-  observation-by-parameter matrix. It takes eight of nine cases against glum,
-  scikit-learn and H2O across three families and three penalty settings.
+  observation-by-parameter matrix — fastest in eight of nine benchmark scenarios among
+  comparable runs, against glum, scikit-learn and H2O across three families and three
+  penalty settings. What "comparable" excludes, and why, is in the
+  [methodology](src/glm/README.md#the-rest-of-the-field).
 - **The plan is data.** Levels, bands, interactions, reference levels and exposure
   treatment are explicit, serializable and reproducible.
 - **Problems are found before fitting.** `check()` reports data faults, thin levels,
@@ -68,7 +70,9 @@ conversion drift as it goes, which should read about `1e-15`.
 
 On stock LightGBM it lands around 25 tables at 0.586 held-out Poisson deviance; with
 [`avenue-lightgbm`](https://github.com/lukemuz/avenue-lightgbm) installed the same script
-reaches **5 tables at 0.591**. Both are past the 0.599 the paper reports for EBM.
+reaches **5 tables at 0.591**. The paper reports 0.599 for EBM on this data, but on its
+own train/test split and tuning budget — so treat that as the neighbourhood to land in
+rather than a like-for-like comparison.
 
 ## Quick start
 
@@ -241,177 +245,23 @@ What comes back is rating tables, not an explanation of a model that stays a bla
 ```
 
 Add the intercept to one factor from each table and apply the inverse link. That is the
-whole model — the same arithmetic a filed rating plan uses, and on the Broward recidivism
-data it scores better out of sample than the instrument it replaces:
+whole model — the same arithmetic a filed rating plan uses.
 
-| Broward, test set | COMPAS | Random Forest | EBM | Avenue |
-|---|---:|---:|---:|---:|
-| AUC | 0.6961 | 0.6757 | **0.7278** | 0.7258 |
+On French motor claim frequency, a booster tuned for both accuracy and table count
+converts into **five tables** scoring 0.591 mean Poisson deviance on a held-out quarter
+of the data, against 0.586 for the same pipeline on stock LightGBM and 0.599 reported for
+EBM in the paper. `examples/french_motor.py` reproduces the first two; the EBM figure
+comes from the paper's own train/test split and tuning budget, so read it as the
+neighbourhood rather than a like-for-like result.
 
-COMPAS needs a 137-question survey and its formula is a trade secret; EBM edges the AUC
-but uses every feature, seven interaction terms and a plotting library to interpret.
-Avenue's model is three features and two tables you can read on paper.
+Keeping the tables that small is a modelling choice with its own controls — table size,
+tuning, category names and refitting are covered in
+**[docs/lightgbm.md](docs/lightgbm.md)**, along with a recidivism case study.
 
 Conversion changes the representation, not the prediction — the fitted means agree with
 the booster's to floating-point noise, and `scripts/bench_lgbm.py` asserts that before
 reporting anything. `consolidation="max"` produces the smallest consolidated set of
 tables; `"analysis"` preserves one table per tree node for inspection.
-
-### Making the tables small enough to read
-
-A booster converts exactly whatever its shape, but not every exact model is a readable
-one. Two quantities decide that, and neither is the tree count — on freMTPL2 at a fixed
-30 trees:
-
-| max depth | tables | rows across them | widest table |
-|---:|---:|---:|---:|
-| 2 | 5 | 57 | 28 |
-| 3 | 11 | 397 | 192 |
-| 4 | 14 | 4,145 | 960 |
-
-Table *count* is the number of distinct feature combinations the ensemble uses. *Rows*
-are the cross product of every threshold along a path, so they grow much faster, and they
-are what decides whether anyone can read the result. Both are modelling choices rather
-than facts of the data, and `scripts/bench_lgbm.py` reproduces the table above.
-
-```python
-from avenue_model import estimate_num_tables
-
-estimate_num_tables(json.dumps(booster.dump_model()))   # -> 20
-```
-
-`estimate_num_tables` reads a LightGBM dump and returns the number of consolidated tables
-the conversion would produce, without doing the conversion. It is cheap enough to call on
-every trial of a hyperparameter search, which is exactly what it is for:
-[`avenue_model.tune_lgbm`](#tuning-for-interpretability) optimises cross-validated loss
-and table count together and returns the Pareto frontier, so the trade-off is chosen
-rather than stumbled into.
-
-Depth and leaf count are the blunt levers and work with stock LightGBM.
-[`avenue-lightgbm`](https://github.com/lukemuz/avenue-lightgbm), a small fork, adds two
-that target the table count directly:
-
-| parameter | effect |
-|---|---|
-| `interaction_penalty` | penalises a split whose feature combination is new to the ensemble |
-| `interaction_complexity` | penalises each feature newly introduced within one tree |
-
-Both are zero by default and cost nothing when unused. Their effect is large and cheap:
-holding every other parameter fixed on the French motor data, `interaction_penalty` alone
-takes a 39-table model to 12 for 0.1% of cross-validated loss, and to 5 for 0.7%.
-
-| `interaction_penalty` | tables | cv Poisson |
-|---:|---:|---:|
-| 0 | 39 | 0.310534 |
-| 10 | 12 | 0.310831 |
-| 100 | 5 | 0.312757 |
-
-That is the trade-off the paper is about, and why it is worth searching rather than
-assuming. Its selected model — four features — beats EBM out of sample (0.5934 against
-0.5994), and its best cross-validated one reaches 0.5834.
-
-### Tuning for interpretability
-
-`tune_lgbm` runs an Optuna study against both objectives at once and hands back the
-frontier, so the trade-off is chosen rather than discovered afterwards:
-
-```python
-from avenue_model import tune_lgbm
-
-result = tune_lgbm(dataset, {"objective": "poisson"}, n_trials=50)
-print(result.summary())
-
-trial = result.select(max_tables=10)     # most accurate model within a budget
-booster = lgb.train({**base, **trial.params}, dataset)
-```
-
-`result.frontier` is sorted by table count, `result.best_cv` ignores size entirely, and
-`select(max_tables=...)` raises rather than quietly returning something over budget. When
-the LightGBM in play is stock, the two interaction penalties are dropped from the search
-with a warning instead of being tuned silently — LightGBM ignores an unknown parameter
-with only a log line, so a search over one would otherwise spend its whole budget on a
-knob wired to nothing.
-
-The fork is packaged two ways — importable as `avenue_lightgbm` beside stock LightGBM, or
-as `lightgbm` replacing it — so no import name is hardcoded. `resolve_lightgbm(dataset)`
-returns the module and its name, taking the answer from the `Dataset` you pass whenever
-you pass one: the two builds ship separate compiled libraries and separate `Dataset`
-classes, so the one that built your frame is the only one that can train on it.
-
-### Naming the levels behind the codes
-
-LightGBM is handed numbers, so a converted model knows category codes and not what they
-stood for — and a rating table whose column reads `3` is not something anyone can file.
-Supply the names and the workbook writes level text instead:
-
-```python
-codes = pd.Categorical(df["VehBrand"])
-booster_input["VehBrand"] = codes.codes            # what LightGBM sees
-
-converted = converted.with_categories({"VehBrand": list(codes.categories)})
-converted.to_workbook().save_csv_dir("plan")
-```
-
-```text
-VehBrand,Relativity
-(any other level),0.9078
-B1,0.9176
-B10,0.9368
-B12,1.3073
-```
-
-A level's position in the list is its code; pass a `{code: name}` dict instead when the
-codes are not contiguous. Naming is presentation only — the model matches on the code
-either way, and the predictions are bit-identical before and after.
-
-Which shape a category table takes is decided when the booster is trained, and **both
-are good options**:
-
-| how the feature is given to LightGBM | converted table | names apply |
-|---|---|---|
-| `categorical_feature=[...]`, integer-coded | `Int32`, one row per level, plus a `-999` wildcard | yes |
-| a plain number | `Float64` band over the codes — a *grouping* of levels | no, a range is not one level |
-
-Integer codes passed as plain numbers are a standard and often better choice, especially
-at high cardinality where set-based splits overfit; the resulting table groups adjacent
-codes into a band, which is a real modelling choice rather than a defect. Names can only
-stand in for a single level, so `with_categories` applies to the first shape.
-
-### File a GLM instead of the booster
-
-The usual objection to a converted booster is not that the tables are wrong — it is that
-a reviewer is being handed a tree ensemble, and the tables carry no standard errors and
-no reference levels. There is a way around that which costs almost nothing.
-
-A rating table is a *shape*: which bands, which levels, which interactions. Hand the
-converted shapes to `Plan.given()` and the factors are re-estimated by the GLM engine:
-
-```python
-plan = Plan.frequency("Exposure")
-for i, table in enumerate(converted.rating_tables()):
-    plan = plan.given(f"t{i}", table)
-filed = plan.fit(train, "frequency")
-```
-
-What comes out is an ordinary Poisson GLM — Wald standard errors, a reference row at
-relativity 1.0, the same `report()` and `validate()` as any fitted model — whose banding
-happened to be chosen by a booster rather than by hand. Algorithmic band selection is
-ordinary practice; this is that idea with a better band-chooser.
-
-Mean holdout Poisson deviance over three random splits of the French motor data
-(`examples/refit_as_glm.py` reproduces it):
-
-| | mean | vs the booster |
-|---|---:|---:|
-| GBM converted | 0.5858 | — |
-| GLM refit | 0.5869 | +0.19% |
-| GLM refit + ridge `alpha=1e-6` | 0.5858 | +0.02% |
-| GLM with hand-chosen bands | 0.6019 | +2.75% |
-
-Refitting costs a fifth of a percent, a whisker of ridge recovers it, and both beat bands
-chosen by hand by nearly 3%. One caveat decides which to file: a penalised fit omits
-standard errors, so the ridge row is the better model and the unpenalised row is the
-fileable one.
 
 Converted models do not inherently know which observed response they explain. Add that
 metadata before validation:
@@ -481,7 +331,12 @@ so read the ratios rather than the seconds):
 |---|---:|---:|---:|---:|
 | freMTPL2, Poisson, unpenalised | **1.00x** | 2.5x | 2.9x | 3.2x |
 | census income, Binomial, ridge | **1.00x** | 1.8x | 1.3x | 4.3x |
-| freMTPL2, Poisson, lasso | **1.00x** | 2.6x | no L1 for a Poisson GLM | different answer |
+| freMTPL2, Poisson, lasso | **1.00x** | 2.6x | n/a — no L1 for a Poisson GLM | n/a — fitted means disagree |
+
+An `n/a` is not a slow time. scikit-learn cannot express an L1-penalised Poisson GLM at
+all, and H2O's lasso lands 2.9e-2 from glum's fitted means — two orders of magnitude
+outside anything the others disagree by — so it answered a different problem rather than
+this one slowly.
 
 A penalty is close to free: an L1 makes glum abandon its Cholesky factorisation for
 coordinate descent, while Avenue's algorithm already is coordinate descent. Where the
@@ -540,6 +395,8 @@ pinned in `pyproject.toml`.
 ## Documentation
 
 - [GLM internals and benchmarks](src/glm/README.md)
+- [LightGBM as rating tables](docs/lightgbm.md) — table size, tuning, category names,
+  refitting as a GLM, and the recidivism case study
 - [Rating tables, matching and LightGBM conversion](src/rating_model/README.md)
 - Rust API documentation: `cargo doc --open`
 - Python API documentation is available through `help(avenue_model)` and

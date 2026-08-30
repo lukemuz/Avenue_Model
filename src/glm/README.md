@@ -341,12 +341,25 @@ the rest, so its time bought a worse answer.
 
 | lasso, alpha = 1e-4 | Avenue | glum | scikit-learn | H2O |
 |---|---:|---:|---:|---:|
-| freMTPL2 | **0.50** | 1.28 | no L1 for a Poisson GLM | 2.69 — different answer |
-| census_income | **0.14** | 0.22 | 10.16 `~`, out of iterations | 0.85 — different answer |
-| house_sales | **0.078** | 0.100 | no L1 for a Gamma GLM | 0.242 `~` |
+| freMTPL2 | **0.50** | 1.28 | n/a — no L1 for a Poisson GLM | n/a — fitted means disagree |
+| census_income | **0.14** | 0.22 | n/a — out of iterations at 10.16 s | n/a — fitted means disagree |
+| house_sales | **0.078** | 0.100 | n/a — no L1 for a Gamma GLM | 0.242 `~` |
 
-Avenue takes eight of the nine rows. The one it loses is the smallest problem in the
-suite to the solver written for exactly that shape, and it loses it twice — see below.
+The `n/a` cells are deliberate. H2O returns *a* lasso fit on the first two rows in 2.69 s
+and 0.85 s, but its fitted means sit 2.9e-2 and 1.0e-2 from glum's — two orders of
+magnitude outside anything the other engines disagree by — so it solved a different
+problem and its time is not a slower solution to this one. scikit-learn has no L1 for a
+non-Gaussian GLM at all, and its one elastic-net logistic path (`saga`) spent its entire
+500-iteration budget without converging. Reporting either as a loss on speed would be
+the wrong reading: only the `house_sales` row is a like-for-like comparison, and Avenue
+takes it.
+
+Avenue is fastest in eight of the nine scenarios **among the runs that are comparable**,
+which is a narrower claim than it first looks: three of the nine cells have no rival
+result to compare against, because scikit-learn cannot express two of these problems and
+H2O answers a different one. Of the six scenarios where every engine solved the same
+problem, Avenue takes five. The one it loses is the smallest problem in the suite, to the
+solver written for exactly that shape, and it loses it twice — see below.
 
 **scikit-learn is not the slow baseline it is assumed to be.** Given a sparse
 treatment-coded design and `newton-cholesky` — the solver added for `n >> p`, rather than
