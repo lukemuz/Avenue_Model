@@ -168,8 +168,6 @@ Mean holdout Poisson deviance over three random splits of the French motor data
 Refitting costs a fifth of a percent, a whisker of ridge recovers it, and both beat bands
 chosen by hand by nearly 3%.
 
-The unpenalised refit also carries Wald standard errors, which a converted booster does
-not. They are there for convenience if someone asks for them, rather than as a guarantee:
-they are exact only for a model specified in advance and fitted without a penalty, and
-neither holds here — the bands were chosen from the same data, and a penalised fit omits
-the errors entirely.
+The unpenalised refit also carries Wald standard errors and reference levels, which a
+converted booster does not. A penalised fit omits the standard errors, so the ridge row
+is the better model and the unpenalised row is the one to quote errors from.

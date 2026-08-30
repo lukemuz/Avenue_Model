@@ -16,10 +16,6 @@ Algorithmic band selection is not exotic; CART-derived banding has been in actua
 practice for years. This is that idea with a data-driven band chooser, and the model
 that gets estimated and reviewed is a GLM.
 
-The refit also carries Wald standard errors, which the booster's tables do not. Take
-them as a convenience rather than a guarantee - they are exact only for a model
-specified in advance and fitted without a penalty, and neither is true here.
-
 What this script measures, over several random splits so the gap is not one draw:
 
     GBM converted        the booster's own factors
@@ -31,9 +27,8 @@ The headline from the run this was written against: refitting costs about 0.2% o
 holdout deviance, a whisker of ridge recovers it entirely, and both beat hand-chosen
 bands by around 2.8%.
 
-One trade-off worth knowing: a penalised fit produces no standard errors at all, so the
-ridge column is the better model and the unpenalised column is the one you can quote
-errors from. The gap between them is small enough that the choice is not painful.
+A penalised fit produces no standard errors, so the ridge column is the better model and
+the unpenalised column is the one to quote errors from. The gap is small either way.
 
 Requires the `tuning` extra; `avenue-lightgbm` is optional and only sharpens the
 band selection.
