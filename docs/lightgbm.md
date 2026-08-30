@@ -10,7 +10,7 @@ Tables: Achieving Both Transparency and Interpretability Without Approximation*
 
 **Contents:** [Table size](#making-the-tables-small-enough-to-read) ·
 [Tuning](#tuning-for-interpretability) · [Category names](#naming-the-levels-behind-the-codes) ·
-[Refitting as a GLM](#file-a-glm-instead-of-the-booster)
+[Refitting as a GLM](#refit-the-selected-table-structure-as-a-glm)
 
 ---
 
@@ -134,9 +134,9 @@ at high cardinality where set-based splits overfit; the resulting table groups a
 codes into a band, which is a real modelling choice rather than a defect. Names can only
 stand in for a single level, so `with_categories` applies to the first shape.
 
-### File a GLM instead of the booster
+### Refit the selected table structure as a GLM
 
-The usual objection to a converted booster is not that the tables are wrong — it is that
+The usual objection to a converted model is not that the tables are wrong — it is that
 a reviewer is being handed a tree ensemble, and the tables carry no standard errors and
 no reference levels. There is a way around that which costs almost nothing.
 
@@ -169,5 +169,5 @@ Refitting costs a fifth of a percent, a whisker of ridge recovers it, and both b
 chosen by hand by nearly 3%.
 
 The unpenalised refit also carries Wald standard errors and reference levels, which a
-converted booster does not. A penalised fit omits the standard errors, so the ridge row
+converted model does not. A penalised fit omits the standard errors, so the ridge row
 is the better model and the unpenalised row is the one to quote errors from.

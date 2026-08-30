@@ -1,9 +1,9 @@
-"""File a GLM, not a booster: let LightGBM choose the bands, then fit them by IRLS.
+"""Refit the selected table structure as a GLM: LightGBM picks the bands, IRLS fits them.
 
 The objection to converting a gradient booster into rating tables is rarely that the
-tables are wrong. It is that a filing reviewer is being asked to accept a tree ensemble,
-and the tables carry no standard errors, no reference levels and no inference of any
-kind — the factors are whatever the boosting arrived at.
+tables are wrong. It is that a reviewer is being asked to accept a tree ensemble, and the
+tables carry no standard errors and no reference levels — the factors are whatever the
+boosting arrived at.
 
 There is a way around that which costs almost nothing. A converted model is a set of
 rating tables, and a rating table is a *shape*: which bands, which levels, which

@@ -8,15 +8,14 @@ one, exactly, without changing a single prediction. Either way what comes out is
 CSVs a person can read, edit, file and load back.
 
 - **LightGBM becomes inspectable.** A tree ensemble converts into the same rating tables a
-  GLM produces, with predictions preserved to floating-point noise. Trained under
-  [interaction penalties](docs/lightgbm.md) that target the table count directly, a
-  300-tree booster on French motor claims becomes **five tables** at essentially
-  unchanged accuracy.
+  GLM produces, with predictions preserved to floating-point noise.
+  [Interaction-aware tuning](docs/lightgbm.md) reduces a booster to a handful of readable
+  tables for little loss.
 - **The engine is fast.** Avenue fits on rating tables without materializing an
-  observation-by-parameter matrix — fastest in eight of nine benchmark scenarios among
-  comparable runs, against glum, scikit-learn and H2O across three families and three
-  penalty settings. What "comparable" excludes, and why, is in the
-  [methodology](src/glm/README.md#the-rest-of-the-field).
+  observation-by-parameter matrix — fastest in five of the six scenarios where every
+  engine returned a comparable solution, against glum, scikit-learn and H2O across three
+  families and three penalty settings
+  ([methodology](src/glm/README.md#the-rest-of-the-field)).
 - **The plan is data.** Levels, bands, interactions, reference levels and exposure
   treatment are explicit, serializable and reproducible.
 - **Problems are found before fitting.** `check()` reports data faults, thin levels,

@@ -345,21 +345,14 @@ the rest, so its time bought a worse answer.
 | census_income | **0.14** | 0.22 | n/a — out of iterations at 10.16 s | n/a — fitted means disagree |
 | house_sales | **0.078** | 0.100 | n/a — no L1 for a Gamma GLM | 0.242 `~` |
 
-The `n/a` cells are deliberate. H2O returns *a* lasso fit on the first two rows in 2.69 s
-and 0.85 s, but its fitted means sit 2.9e-2 and 1.0e-2 from glum's — two orders of
-magnitude outside anything the other engines disagree by — so it solved a different
-problem and its time is not a slower solution to this one. scikit-learn has no L1 for a
-non-Gaussian GLM at all, and its one elastic-net logistic path (`saga`) spent its entire
-500-iteration budget without converging. Reporting either as a loss on speed would be
-the wrong reading: only the `house_sales` row is a like-for-like comparison, and Avenue
-takes it.
-
-Avenue is fastest in eight of the nine scenarios **among the runs that are comparable**,
-which is a narrower claim than it first looks: three of the nine cells have no rival
-result to compare against, because scikit-learn cannot express two of these problems and
-H2O answers a different one. Of the six scenarios where every engine solved the same
-problem, Avenue takes five. The one it loses is the smallest problem in the suite, to the
-solver written for exactly that shape, and it loses it twice — see below.
+**Avenue is fastest in five of the six scenarios where every engine returned a comparable
+solution.** The other three of the nine have no rival to compare against, which is what
+the `n/a` cells mean: scikit-learn cannot express an L1-penalised Poisson or Gamma GLM,
+and H2O's two lasso fits land 2.9e-2 and 1.0e-2 from glum's fitted means — two orders of
+magnitude outside anything the other engines disagree by. A different answer is not a
+slower one, so those cells carry no time. The single scenario Avenue loses is the
+smallest problem in the suite, to the solver written for exactly that shape, and it loses
+it twice — see below.
 
 **scikit-learn is not the slow baseline it is assumed to be.** Given a sparse
 treatment-coded design and `newton-cholesky` — the solver added for `n >> p`, rather than
@@ -376,11 +369,11 @@ three lasso rows are a capability gap rather than a slow time. The third goes th
 `LogisticRegression`, whose only elastic-net solver is `saga`: 10.2 s against Avenue's
 0.14 s, and it spent its entire 500-iteration budget without converging.
 
-**H2O loses every row, and the penalised ones it loses twice.** Its fit times run 3–7x
-Avenue's before the 0.4–9.9 s of frame upload the table excludes. More interesting than
-the timing is that its lasso does not reach the same answer at all — 2.9e-2 from glum's
-fitted means on freMTPL2 and 1.0e-2 on census, far outside anything the other three
-disagree by. Two more things had to be fixed before its numbers meant anything: enum
+**H2O is slower on every comparable row; two lasso cases also fail the agreement gate.**
+Its fit times run 3–7x Avenue's before the 0.4–9.9 s of frame upload the table excludes,
+and its lasso lands 2.9e-2 from glum's fitted means on freMTPL2 and 1.0e-2 on census —
+far outside anything the other three disagree by, which is why those cells read `n/a`
+rather than a time. Two things had to be fixed before its numbers meant anything: enum
 levels need zero-padding, because H2O sorts them lexicographically and drops the first, so
 unpadded `"10"` precedes `"2"` and a different reference level is silently held out; and
 under a penalty H2O has to be handed a pre-coded design, because its Python API exposes no
