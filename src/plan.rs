@@ -421,6 +421,10 @@ impl Plan {
 
 // ---------------------------------------------------------------- encoding
 
+/// The category code a converted rating table uses for "any level not named above".
+/// Mirrors the wildcard the LightGBM parser writes into categorical tables.
+pub const WILDCARD_CODE: i32 = -999;
+
 /// Category codes for the string columns a plan uses.
 ///
 /// Carried alongside the fitted model so scoring assigns the same code to the same
@@ -2040,6 +2044,28 @@ impl FittedModel {
         self.target = Some(target.to_string());
         self.exposure = exposure.map(str::to_string);
         self.exposure_role = role.or(Some(ExposureRole::Weight));
+        self
+    }
+
+    /// Attach the level names behind a converted model's category codes.
+    ///
+    /// A model converted from LightGBM carries codes and nothing else: LightGBM is
+    /// handed numbers, so the names never reach it. The rating tables are correct
+    /// either way — matching is on the code — but a table whose column reads `3`
+    /// where the plan says `Region B12` is not something anyone can file, and the
+    /// workbook writer already prints level text wherever an encoding supplies it.
+    ///
+    /// Codes absent from `levels` keep their number rather than being blanked, so
+    /// supplying a partial mapping loses nothing. The wildcard row a converted
+    /// categorical table carries (`-999`, "any level not named above") is labelled
+    /// automatically unless the caller names it themselves.
+    pub fn with_categories(mut self, levels: BTreeMap<String, Vec<(String, i32)>>) -> Self {
+        for (column, mut mapping) in levels {
+            if !mapping.iter().any(|(_, code)| *code == WILDCARD_CODE) {
+                mapping.push(("(any other level)".to_string(), WILDCARD_CODE));
+            }
+            self.encoding.maps.insert(column, mapping);
+        }
         self
     }
 

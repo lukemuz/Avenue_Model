@@ -338,6 +338,45 @@ returns the module and its name, taking the answer from the `Dataset` you pass w
 you pass one: the two builds ship separate compiled libraries and separate `Dataset`
 classes, so the one that built your frame is the only one that can train on it.
 
+### Naming the levels behind the codes
+
+LightGBM is handed numbers, so a converted model knows category codes and not what they
+stood for — and a rating table whose column reads `3` is not something anyone can file.
+Supply the names and the workbook writes level text instead:
+
+```python
+codes = pd.Categorical(df["VehBrand"])
+booster_input["VehBrand"] = codes.codes            # what LightGBM sees
+
+converted = converted.with_categories({"VehBrand": list(codes.categories)})
+converted.to_workbook().save_csv_dir("plan")
+```
+
+```text
+VehBrand,Relativity
+(any other level),0.9078
+B1,0.9176
+B10,0.9368
+B12,1.3073
+```
+
+A level's position in the list is its code; pass a `{code: name}` dict instead when the
+codes are not contiguous. Naming is presentation only — the model matches on the code
+either way, and the predictions are bit-identical before and after.
+
+Which shape a category table takes is decided when the booster is trained, and **both
+are good options**:
+
+| how the feature is given to LightGBM | converted table | names apply |
+|---|---|---|
+| `categorical_feature=[...]`, integer-coded | `Int32`, one row per level, plus a `-999` wildcard | yes |
+| a plain number | `Float64` band over the codes — a *grouping* of levels | no, a range is not one level |
+
+Integer codes passed as plain numbers are a standard and often better choice, especially
+at high cardinality where set-based splits overfit; the resulting table groups adjacent
+codes into a band, which is a real modelling choice rather than a defect. Names can only
+stand in for a single level, so `with_categories` applies to the first shape.
+
 Converted models do not inherently know which observed response they explain. Add that
 metadata before validation:
 

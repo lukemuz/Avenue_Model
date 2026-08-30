@@ -280,3 +280,85 @@ class OneTypeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConvertedCategoryNamesTests(unittest.TestCase):
+    """Naming a converted model's category codes, so its tables can be read.
+
+    LightGBM is handed numbers, so a converted model knows codes and not what they
+    stood for, and a rating table whose column reads `3` is not something anyone can
+    file. `with_categories` supplies the names the workbook writer already knows how
+    to print — and must do so without touching a single prediction, since the model
+    matches on the code either way.
+    """
+
+    def _booster_and_levels(self):
+        import numpy as np
+
+        lgb = __import__("lightgbm")
+        rng = np.random.default_rng(4)
+        levels = ["north", "south", "east", "west"]
+        codes = rng.integers(0, len(levels), size=800).astype(np.int32)
+        driver = rng.uniform(18, 80, size=800)
+        y = 0.05 + 0.02 * codes + 0.001 * driver + rng.normal(0, 0.01, 800)
+        frame = np.column_stack([driver, codes]).astype(float)
+        data = lgb.Dataset(frame, label=y, feature_name=["driver_age", "region"],
+                           categorical_feature=["region"],
+                           params={"feature_pre_filter": False})
+        booster = lgb.train({"objective": "regression", "num_leaves": 8, "verbose": -1,
+                             "min_data_in_leaf": 20, "seed": 1, "deterministic": True,
+                             "num_threads": 1}, data, num_boost_round=25)
+        return booster, frame, levels
+
+    def test_naming_categories_renames_rows_without_moving_predictions(self):
+        import json
+        import os
+        import tempfile
+
+        import numpy as np
+
+        from avenue_model import FittedModel, Workbook
+
+        booster, frame, levels = self._booster_and_levels()
+        converted = FittedModel.from_lgbm_json(json.dumps(booster.dump_model()),
+                                               consolidation="max")
+        named = converted.with_categories({"region": levels})
+
+        scoring = pl.DataFrame({"driver_age": frame[:, 0], "region": frame[:, 1].astype("int32")})
+        before = converted.predict(scoring).to_series(0).to_numpy()
+        after = named.predict(scoring).to_series(0).to_numpy()
+        # Names are presentation. The model still matches on the code, so this is not
+        # "close enough" - it is the same arithmetic and must be bit-identical.
+        self.assertTrue(np.array_equal(before, after))
+
+        with tempfile.TemporaryDirectory() as directory:
+            named.to_workbook().save_csv_dir(directory)
+            written = "\n".join(
+                Path(directory, name).read_text()
+                for name in os.listdir(directory) if name.endswith(".csv"))
+            self.assertIn("north", written)
+            # The wildcard row is labelled rather than left as a bare -999, which reads
+            # as a rating factor for a region numbered minus nine hundred and ninety nine.
+            self.assertIn("(any other level)", written)
+            self.assertNotIn("-999", written)
+
+            reloaded = Workbook.load_csv_dir(directory).to_model()
+            self.assertTrue(np.allclose(
+                reloaded.predict(scoring).to_series(0).to_numpy(), after, atol=1e-12))
+
+    def test_partial_and_explicit_code_mappings_are_both_accepted(self):
+        import json
+
+        from avenue_model import FittedModel
+
+        booster, _, levels = self._booster_and_levels()
+        converted = FittedModel.from_lgbm_json(json.dumps(booster.dump_model()),
+                                               consolidation="max")
+        # A dict keyed by code, for codes that are not contiguous.
+        by_code = converted.with_categories({"region": {0: "north", 3: "west"}})
+        self.assertIsNotNone(by_code)
+        # A mapping that names only some codes must not blank the rest.
+        partial = converted.with_categories({"region": ["north"]})
+        self.assertIsNotNone(partial)
+        with self.assertRaises(ValueError):
+            converted.with_categories({"region": 17})
