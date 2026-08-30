@@ -21,6 +21,7 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use pyo3_polars::PyDataFrame;
+use std::collections::BTreeMap;
 
 fn value_error<E: std::fmt::Display>(error: E) -> PyErr {
     PyErr::new::<pyo3::exceptions::PyValueError, _>(error.to_string())
@@ -686,6 +687,53 @@ impl PyFittedModel {
         };
         Ok(PyFittedModel {
             inner: self.inner.clone().with_response(target, exposure, role),
+        })
+    }
+
+    /// Name the levels behind a converted model's category codes.
+    ///
+    /// LightGBM is handed numbers, so a converted model knows the codes and not what
+    /// they stood for. Supply the names and the workbook writes level text instead of
+    /// codes, which is what makes a converted categorical table readable:
+    ///
+    ///     converted = converted.with_categories({"Region_c": list(categories)})
+    ///
+    /// Accepts a list, where a level's position is its code, or a dict of code to
+    /// name for codes that are not contiguous. Codes with no name keep their number,
+    /// so a partial mapping is safe, and the wildcard row (-999) is labelled
+    /// automatically unless named explicitly.
+    ///
+    /// This applies to tables whose category column is an `Int32` code, which is what
+    /// LightGBM produces for a feature declared with `categorical_feature`. A feature
+    /// passed as a plain number is split on its value instead, so its table is a band
+    /// over the codes — a grouping of levels rather than one row each — and names
+    /// cannot stand in for a range.
+    fn with_categories(&self, levels: &Bound<'_, PyDict>) -> PyResult<Self> {
+        let mut maps: BTreeMap<String, Vec<(String, i32)>> = BTreeMap::new();
+        for (key, value) in levels.iter() {
+            let column: String = key.extract()?;
+            let mapping: Vec<(String, i32)> = if let Ok(names) = value.extract::<Vec<String>>() {
+                names
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, name)| (name, index as i32))
+                    .collect()
+            } else if let Ok(by_code) = value.extract::<BTreeMap<i32, String>>() {
+                by_code
+                    .into_iter()
+                    .map(|(code, name)| (name, code))
+                    .collect()
+            } else {
+                return Err(value_error(format!(
+                    "levels for '{}' must be a list of names, where a name's position \
+                     is its code, or a dict of code to name.",
+                    column
+                )));
+            };
+            maps.insert(column, mapping);
+        }
+        Ok(PyFittedModel {
+            inner: self.inner.clone().with_categories(maps),
         })
     }
 
