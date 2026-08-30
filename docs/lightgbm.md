@@ -156,14 +156,6 @@ relativity 1.0, the same `report()` and `validate()` as any fitted model — who
 happened to be chosen by a booster rather than by hand. Algorithmic band selection is
 ordinary practice; this is that idea with a data-driven band chooser.
 
-**The inference carries a post-selection caveat, and it matters.** The coefficients come
-from a GLM, but the structure those coefficients live in — which bands, which levels,
-which interactions — was selected adaptively from the same data. Ordinary Wald standard
-errors are conditional on that selected structure and do not account for the uncertainty
-in having selected it, so they are narrower than an honest accounting would give. Where
-inferential validity matters, **split the sample**: choose the shapes on one part, then
-estimate and infer on a part the selection never saw. Avenue does not do this for you.
-
 Mean holdout Poisson deviance over three random splits of the French motor data
 (`examples/refit_as_glm.py` reproduces it):
 
@@ -175,10 +167,13 @@ Mean holdout Poisson deviance over three random splits of the French motor data
 | GLM with hand-chosen bands | 0.6019 | +2.75% |
 
 Refitting costs a fifth of a percent, a whisker of ridge recovers it, and both beat bands
-chosen by hand by nearly 3%. A penalised fit omits standard errors, so the ridge row is
-the better model while the unpenalised refit is the one that provides conventional GLM
-inference — subject to the post-selection caveat above, and to whatever the applicable
-filing requirements actually are.
+chosen by hand by nearly 3%.
+
+The unpenalised refit also carries Wald standard errors, which a converted booster does
+not. They are there for convenience if someone asks for them, rather than as a guarantee:
+they are exact only for a model specified in advance and fitted without a penalty, and
+neither holds here — the bands were chosen from the same data, and a penalised fit omits
+the errors entirely.
 
 ---
 

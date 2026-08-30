@@ -19,6 +19,14 @@ import polars as pl
 
 from avenue_model import GLMOptions, Plan, Workbook
 
+try:  # the `tuning` extra: needed only by the converted-model tests below
+    import lightgbm
+    import numpy as np
+
+    HAS_LIGHTGBM = True
+except ImportError:  # pragma: no cover - depends on how the package was installed
+    HAS_LIGHTGBM = False
+
 
 def motor(n=720):
     regions = ["north", "south", "east", "west"]
@@ -282,6 +290,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
+@unittest.skipUnless(HAS_LIGHTGBM, "needs the `tuning` extra (lightgbm, numpy)")
 class ConvertedCategoryNamesTests(unittest.TestCase):
     """Naming a converted model's category codes, so its tables can be read.
 
@@ -293,9 +302,7 @@ class ConvertedCategoryNamesTests(unittest.TestCase):
     """
 
     def _booster_and_levels(self):
-        import numpy as np
-
-        lgb = __import__("lightgbm")
+        lgb = lightgbm
         rng = np.random.default_rng(4)
         levels = ["north", "south", "east", "west"]
         codes = rng.integers(0, len(levels), size=800).astype(np.int32)
@@ -314,8 +321,6 @@ class ConvertedCategoryNamesTests(unittest.TestCase):
         import json
         import os
         import tempfile
-
-        import numpy as np
 
         from avenue_model import FittedModel, Workbook
 

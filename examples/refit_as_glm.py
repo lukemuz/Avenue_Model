@@ -16,12 +16,9 @@ Algorithmic band selection is not exotic; CART-derived banding has been in actua
 practice for years. This is that idea with a data-driven band chooser, and the model
 that gets estimated and reviewed is a GLM.
 
-One caveat that this script cannot measure and you should not skip. The bands were
-selected adaptively from the same data the GLM is then fitted on, so the Wald standard
-errors below are *conditional on that selected structure*: they do not account for the
-uncertainty in having chosen it, and are narrower than an honest accounting would give.
-Where inference has to hold up, split the sample - select the shapes on one part, then
-estimate and infer on a part the selection never saw. Nothing here does that for you.
+The refit also carries Wald standard errors, which the booster's tables do not. Take
+them as a convenience rather than a guarantee - they are exact only for a model
+specified in advance and fitted without a penalty, and neither is true here.
 
 What this script measures, over several random splits so the gap is not one draw:
 
@@ -34,11 +31,9 @@ The headline from the run this was written against: refitting costs about 0.2% o
 holdout deviance, a whisker of ridge recovers it entirely, and both beat hand-chosen
 bands by around 2.8%.
 
-One trade-off worth stating plainly: a penalised fit does not produce standard errors.
-The ridge column is the better model; the unpenalised column is the one that provides
-conventional GLM inference, subject to the caveat above and to whatever the applicable
-filing requirements actually are. The gap between them is small enough that the choice
-is not painful either way.
+One trade-off worth knowing: a penalised fit produces no standard errors at all, so the
+ridge column is the better model and the unpenalised column is the one you can quote
+errors from. The gap between them is small enough that the choice is not painful.
 
 Requires the `tuning` extra; `avenue-lightgbm` is optional and only sharpens the
 band selection.
@@ -224,10 +219,8 @@ def main() -> int:
     named.to_workbook().save_csv_dir(args.out_dir)
     print(f"\n  Wrote the refitted GLM to {args.out_dir}/ — "
           f"{len(os.listdir(args.out_dir))} files.")
-    print("  This is a Poisson GLM with standard errors and reference levels. The only "
-          "\n  thing the booster contributed is which bands exist - which is also why "
-          "those\n  standard errors are conditional on a structure chosen from this same "
-          "data.\n  Split the sample if the inference has to hold up.")
+    print("  This is a Poisson GLM with standard errors and reference levels. The only"
+          "\n  thing the booster contributed is which bands exist.")
 
     validation = refit.validate(frame_test)
     print(f"\n  Held-out A/E {validation.ae_ratio:.4f}, Gini {validation.gini:.4f}")
