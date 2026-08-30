@@ -377,6 +377,42 @@ at high cardinality where set-based splits overfit; the resulting table groups a
 codes into a band, which is a real modelling choice rather than a defect. Names can only
 stand in for a single level, so `with_categories` applies to the first shape.
 
+### File a GLM instead of the booster
+
+The usual objection to a converted booster is not that the tables are wrong — it is that
+a reviewer is being handed a tree ensemble, and the tables carry no standard errors and
+no reference levels. There is a way around that which costs almost nothing.
+
+A rating table is a *shape*: which bands, which levels, which interactions. Hand the
+converted shapes to `Plan.given()` and the factors are re-estimated by the GLM engine:
+
+```python
+plan = Plan.frequency("Exposure")
+for i, table in enumerate(converted.rating_tables()):
+    plan = plan.given(f"t{i}", table)
+filed = plan.fit(train, "frequency")
+```
+
+What comes out is an ordinary Poisson GLM — Wald standard errors, a reference row at
+relativity 1.0, the same `report()` and `validate()` as any fitted model — whose banding
+happened to be chosen by a booster rather than by hand. Algorithmic band selection is
+ordinary practice; this is that idea with a better band-chooser.
+
+Mean holdout Poisson deviance over three random splits of the French motor data
+(`examples/refit_as_glm.py` reproduces it):
+
+| | mean | vs the booster |
+|---|---:|---:|
+| GBM converted | 0.5858 | — |
+| GLM refit | 0.5869 | +0.19% |
+| GLM refit + ridge `alpha=1e-6` | 0.5858 | +0.02% |
+| GLM with hand-chosen bands | 0.6019 | +2.75% |
+
+Refitting costs a fifth of a percent, a whisker of ridge recovers it, and both beat bands
+chosen by hand by nearly 3%. One caveat decides which to file: a penalised fit omits
+standard errors, so the ridge row is the better model and the unpenalised row is the
+fileable one.
+
 Converted models do not inherently know which observed response they explain. Add that
 metadata before validation:
 
@@ -473,6 +509,14 @@ measurements, correctness gates and reproduction commands are in the
 - Numeric tables use step lookup and do not interpolate between rows.
 - The matching path accepts `Int32` category codes and `Float64` numeric bounds, but not
   narrower integer dtypes.
+- `predict()` returns a null for an observation matching no rating row — an unseen
+  category level, most often — rather than raising. `validate()` reports the same
+  situation at high severity and excludes those rows, so a scoring path that never
+  validates is the one to watch.
+- Band bounds in a converted model are LightGBM's thresholds verbatim, so a filed CSV
+  carries their floating-point representation (`18.500000000000004`, and `1e-35` where
+  LightGBM's zero threshold falls). Rounding them changes which rows match, so it is not
+  done silently.
 
 ## Development
 
@@ -483,6 +527,7 @@ python -m unittest discover -s tests
 
 python scripts/bench_lgbm.py        # conversion exactness and table size
 python examples/french_motor.py     # the end-to-end LightGBM route
+python examples/refit_as_glm.py     # refit the converted shapes as a filable GLM
 ```
 
 Python-side code lives in `python/avenue_model/`; the compiled engine is

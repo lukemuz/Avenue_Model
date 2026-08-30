@@ -19,3 +19,4 @@ scripts/.bench_large/
 # Example dataset cache and the tables the examples write.
 examples/.fremtpl2freq.parquet
 french_motor_tables/
+refit_plan/
