@@ -63,9 +63,12 @@ python examples/french_motor.py
 
 Tunes a booster on claim frequency for accuracy *and* table count, converts the model it
 picks into rating tables, scores it on held-out policies, and writes the tables as CSV.
-About a minute, and the last thing it prints is the model itself. A 30-trial run reaches
-roughly ten tables at 0.589 held-out Poisson deviance — past the 0.599 the paper reports
-for EBM — and reports its conversion drift, which should read about `1e-15`.
+About a minute, and the last thing it prints is the model itself. It reports its
+conversion drift as it goes, which should read about `1e-15`.
+
+On stock LightGBM it lands around 25 tables at 0.586 held-out Poisson deviance; with
+[`avenue-lightgbm`](https://github.com/lukemuz/avenue-lightgbm) installed the same script
+reaches **5 tables at 0.591**. Both are past the 0.599 the paper reports for EBM.
 
 ## Quick start
 
@@ -293,9 +296,19 @@ that target the table count directly:
 | `interaction_penalty` | penalises a split whose feature combination is new to the ensemble |
 | `interaction_complexity` | penalises each feature newly introduced within one tree |
 
-Both are zero by default and cost nothing when unused. On the French motor data the
-model selected for interpretability — four features — still beats EBM on out-of-sample
-Poisson deviance (0.5934 against 0.5994), and the best cross-validated one reaches 0.5834.
+Both are zero by default and cost nothing when unused. Their effect is large and cheap:
+holding every other parameter fixed on the French motor data, `interaction_penalty` alone
+takes a 39-table model to 12 for 0.1% of cross-validated loss, and to 5 for 0.7%.
+
+| `interaction_penalty` | tables | cv Poisson |
+|---:|---:|---:|
+| 0 | 39 | 0.310534 |
+| 10 | 12 | 0.310831 |
+| 100 | 5 | 0.312757 |
+
+That is the trade-off the paper is about, and why it is worth searching rather than
+assuming. Its selected model — four features — beats EBM out of sample (0.5934 against
+0.5994), and its best cross-validated one reaches 0.5834.
 
 ### Tuning for interpretability
 

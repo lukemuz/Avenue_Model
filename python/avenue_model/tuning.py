@@ -174,6 +174,8 @@ def supports_interaction_penalties(dataset=None) -> bool:
     """
     lightgbm, _, module_name = _require_deps(dataset)
 
+    import numpy as np
+
     probe = _LogProbe()
     try:
         # register_logger has no getter, so the stock logger is restored by re-registering
@@ -181,9 +183,12 @@ def supports_interaction_penalties(dataset=None) -> bool:
         lightgbm.register_logger(probe)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
+            # ndarray, not a list: LightGBM rejects a plain list of lists with
+            # "Data list can only be of ndarray or Sequence", and a probe that dies
+            # on its own input reports "unsupported" for every build there is.
             data = lightgbm.Dataset(
-                [[0.0], [1.0], [0.0], [1.0], [0.0], [1.0]],
-                label=[0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+                np.array([[0.0], [1.0], [0.0], [1.0], [0.0], [1.0]]),
+                label=np.array([0.0, 1.0, 0.0, 1.0, 0.0, 1.0]),
             )
             lightgbm.train(
                 {"objective": "regression", "num_leaves": 2, "verbose": 1,
@@ -192,7 +197,14 @@ def supports_interaction_penalties(dataset=None) -> bool:
                 data,
                 num_boost_round=1,
             )
-    except Exception:  # pragma: no cover - a probe must never break the caller
+    except Exception as exc:
+        # Failing closed is the safe default - it only drops the penalties from a
+        # search - but doing it silently is the exact failure this probe exists to
+        # catch, so it is never silent.
+        warnings.warn(
+            f"could not determine whether {module_name} supports the interaction "
+            f"penalties ({type(exc).__name__}: {exc}); assuming it does not",
+            RuntimeWarning, stacklevel=2)
         return False
     finally:
         import logging

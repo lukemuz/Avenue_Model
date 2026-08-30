@@ -28,11 +28,17 @@ Published comparison (test-set mean Poisson deviance, lower is better):
 
 Those figures came from `avenue-lightgbm`, the fork that adds `interaction_penalty` and
 `interaction_complexity` — penalties aimed at the table count itself rather than at tree
-size. This script does not require it. On stock LightGBM the frontier is driven by depth
-and leaf count alone, which are blunter instruments for the same job, and even a 30-trial
-run lands in the same neighbourhood: ten tables at roughly 0.59, already past the
-published EBM. The fork buys finer control over where on that frontier you can sit, not
-the ability to be on it. The script says which case it is in before it starts.
+size. This script does not require it, and says which case it is in before it starts.
+Measured here on a 25% holdout, both past the published EBM:
+
+    stock LightGBM      ~25 tables at 0.586    depth and leaf count are the only levers
+    avenue-lightgbm       5 tables at 0.591    the penalties target the count directly
+
+So the fork buys a five-fold smaller model for 0.9% of deviance, not the ability to
+compete at all. Holding everything else fixed, `interaction_penalty` alone takes the
+count from 39 to 12 at a cost of 0.1% in cross-validated loss, and to 5 at 0.7% — which
+is the paper's central claim, and the reason the trade-off is worth searching rather
+than assuming.
 
     pip install avenue-lightgbm      # https://github.com/lukemuz/avenue-lightgbm
 
