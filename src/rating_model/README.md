@@ -1,203 +1,79 @@
 # Rating models
 
-This module contains Avenue's core representation: lookup tables that can be inspected,
-combined, predicted, and fitted directly as GLMs.
+A rating model is a collection of lookup tables combined under an identity, log or
+logit link. The same representation is used for models fitted as GLMs, loaded from
+editable workbooks and converted from LightGBM.
 
-## At a glance
+## Tables and matching
 
-- `RatingTable` represents one lookup table and its matching rules.
-- `RatingModel` combines tables under identity, log, or logit links.
-- LightGBM trees can be converted exactly into the same representation.
-- Tables can be consolidated without changing predictions.
+Each `RatingTable` contains feature columns and one factor column. A `RatingModel`
+combines those tables and applies the inverse link to their summed factors.
 
-## Module structure
+- `Int32` feature columns are categorical. Values match exactly; `-999` is a wildcard.
+- `Float64` feature columns are numeric upper bounds. Rows must be ordered and the last
+  bound should normally be infinity.
+- Multiple feature columns form an interaction table.
+- Tables or individual rows can be fixed as offsets during GLM fitting.
 
-```
-rating_model/
-├── mod.rs              - Core domain models and public API
-├── lgbm_parser.rs      - LightGBM JSON parsing and tree processing
-├── consolidation.rs    - Table combination and consolidation algorithms
-└── README.md          - This file
-```
+Prediction uses the same matching rules as fitting, so the deployed model cannot drift
+from its estimation structure. Batch prediction is parallelized automatically.
 
-## Core components
-
-### Core types ([mod.rs](mod.rs))
-
-#### `RatingTable`
-
-- Represents a single rating table with features and rating factors
-- Supports both numeric (Float64) and categorical (Int32) features
-- Provides row matching and prediction functionality
-- Handles metadata for offset tables and locked rows
-
-#### `RatingModel`
-
-- Contains multiple RatingTables with a link function
-- Supports predictions on single records or DataFrames
-- Can be constructed from LightGBM JSON models or DataFrames
-- Supports model combination and consolidation
-
-#### Link functions
-
-- `Identity` - for regression models
-- `Logit` - for binary classification
-- `Log` - for Poisson, Gamma, and Tweedie models
-
-#### Metadata
-
-- `TableMetadata` - Table-level configuration (name, offset status, updatability)
-- `RowMetadata` - Row-level configuration (offset/locked rows)
-
-### LightGBM Parsing ([lgbm_parser.rs](lgbm_parser.rs))
-
-Handles conversion of LightGBM gradient boosting models to rating tables:
-
-- `process_lgbm_trees()` - Parses LightGBM JSON and extracts all trees
-- `build_consolidated_tablemodel()` - Creates maximally consolidated model
-- `build_analysis_tablemodel()` - Creates analysis-level model with internal nodes
-
-Internal structures:
-
-- `PathInfo` - Represents a path through a decision tree
-- `SplitNodeInfo` - Split node information (threshold, feature, decision type)
-- `LeafNodeInfo` - Leaf node with value
-- `NodeInfo` - Internal node for analysis models
-
-### Table Consolidation ([consolidation.rs](consolidation.rs))
-
-Algorithms for combining and consolidating rating tables:
-
-- `expand_and_combine_tables()` - Combines two tables with overlapping features
-- `combine_all_tables()` - Iteratively combines tables with overlapping features
-- `combine_all_tables_exact()` - Combines tables with identical feature sets
-
-## Examples
-
-### From LightGBM
-
-```rust
-use avenue_model::rating_model::RatingModel;
-
-// Load from LightGBM JSON
-let model = RatingModel::from_lgbm_json(
-    model_json_str,
-    "max"  // or "analysis" for more detailed tables
-)?;
-
-// Make predictions
-let predictions = model.predict(&dataframe)?;
-```
-
-### From DataFrames
+## Construct a model
 
 ```rust
 use avenue_model::rating_model::RatingModel;
 
 let model = RatingModel::from_dataframes(
-    vec![table1_df, table2_df],
-    "regression",  // objective
-    None,         // feature_columns (None = use all)
-    None          // existing_row_number_col
+    vec![intercept_table, age_table, region_table],
+    "poisson",
+    None,
+    None,
 )?;
+
+let predictions = model.predict(&data)?;
 ```
 
-### Combine models
+Python users will usually construct the same model through `Plan` or load it through
+`Workbook`; see the [root README](../../README.md).
+
+## Convert LightGBM exactly
+
+`RatingModel::from_lgbm_json` converts a dumped LightGBM model into tables without
+changing its predictions:
 
 ```rust
-// Combine two models with the same link function
-let combined = model1.combine(&model2)?;
-
-// Or use the + operator
-let combined = (model1 + model2)?;
-
-// Combine multiple models
-let combined = RatingModel::combine_many(vec![model1, model2, model3])?;
+let model = RatingModel::from_lgbm_json(model_json, "max")?;
 ```
 
-### Offset tables and locked rows
+`"max"` consolidates overlapping tree paths into a compact set of tables. `"analysis"`
+retains tables closer to the tree structure for inspection. See the
+[LightGBM guide](../../docs/lightgbm.md) for tuning, category handling and refitting.
+
+## Combine and constrain models
+
+Models using the same link can be composed. Under a log link, adding linear predictors
+multiplies fitted means, so frequency plus severity produces pure premium:
 
 ```rust
-// Mark entire table as offset (not updated by GLM)
-let offset_table = table.as_offset();
-
-// Add offset table to model
-model.add_offset_table(offset_table);
-
-// Lock specific rows
-table.set_row_offset(5, true);  // Lock row 5
+let pure_premium = (frequency_model + severity_model)?;
 ```
 
-### Consolidate tables
+`combine_many` performs the same operation for several models. `as_offset()` fixes a
+whole table; row metadata can lock only selected factors.
 
-```rust
-// Consolidate all tables in a model
-let consolidated = model.consolidate_tables();
-```
+## Consolidation
 
-## Feature Matching
+Consolidation combines compatible tables without changing predictions. It is used by
+LightGBM conversion and is also available directly when a model has accumulated
+overlapping tables. The cost can grow quickly with interacting feature levels, so the
+smallest table count is not always the best representation for analysis.
 
-### Categorical Features
+## Source and tests
 
-- Use Int32 type
-- Support wildcard matching with `-999` value
-- Exact match required unless wildcard present
-
-### Numeric Features
-
-- Use Float64 type
-- Threshold-based matching (value ≤ threshold)
-- Support infinity thresholds for unbounded ranges
-
-## Performance
-
-The module uses several optimization strategies:
-
-- **Parallel Processing**: Batch predictions use Rayon for parallelization
-- **Cached Columns**: Column indices cached to avoid repeated lookups
-- **Unsafe Access**: Row matching uses unsafe `get_unchecked` for performance
-- **Adaptive Parallelization**: Automatically chooses parallel strategy based on data size
-
-Parallelization thresholds:
-
-- `ROW_PARALLEL_THRESHOLD = 10` - Minimum rows for parallel processing
-- `TABLE_PARALLEL_THRESHOLD = 10` - Minimum tables for parallel processing
-
-## Public API
-
-All core types and functions are re-exported from `mod.rs`:
-
-```rust
-// Core models
-pub use RatingTable;
-pub use RatingModel;
-pub use LinkFunction;
-pub use FeatureValue;
-pub use TableMetadata;
-pub use RowMetadata;
-
-// LightGBM parsing
-pub use process_lgbm_trees;
-pub use build_analysis_tablemodel;
-pub use build_consolidated_tablemodel;
-
-// Consolidation
-pub use expand_and_combine_tables;
-pub use combine_all_tables;
-```
-
-## Testing
-
-Run the module tests with:
+- [`mod.rs`](mod.rs) — model types, matching, prediction and composition
+- [`lgbm_parser.rs`](lgbm_parser.rs) — LightGBM parsing
+- [`consolidation.rs`](consolidation.rs) — exact table consolidation
 
 ```bash
-cargo test --lib
+cargo test --lib rating_model
 ```
-
-Coverage includes:
-
-- Model creation and prediction tests
-- LightGBM parsing tests
-- Table consolidation tests
-- Edge case handling
-- Performance benchmarks

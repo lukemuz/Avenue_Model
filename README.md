@@ -35,7 +35,7 @@ From a source checkout:
 pip install .
 ```
 
-After the first package release, the registry installs will be:
+After the first release:
 
 ```bash
 pip install avenue-model
@@ -46,32 +46,12 @@ pip install avenue-model
 avenue_model = "0.1.0"
 ```
 
-Python requires 3.12 or newer. The compatible Python Polars version is installed with
-the package.
-
-The LightGBM route needs two more packages, and the interaction penalties need the fork:
+Python 3.12 or newer is required. For LightGBM conversion and tuning:
 
 ```bash
-pip install "avenue-model[tuning]"                  # + lightgbm and optuna
-pip install avenue-lightgbm                         # optional; adds the penalties
+pip install "avenue-model[tuning]"  # adds LightGBM and Optuna
+pip install avenue-lightgbm         # optional interaction penalties
 ```
-
-## See it work
-
-```bash
-python examples/french_motor.py
-```
-
-Tunes a booster on claim frequency for accuracy *and* table count, converts the model it
-picks into rating tables, scores it on held-out policies, and writes the tables as CSV.
-About a minute, and the last thing it prints is the model itself. It reports its
-conversion drift as it goes, which should read about `1e-15`.
-
-On stock LightGBM it lands around 25 tables at 0.586 held-out Poisson deviance; with
-[`avenue-lightgbm`](https://github.com/lukemuz/avenue-lightgbm) installed the same script
-reaches **5 tables at 0.591**. The paper reports 0.599 for EBM on this data, but on its
-own train/test split and tuning budget — so treat that as the neighbourhood to land in
-rather than a like-for-like comparison.
 
 ## Quick start
 
@@ -126,11 +106,10 @@ Plans normalize ordinary integer, boolean, string and categorical columns at the
 boundary. Category encodings remain attached to the model, so scoring cannot silently
 assign a familiar level a different code.
 
-### What `check()` adds
+### Check before fitting
 
-`plan.check(df, target)` reports rather than stopping at the first error. It returns the
-band edges selected by quantile rules, chosen base levels, rows and parameters per term,
-and issues such as:
+`plan.check(df, target)` returns resolved bands, base levels and parameter counts along
+with all detected issues rather than stopping at the first:
 
 - missing, null or invalid target and exposure values;
 - observations that match no rating row;
@@ -139,9 +118,8 @@ and issues such as:
 - near-aliased table pairs; and
 - plans spending more parameters than the data can support.
 
-The findings have stable codes for applications and messages suitable for showing to a
-person. `fit()` runs the check itself and keeps it, so the findings automatically travel
-into the final report.
+Findings have stable codes and readable messages. `fit()` runs and retains the same
+check, so its findings travel into the final report.
 
 ## Models you can open and edit
 
@@ -159,9 +137,8 @@ plan_2026/
   02_region.csv
 ```
 
-The CSVs use category names rather than internal codes and contain one editable factor
-column, named `Relativity` for log-link models or `Rating_Factor` otherwise. The manifest
-records the family, scale, category encoding, offset tables, locked rows and variates.
+The CSVs use category names rather than internal codes and expose one editable factor
+column. The manifest retains everything needed to reconstruct the model.
 
 ```python
 from avenue_model import Workbook
@@ -172,9 +149,8 @@ loaded.validate(holdout)
 loaded.report(holdout)
 ```
 
-Loading checks every table before it becomes a model. Blank or non-positive factors,
-duplicate levels, out-of-order bands, missing unbounded bands and unknown category names
-are reported together, with the table, row and suggested repair.
+Loading validates every table and reports all problems together before constructing a
+model.
 
 ### Carry an existing plan forward
 
@@ -246,21 +222,17 @@ What comes back is rating tables, not an explanation of a model that stays a bla
 Add the intercept to one factor from each table and apply the inverse link. That is the
 whole model — the same arithmetic a filed rating plan uses.
 
-On French motor claim frequency, a booster tuned for both accuracy and table count
-converts into **five tables** scoring 0.591 mean Poisson deviance on a held-out quarter
-of the data, against 0.586 for the same pipeline on stock LightGBM and 0.599 reported for
-EBM in the paper. `examples/french_motor.py` reproduces the first two; the EBM figure
-comes from the paper's own train/test split and tuning budget, so read it as the
-neighbourhood rather than a like-for-like result.
+Conversion changes representation, not prediction: fitted means agree with the booster
+to floating-point noise. On French motor claim frequency, the end-to-end example tunes
+for accuracy and table count, converts the result and writes it as CSV:
 
-Keeping the tables that small is a modelling choice with its own controls — table size,
-tuning, category names and refitting are covered in
-**[docs/lightgbm.md](docs/lightgbm.md)**.
+```bash
+python examples/french_motor.py
+```
 
-Conversion changes the representation, not the prediction — the fitted means agree with
-the booster's to floating-point noise, and `scripts/bench_lgbm.py` asserts that before
-reporting anything. `consolidation="max"` produces the smallest consolidated set of
-tables; `"analysis"` preserves one table per tree node for inspection.
+With [`avenue-lightgbm`](https://github.com/lukemuz/avenue-lightgbm), it produces five
+tables at 0.591 held-out mean Poisson deviance. Table-size controls, category handling,
+consolidation and GLM refitting are covered in [the LightGBM guide](docs/lightgbm.md).
 
 Converted models do not inherently know which observed response they explain. Add that
 metadata before validation:
@@ -295,25 +267,17 @@ For direct control, the lower-level `RatingModel`, `fit_glm` and
 
 ## Capabilities
 
-- Gaussian, Poisson, Gamma, Tweedie and Binomial families
-- Prior weights, observation offsets, fixed offset tables and locked rows
-- Categorical variables without dummy encoding
-- Numeric bands, interactions and wildcard matching
-- Polynomial variates with inference on the top degree
-- Ridge, lasso and elastic-net penalties
-- Standard errors, dispersion, deviance, AIC and BIC where supported
-- Automatic choice between global and table-native solvers
-- Calibration, lift, Gini and actual-versus-expected validation exhibits
-- Structured model reports with a single severity-graded verdict
-- Editable JSON and CSV workbook formats
-- Exact LightGBM conversion and model composition
-- Bi-objective LightGBM tuning on loss and rating-table count
+Avenue supports Gaussian, Poisson, Gamma, Tweedie and Binomial GLMs; categorical,
+banded, polynomial and interaction terms; ridge, lasso and elastic net; weights, offsets
+and locked factors; statistical inference; validation and model reports; editable JSON
+and CSV workbooks; model composition; and exact LightGBM conversion.
 
 ## Performance at a glance
 
-Release benchmarks check prediction agreement before reporting time. On the real-data
-suite Avenue is faster on four of six cases and uses less incremental memory on five of
-six. Representative results include:
+**Avenue is usually the fastest GLM engine tested, rivaled only by glum, and is almost
+always the most memory-efficient.** Every reported benchmark first checks that the
+engines produce comparable fitted means. On the six-case real-data suite Avenue wins
+four fits and five memory comparisons:
 
 | Dataset | Avenue fit | Avenue peak | glum fit | glum peak |
 |---|---:|---:|---:|---:|
@@ -322,9 +286,9 @@ six. Representative results include:
 | NYC taxi, 2.75M rows, 577 parameters, Gamma | 5.22 s | **272 MB** | **3.82 s** | 479 MB |
 | house sales, 21.6k rows, 92 parameters, Gamma | **0.046 s** | **9 MB** | 0.055 s | 81 MB |
 
-glum is the hard comparison, not the naive one — it avoids a dense dummy-coded design
-matrix too. Against the rest of the field, on the same three designs (a smaller machine,
-so read the ratios rather than the seconds):
+glum is the closest general-purpose competitor: like Avenue, it avoids a dense
+dummy-coded design matrix. Avenue also leads the wider comparison with scikit-learn and
+H2O, winning five of the six cases in which every engine returned a comparable solution:
 
 | fit time, Avenue = 1.00x | Avenue | glum | scikit-learn | H2O |
 |---|---:|---:|---:|---:|
@@ -332,45 +296,25 @@ so read the ratios rather than the seconds):
 | census income, Binomial, ridge | **1.00x** | 1.8x | 1.3x | 4.3x |
 | freMTPL2, Poisson, lasso | **1.00x** | 2.6x | n/a — no L1 for a Poisson GLM | n/a — fitted means disagree |
 
-An `n/a` is not a slow time. scikit-learn cannot express an L1-penalised Poisson GLM at
-all, and H2O's lasso lands 2.9e-2 from glum's fitted means — two orders of magnitude
-outside anything the others disagree by — so it answered a different problem rather than
-this one slowly.
+The exceptions are informative. glum wins the high-cardinality NYC taxi fit;
+scikit-learn's `newton-cholesky` wins the small house-sales Gamma fit, where a few direct
+factorisations cost less than repeated passes over the rows. `n/a` means an engine could
+not express the model or did not return comparable fitted means—not that it ran slowly.
 
-A penalty is close to free: an L1 makes glum abandon its Cholesky factorisation for
-coordinate descent, while Avenue's algorithm already is coordinate descent. Where the
-problem is small enough that a few factorisations beat tens of passes over the data,
-scikit-learn's `newton-cholesky` wins, and the 21.6k-row Gamma fit goes to it.
-
-The table solver is strongest when a model has many rows and ordinary rating-factor
-structure. A direct/global solver is preferable for unpenalized Gaussian models and for
-plans where many tables share one strongly correlated direction. `solver="auto"` selects
-the global path when it supports the model.
-
-Absolute timings are machine-dependent, and the two tables above were measured on
-different machines. The full methodology, synthetic and 20-million-row results, memory
-measurements, correctness gates and reproduction commands are in the
+Timings vary by machine, so compare results within each table. Full methodology,
+synthetic and 20-million-row results, memory measurements, correctness gates, and
+reproduction commands are in the
 [GLM documentation](src/glm/README.md#benchmarks); the wider comparison is
 [here](src/glm/README.md#the-rest-of-the-field).
 
 ## Known gaps
 
-- Variates, locked rows, non-base normalization and models above 6,000 parameters fall
-  back to table descent when `solver="auto"`.
-- Penalized fits omit standard errors; selective or debiased inference is not implemented.
-- Inference currently provides Wald standard errors, not likelihood-ratio tests, profile
-  intervals or robust covariance.
-- Numeric tables use step lookup and do not interpolate between rows.
-- The matching path accepts `Int32` category codes and `Float64` numeric bounds, but not
-  narrower integer dtypes.
 - `predict()` returns a null for an observation matching no rating row — an unseen
   category level, most often — rather than raising. `validate()` reports the same
   situation at high severity and excludes those rows, so a scoring path that never
   validates is the one to watch.
-- Band bounds in a converted model are LightGBM's thresholds verbatim, so a filed CSV
-  carries their floating-point representation (`18.500000000000004`, and `1e-35` where
-  LightGBM's zero threshold falls). Rounding them changes which rows match, so it is not
-  done silently.
+- Converted models preserve LightGBM thresholds verbatim; rounding them can change which
+  rows match.
 
 ## Development
 
@@ -378,18 +322,10 @@ measurements, correctness gates and reproduction commands are in the
 cargo test --no-default-features
 maturin develop --release
 python -m unittest discover -s tests
-
-python scripts/bench_lgbm.py        # conversion exactness and table size
-python examples/french_motor.py     # the end-to-end LightGBM route
-python examples/refit_as_glm.py     # refit the converted shapes as a filable GLM
 ```
 
-Python-side code lives in `python/avenue_model/`; the compiled engine is
-`avenue_model.avenue_model` and is re-exported from the package root.
-
-The extension uses Python's stable ABI for Python 3.12 and newer. `pyo3-polars`, Rust
-Polars and Python Polars must be upgraded together; the compatible Python package is
-pinned in `pyproject.toml`.
+Python code lives in `python/avenue_model/`; the Rust engine is re-exported from the
+package root. Compatible Polars versions are pinned in `pyproject.toml`.
 
 ## Documentation
 
