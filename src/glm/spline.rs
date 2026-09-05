@@ -47,8 +47,7 @@ impl SplineBlock {
 
     pub(super) fn loadings(&self, weights: &[f64]) -> Result<Vec<f64>, PolarsError> {
         self.basis
-            .normal_equations(&self.predictors, &vec![0.; weights.len()], weights)
-            .map(|(_, score)| score)
+            .loadings(&self.predictors, weights)
             .map_err(error)
     }
 

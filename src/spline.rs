@@ -229,17 +229,38 @@ impl NaturalCubicBasis {
         curvature: &[f64],
         scores: &[f64],
     ) -> SplineResult<(Vec<f64>, Vec<f64>)> {
-        if predictors.len() != curvature.len() || predictors.len() != scores.len() {
+        self.accumulate::<true>(predictors, curvature, scores)
+    }
+
+    /// Apply the transposed basis without constructing an information matrix.
+    /// Normalization and convergence need only these knot-value loadings.
+    pub(crate) fn loadings(
+        &self,
+        predictors: &[f64],
+        scores: &[f64],
+    ) -> SplineResult<Vec<f64>> {
+        self.accumulate::<false>(predictors, &[], scores)
+            .map(|(_, score)| score)
+    }
+
+    fn accumulate<const INFORMATION: bool>(
+        &self,
+        predictors: &[f64],
+        curvature: &[f64],
+        scores: &[f64],
+    ) -> SplineResult<(Vec<f64>, Vec<f64>)> {
+        if (INFORMATION && predictors.len() != curvature.len()) || predictors.len() != scores.len() {
             return Err("Spline predictors, curvatures and scores must have matching lengths");
         }
         let n = self.columns.len();
         // n-1 cubic intervals plus two linear tails. Exact-knot observations are
         // accumulated separately so cardinal knot weights remain exactly one/zero.
-        let mut gram = vec![[0.0; 16]; n + 1];
+        let mut gram = vec![[0.0; 16]; if INFORMATION { n + 1 } else { 0 }];
         let mut gradient = vec![[0.0; 4]; n + 1];
-        let mut knot_curvature = vec![0.0; n];
+        let mut knot_curvature = vec![0.0; if INFORMATION { n } else { 0 }];
         let mut knot_scores = vec![0.0; n];
-        for ((&x, &w), &g) in predictors.iter().zip(curvature).zip(scores) {
+        for (row, (&x, &g)) in predictors.iter().zip(scores).enumerate() {
+            let w = if INFORMATION { curvature[row] } else { 0.0 };
             if !w.is_finite() || w < 0.0 || !g.is_finite() {
                 return Err(
                     "Spline working curvatures must be finite/nonnegative and scores finite",
@@ -248,7 +269,9 @@ impl NaturalCubicBasis {
             let location = self.geometry.locate(x)?;
             let (slot, phi) = match location {
                 Location::Knot(k) => {
-                    knot_curvature[k] += w;
+                    if INFORMATION {
+                        knot_curvature[k] += w;
+                    }
                     knot_scores[k] += g;
                     continue;
                 }
@@ -259,15 +282,19 @@ impl NaturalCubicBasis {
             let root = w.sqrt();
             for i in 0..4 {
                 gradient[slot][i] += g * phi[i];
-                for j in 0..4 {
-                    gram[slot][4 * i + j] += (root * phi[i]) * (root * phi[j]);
+                if INFORMATION {
+                    for j in 0..4 {
+                        gram[slot][4 * i + j] += (root * phi[i]) * (root * phi[j]);
+                    }
                 }
             }
         }
-        let mut information = vec![0.0; n * n];
+        let mut information = vec![0.0; if INFORMATION { n * n } else { 0 }];
         let mut score = knot_scores;
-        for i in 0..n {
-            information[i * n + i] = knot_curvature[i];
+        if INFORMATION {
+            for i in 0..n {
+                information[i * n + i] = knot_curvature[i];
+            }
         }
         for slot in 0..n + 1 {
             let mapping: Vec<[f64; 4]> = (0..n)
@@ -295,6 +322,9 @@ impl NaturalCubicBasis {
             for i in 0..n {
                 for a in 0..4 {
                     score[i] += mapping[i][a] * gradient[slot][a];
+                }
+                if !INFORMATION {
+                    continue;
                 }
                 for j in 0..=i {
                     let mut value = 0.0;
@@ -462,6 +492,11 @@ mod tests {
             for (got, expected) in score.iter().zip(numbers("score")) {
                 close(*got, expected);
             }
+            let loadings = basis.loadings(&points, &numbers("working_score")).unwrap();
+            for (got, expected) in loadings.iter().zip(numbers("score")) {
+                close(*got, expected);
+            }
+            assert_eq!(loadings, score);
             for (x, y) in knots.iter().zip(&values) {
                 assert_eq!(curve.evaluate(*x).unwrap(), *y);
             }
@@ -576,5 +611,8 @@ mod tests {
         assert!(basis.normal_equations(&[0.0], &[], &[1.0]).is_err());
         assert!(basis.normal_equations(&[0.0], &[-1.0], &[1.0]).is_err());
         assert!(basis.normal_equations(&[0.0], &[1.0], &[f64::NAN]).is_err());
+        assert!(basis.loadings(&[0.0], &[]).is_err());
+        assert!(basis.loadings(&[0.0], &[f64::NAN]).is_err());
+        assert!(basis.loadings(&[f64::INFINITY], &[1.0]).is_err());
     }
 }

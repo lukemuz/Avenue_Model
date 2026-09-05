@@ -113,7 +113,16 @@ was 1,843,012 KiB for the spline workflow; that includes data preparation, panda
 SciPy/glum, validation and delivery, and is not incremental engine memory. Detailed
 [timings](../studies/results/real_splines/smooth/models.json) are retained.
 
-The next performance work should separate sweep cost, convergence and inference cost.
+Follow-up [profiling and acceptance](../studies/results/spline_profile/README.md)
+identified repeated Tweedie deviance evaluation as a substantial cost. Reusing the
+existing square-root specialization at power 1.5 and removing unused information-matrix
+work from convergence checks reduced the observed full-inference Tweedie fit to
+10.758 seconds and 97 sweeps. All three independent prediction comparisons and delivery
+checks passed again; Tweedie's maximum relative difference from glum was 1.00e-9.
+These remain single-run observations. The model specification, stopping tolerance and
+comparison thresholds were unchanged, and the holdout quality limitation remains.
+
+Further performance work should address repeated sweeps and reusable training geometry.
 Roughness penalties, rare-tail stabilization, broader model selection and refreshed
 wheel acceptance remain open. The historical banded-model performance claims do not
 establish spline fitting performance.
