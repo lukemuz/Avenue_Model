@@ -351,3 +351,5 @@ package root. Compatible Polars versions are pinned in `pyproject.toml`.
 - [Polars](https://www.pola.rs/) — fast DataFrames
 - [PyO3](https://pyo3.rs/) — Python bindings
 - [Rayon](https://github.com/rayon-rs/rayon) — parallelism
+
+[Analytical bundles](docs/ANALYTICAL_BUNDLES.md) retain source plans, fit and validation evidence alongside editable scoring workbooks.

@@ -264,3 +264,22 @@ extensions from the plan. Run the plan's fresh-user acceptance exercise before m
 a first-choice-tool claim. Historical evaluation verifiers still check historical
 failure artifacts; new regression tests establish current behavior without overwriting
 that evidence.
+
+## Completed increment: individual-model analytical bundles
+
+- `save_bundle`/`load_bundle` retain a source workbook, source plan, schema/category
+  mappings, resolved terms, fitting summary, coefficient/inference tables, findings,
+  and report alongside an editable exact-factor CSV workbook.
+- Optional validation is run at export and retains aggregate metrics, calibration
+  and factor exhibits. Optional fold records preserve membership and split ID.
+- Caller context explicitly distinguishes supplied fit options, dataset identifiers,
+  preprocessing, units and lineage from automatically captured source evidence.
+- Source file hashes reject accidental evidence edits; scoring file changes are
+  conservatively flagged, including formatting-only edits. Loaded scorers do not
+  inherit source fitting diagnostics. Unknown bundle versions fail explicitly.
+- Tests cover original/edited predictions, evidence isolation, source integrity,
+  version rejection, no overwrite, non-JSON metadata rejection, fold persistence,
+  and refitting from the retained plan. All 85 Python tests pass. No Rust changes
+  were required; the previous 258-test Rust verification remains applicable.
+- [Format and scope](ANALYTICAL_BUNDLES.md): composition-graph evidence, automatic
+  fitting-option capture and executable preprocessing remain open.

@@ -42,3 +42,6 @@ __all__ = [
     "tune_lgbm",
     "tuning",
 ]
+
+from .bundle import ModelBundle, load_bundle, save_bundle
+__all__ += ['ModelBundle', 'load_bundle', 'save_bundle']
