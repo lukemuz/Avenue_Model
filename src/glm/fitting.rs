@@ -155,6 +155,10 @@ impl Default for GLMOptions {
 /// What happened during a fit, alongside the fitted model.
 #[derive(Debug, Clone)]
 pub struct GLMDiagnostics {
+    /// Effective options after plan-owned family/power resolution.
+    pub options: GLMOptions,
+    /// Actual numerical path selected, including automatic fallback.
+    pub solver_used: GLMSolver,
     /// Sweeps performed over the full set of tables.
     pub iterations: usize,
     /// Whether the largest absolute score fell to `tolerance`.
@@ -1185,6 +1189,8 @@ pub fn fit_glm_with_diagnostics(
     }
 
     let diagnostics = GLMDiagnostics {
+        options: options.clone(),
+        solver_used: GLMSolver::Table,
         iterations,
         converged,
         max_gradient,
@@ -1823,6 +1829,8 @@ fn fit_global_irls(
     Ok((
         model,
         GLMDiagnostics {
+            options: options.clone(),
+            solver_used: GLMSolver::Global,
             iterations: progress.iterations,
             converged: progress.converged,
             max_gradient: progress.max_gradient,

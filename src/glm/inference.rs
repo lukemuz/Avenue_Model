@@ -803,6 +803,8 @@ pub fn compute_inference_with_clusters(
              and is what aic and bic charge."
                 .to_string(),
         )
+    } else if normalization == Normalization::None {
+        Some("Per-row standard errors are unavailable with normalization='none': the split between intercept and table factors is not identified. Refit with base_level or weighted_mean anchoring for coefficient intervals.".to_string())
     } else {
         None
     };

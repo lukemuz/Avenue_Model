@@ -56,3 +56,11 @@ The auto tutorial exports ordinary intervals for its fixed GLMs and separate
 quasi-Poisson frequency intervals. Independent tests verify OLS intervals and
 Poisson information-matrix/Pearson calculations under both exposure conventions;
 the predictions are checked unchanged.
+
+Unnormalized (`normalization='none'`) per-row factors are not identified: the engine
+withholds their standard errors and the interval API explains the required anchoring.
+`model.fit_options` records the effective normalization and other fitting controls.
+In ordinary rating-table review, `Status='locked'` identifies fixed priors in a new fit;
+`scoring_only` identifies loaded/converted factors without original fitting evidence.
+The interval-specific status remains `unavailable` when such a row has no finite
+uncertainty. These labels do not turn fixed or edited factors into new estimates.

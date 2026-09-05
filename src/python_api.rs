@@ -601,6 +601,65 @@ impl PyFittedModel {
         })
     }
 
+    /// Complete effective GLMOptions arguments; empty for loaded/converted scorers.
+    #[getter]
+    fn fit_options<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let out = PyDict::new(py);
+        if let Some(d) = &self.inner.diagnostics {
+            let o = &d.options;
+            out.set_item("max_iterations", o.max_iterations)?;
+            out.set_item("tolerance", o.tolerance)?;
+            out.set_item("verbose", o.verbose)?;
+            out.set_item("tweedie_power", o.tweedie_power)?;
+            out.set_item(
+                "normalization",
+                match o.normalization {
+                    crate::glm::Normalization::BaseLevel => "base_level",
+                    crate::glm::Normalization::WeightedMean => "weighted_mean",
+                    crate::glm::Normalization::None => "none",
+                },
+            )?;
+            out.set_item("compute_standard_errors", o.compute_standard_errors)?;
+            out.set_item("accelerate", o.accelerate)?;
+            out.set_item("solve_aliased_pairs_jointly", o.solve_aliased_pairs_jointly)?;
+            out.set_item("alpha", o.alpha)?;
+            out.set_item("l1_ratio", o.l1_ratio)?;
+            out.set_item(
+                "solver",
+                match o.solver {
+                    crate::glm::GLMSolver::Auto => "auto",
+                    crate::glm::GLMSolver::Global => "global",
+                    crate::glm::GLMSolver::Table => "table",
+                },
+            )?;
+            out.set_item(
+                "covariance",
+                if o.covariance_cluster.is_some() {
+                    "cluster"
+                } else if o.robust_standard_errors {
+                    "hc0"
+                } else {
+                    "model_based"
+                },
+            )?;
+            out.set_item("cluster", &o.covariance_cluster)?;
+        }
+        Ok(out)
+    }
+
+    /// Actual solver chosen, rather than merely the requested 'auto' policy.
+    #[getter]
+    fn solver_used(&self) -> Option<&'static str> {
+        self.inner
+            .diagnostics
+            .as_ref()
+            .map(|d| match d.solver_used {
+                crate::glm::GLMSolver::Global => "global",
+                crate::glm::GLMSolver::Table => "table",
+                crate::glm::GLMSolver::Auto => "auto",
+            })
+    }
+
     /// Inference evidence from the original fit; absent for loaded/converted scorers.
     #[getter]
     fn inference_summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {

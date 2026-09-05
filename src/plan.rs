@@ -2750,7 +2750,21 @@ impl FittedModel {
 
             let status: Vec<&str> = (0..coefficients.len())
                 .map(|r| {
-                    if unfitted.contains(&(t, r)) {
+                    if self.diagnostics.is_none() {
+                        "scoring_only"
+                    } else if self
+                        .resolved
+                        .get(t)
+                        .is_some_and(|term| term.kind == "interaction_contrast")
+                        && errors.get(r) == Some(&0.0)
+                    {
+                        "reference"
+                    } else if table.metadata.is_offset
+                        || !table.metadata.is_updatable
+                        || table.is_row_offset(r)
+                    {
+                        "locked"
+                    } else if unfitted.contains(&(t, r)) {
                         "no_data"
                     } else if aliased.contains(&(t, r)) {
                         "aliased"

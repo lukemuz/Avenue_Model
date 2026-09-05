@@ -477,3 +477,23 @@ that evidence.
   exact baseline source reference, all measurements, source hashes and interpretation
   limits. Broader model shapes, preparation/inference profiling and the original
   large-booster scoring target remain separate work.
+
+## Completed increment: effective fit configuration and honest factor provenance
+
+- Fitting diagnostics retain effective GLM options and the actual global/table solver
+  path. `FittedModel.fit_options` exposes a complete replayable GLMOptions dictionary;
+  `solver_used` distinguishes automatic selection from the path actually run.
+- Analytical bundles automatically retain this source configuration. The older optional
+  `fit_options=` annotation remains separately under caller context and cannot override
+  captured evidence. Additive fields are absent/unknown in older version-1 bundles;
+  loaded and converted scorers do not acquire fitting options retrospectively.
+- Per-row review now labels loaded/converted factors `scoring_only` and fixed priors in
+  a new fit `locked`, preserving identifiable interaction-reference labels. Unanchored
+  factors already had withheld standard errors; their inference note now explains why,
+  and the interval API rejects them with that explanation instead of returning an
+  unexplained all-unavailable interval table.
+- Tests replay a clustered Tweedie fit exactly from captured options, verify Plan-owned
+  power and automatic solver resolution, preserve source evidence despite conflicting
+  caller notes, and check locked/loaded labels and unchanged predictions.
+- All 107 Python tests and 258 Rust tests pass; six Rust tests and one doc test remain
+  ignored. Release extension rebuilt. Bundle/interval guides and support matrix updated.

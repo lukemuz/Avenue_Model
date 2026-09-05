@@ -54,7 +54,8 @@ def save_bundle(model, directory, *, fit_options=None, training_id=None, fold=No
                 unit=None, lineage=None):
     """Save to a new directory; optional context must be declarative JSON data.
 
-    Fit options and dataset identifiers are caller assertions, not inferred records.
+    Effective fitting options are captured from the original fit. The optional
+    fit_options annotation and dataset identifiers remain separate caller assertions.
     No data rows are persisted. Validation is evaluated now when data is supplied.
     This version accepts individual FittedModel objects, not composition graphs.
     """
@@ -79,6 +80,8 @@ def save_bundle(model, directory, *, fit_options=None, training_id=None, fold=No
         'plan': None if model.plan is None else json.loads(model.plan.to_json()),
         'input_schema': model.input_schema,
         'fit_summary': report.fit_summary,
+        'effective_fit_options': model.fit_options,
+        'solver_used': model.solver_used,
         'inference_summary': model.inference_summary,
         'findings': report.findings,
         'resolved': report.resolved,
