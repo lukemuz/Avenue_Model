@@ -1,0 +1,66 @@
+name: API reference
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-reference-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          args: --release --out dist
+      - name: Install documented package
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess, sys
+          wheels = list(Path('dist').glob('*.whl'))
+          assert len(wheels) == 1, wheels
+          subprocess.check_call([sys.executable, '-m', 'pip', 'install', str(wheels[0]) + '[docs]'])
+      - name: Build and check API reference
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess, sys
+          wheel = next(Path('dist').glob('*.whl'))
+          subprocess.check_call([sys.executable, 'docs/build_api.py', '--wheel', str(wheel), '--output', 'api-html'])
+      - uses: actions/upload-artifact@v6
+        with:
+          name: api-reference
+          path: api-html/
+      - uses: actions/upload-pages-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: api-html/
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -36,6 +36,7 @@ Repository = "https://github.com/lukemuz/Avenue_Model"
 Issues = "https://github.com/lukemuz/Avenue_Model/issues"
 
 [project.optional-dependencies]
+docs = ["pdoc>=16,<17"]
 # Independent deviance references used by the public Python regression suite.
 test = ["scikit-learn>=1.4", "pandas>=2.2"]
 pandas = ["pandas>=2.2"]

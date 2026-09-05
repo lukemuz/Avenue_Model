@@ -1,8 +1,18 @@
 """Avenue: rating tables you can file, fitted by a GLM or converted from LightGBM.
 
-The compiled engine lives in `avenue_model.avenue_model` and is re-exported here. The
-pure-Python additions are the parts that only make sense with a booster in hand, and
-their dependencies are optional — see `avenue_model.tuning`.
+Start with `Plan` to specify and fit a model, then use `FittedModel` for prediction,
+factor review and editable `Workbook` export. `prepare_pricing`, `SplitSpec` and
+`compare_models` support the surrounding pricing study. `frequency_severity` and
+`sum_loss_costs` preserve explicit component units and scoring behavior.
+
+`coefficient_intervals` and `term_tests` provide supported unpenalized inference.
+`bootstrap_stability` supplies descriptive refit bands, while `poisson_credibility`
+supplies posterior group relativities conditional on a fixed baseline and prior.
+These methods have different statistical interpretations.
+
+The compiled engine is re-exported from `avenue_model.avenue_model`. Optional extras
+provide pandas adaptation, LightGBM tuning/conversion and credibility quantiles;
+their dependencies are checked when the corresponding operation is called.
 """
 
 from .avenue_model import *  # noqa: F403

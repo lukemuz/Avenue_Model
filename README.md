@@ -77,6 +77,9 @@ pip install avenue-lightgbm         # optional interaction penalties
 
 ## Quick start
 
+For searchable signatures and method documentation, see the
+[API reference build and hosting guide](docs/API_REFERENCE.md).
+
 Frequency is modelled as claims per unit exposure, with exposure as its prior weight.
 That makes predictions and composition read naturally: frequency predicts claims per
 exposure, severity predicts loss per claim, and their product is loss per exposure.
