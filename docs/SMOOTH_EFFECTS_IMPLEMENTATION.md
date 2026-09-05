@@ -79,8 +79,8 @@ cargo test --no-default-features --locked spline::tests
 ## Integration gates still open
 
 1. **Plan extensions.** Public spline terms, fold-local knot resolution, declared
-   linear tails and malformed-input checks are implemented. Carrying prior spline
-   tables through the Given/offset-model interface remains open.
+   linear tails and malformed-input checks are implemented. Given/offset-model terms
+   now retain fixed spline semantics through Plan serialization and refitting.
 2. **Fitting extensions.** Unpenalized table sweeps now use continuous updates,
    basis-score convergence and observed-contribution normalization. A roughness penalty
    still needs its own interpretation and covariance/selection rules. Individual locked
@@ -114,8 +114,8 @@ The numeric column contains finite, strictly increasing knots, and `Rating_Facto
 contains the curve values **on the link scale**. There must be at least two knots.
 The builder rejects categorical columns, null/nonfinite values and combined
 monotonic/variate declarations. The low-level GLM fitter accepts unpenalized continuous
-tables, including fully fixed curves. Carrying a spline into a Plan offset remains
-refused because the current Given-term serialization does not preserve its semantics.
+tables, including fully fixed curves. Given-term serialization now preserves spline
+semantics, enabling the ordinary Plan offset-model update workflow.
 
 Workbooks containing a spline write format **4** and table metadata
 `"spline": "natural_cubic_linear_tails"`. Ordinary workbooks still write version 2;
@@ -212,3 +212,21 @@ coefficients or reporting their discrete-table correlation as spline conditionin
 The runnable `examples/smooth_pricing_study.py` completes development-fold selection,
 a reserved final holdout, bundle validation/reload and continuous-curve CSV export.
 See [the user guide](SPLINES.md) for API conventions and current statistical limits.
+
+## Fixed spline priors and conditional inference
+
+Given terms now carry optional `SplineKind` metadata, copied by `offset_model`.
+Preparation treats their coordinates as numeric, and building checks canonical
+spline geometry rather than demanding an unbounded step band. Ordinary Given terms
+retain their existing representation. A second fixed constant table is checked as a
+one-row carried intercept on workbook reload; malformed multiple-row constants are
+still refused.
+
+When every spline is fixed, the ordinary inference layout excludes those tables
+and uses the continuously evaluated means. Newly fitted supported discrete/variate
+terms can therefore receive model-based, HC0 or CR0 covariance and whole-term tests,
+conditional on the prior. An estimated spline still disables this covariance path.
+Tests compare coefficient SEs and joint statistics against independent dense matrices
+for weighted-rate and count-offset Poisson updates, including both tails, integer JSON
+knots, category encodings, Plan reloads and validated bundle delivery. Prior knot
+coefficients remain bit-for-bit unchanged. No prior estimation uncertainty is propagated.

@@ -667,11 +667,13 @@ pub fn fit_glm_with_diagnostics(
     options: GLMOptions,
 ) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
     let has_spline = model.tables.iter().any(|t| t.metadata.spline.is_some());
-    if has_spline
-        && (options.alpha != 0.
-            || options.solver == GLMSolver::Global
-            || options.robust_standard_errors
-            || options.covariance_cluster.is_some())
+    let has_free_spline = model
+        .tables
+        .iter()
+        .any(|t| t.metadata.spline.is_some() && !t.metadata.is_offset);
+    if (has_spline && (options.alpha != 0. || options.solver == GLMSolver::Global))
+        || (has_free_spline
+            && (options.robust_standard_errors || options.covariance_cluster.is_some()))
     {
         return Err(PolarsError::ComputeError(
             "Continuous splines currently require unpenalized table solving; global solving and robust covariance are not implemented".into()));
@@ -1264,7 +1266,7 @@ pub fn fit_glm_with_diagnostics(
     // collinear still has perfectly good predictions, so a failure here is recorded
     // rather than allowed to discard the fit the caller asked for.
     let mut inference_error: Option<String> = None;
-    let inference = if has_spline {
+    let inference = if has_free_spline {
         inference_error = Some("Continuous spline covariance and parameter counts are not implemented; step-table inference is not applicable".to_string());
         None
     } else if has_monotone {

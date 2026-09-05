@@ -61,6 +61,19 @@ Existing evaluation reports, scripts and recorded runs have been preserved.
   0.818604 for eight knots) and verified reserved-holdout bundle parity. These are
   synthetic/editable-source results, not a real-portfolio or clean-wheel acceptance run.
 
+## Fixed spline prior follow-up
+
+- `Plan.offset_model` now retains exact spline metadata and fixed knot values through
+  Plan JSON, refitting, workbooks and bundles. Integer JSON knot spellings remain
+  numeric. Fixed carried intercepts now reload correctly; malformed multiple-row
+  constants are still rejected.
+- When all splines are fixed, newly fitted ordinary terms have model-based/HC0/CR0
+  inference conditional on the prior. Independent dense Poisson calculations verify
+  standard errors and term tests for both rate-weight and count-offset updates.
+  Prior spline uncertainty is not propagated; new spline inference remains open.
+- Verification: rebuilt release extension, 278 Rust tests and 123 Python tests passed
+  from editable source. This does not replace the historical installed-wheel runs.
+
 ## Completed increment: whole-term Wald inference and estimability correction
 
 - Added `term_tests(model, dispersion=...)` with named joint statistics, chi-square

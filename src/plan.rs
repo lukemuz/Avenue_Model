@@ -32,7 +32,7 @@
 //! back and relayed.
 
 use crate::glm::{fit_glm_with_diagnostics, GLMDiagnostics, GLMOptions};
-use crate::rating_model::{Monotonicity, RatingModel, RatingTable};
+use crate::rating_model::{Monotonicity, RatingModel, RatingTable, SplineKind};
 use crate::validation::{validate, Severity, Validation, ValidationOptions};
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -163,6 +163,8 @@ pub enum Term {
         table: Vec<BTreeMap<String, serde_json::Value>>,
         #[serde(default)]
         role: GivenRole,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spline: Option<SplineKind>,
     },
 }
 
@@ -238,6 +240,7 @@ impl Term {
             name: name.to_string(),
             table: crate::workbook::frame_to_records(table)?,
             role: GivenRole::Structure,
+            spline: None,
         })
     }
 
@@ -248,6 +251,7 @@ impl Term {
             name: name.to_string(),
             table: crate::workbook::frame_to_records(table)?,
             role: GivenRole::Offset,
+            spline: None,
         })
     }
 
@@ -421,15 +425,12 @@ impl Plan {
             ));
         }
         for (index, table) in model.tables.iter().enumerate() {
-            if table.metadata.spline.is_some() {
-                return Err(PolarsError::ComputeError(
-                    "Carrying a spline into a fitting plan is not implemented".into(),
-                ));
-            }
+            table.spline_curve()?;
             self.terms.push(Term::Given {
                 name: format!("{}.{}", prefix, table_names[index]),
                 table: crate::workbook::frame_to_records(&table.data)?,
                 role: GivenRole::Offset,
+                spline: table.metadata.spline,
             });
         }
         Ok(self)
@@ -551,17 +552,18 @@ impl Plan {
             // A supplied table names its columns in its own frame, and each is banded
             // or categorical according to the dtype it was saved with.
             let given_columns: Vec<(String, bool)> = match term {
-                Term::Given { table, .. } => {
+                Term::Given { table, spline, .. } => {
                     let frame = crate::workbook::records_to_frame(table)?;
                     frame
                         .get_column_names()
                         .iter()
                         .filter(|c| c.as_str() != "Rating_Factor")
                         .map(|c| {
-                            let numeric = frame
-                                .column(c)
-                                .map(|col| col.dtype() == &DataType::Float64)
-                                .unwrap_or(false);
+                            let numeric = spline.is_some()
+                                || frame
+                                    .column(c)
+                                    .map(|col| col.dtype() == &DataType::Float64)
+                                    .unwrap_or(false);
                             (c.to_string(), numeric)
                         })
                         .collect()
@@ -1361,8 +1363,28 @@ impl Plan {
                 ))
             }
 
-            Term::Given { name, table, role } => {
-                let frame = crate::workbook::records_to_frame(table)?;
+            Term::Given {
+                name,
+                table,
+                role,
+                spline,
+            } => {
+                let mut frame = crate::workbook::records_to_frame(table)?;
+                if spline.is_some() {
+                    let names: Vec<String> = frame
+                        .get_column_names()
+                        .iter()
+                        .filter(|c| c.as_str() != "Rating_Factor")
+                        .map(|c| c.to_string())
+                        .collect();
+                    for column in names {
+                        let values = frame.column(&column)?;
+                        if values.dtype().is_primitive_numeric() {
+                            let cast = values.cast(&DataType::Float64)?;
+                            frame.with_column(cast)?;
+                        }
+                    }
+                }
                 // The same structural checks a workbook load applies, so a table
                 // pasted into a plan cannot smuggle in an out-of-order band.
                 // A one-row table with no feature columns is a constant: legitimate
@@ -1376,7 +1398,10 @@ impl Plan {
                 let faults: Vec<String> =
                     crate::workbook::check_table(&frame, name, "Rating_Factor", is_constant)
                         .into_iter()
-                        .filter(|issue| issue.blocking)
+                        .filter(|issue| {
+                            issue.blocking
+                                && (spline.is_none() || issue.code != "no_unbounded_band")
+                        })
                         .map(|issue| issue.describe())
                         .collect();
                 if !faults.is_empty() {
@@ -1394,6 +1419,19 @@ impl Plan {
 
                 let rows = frame.height();
                 let mut built = RatingTable::new(frame, None).with_name(name);
+                let mut resolved_knots = None;
+                if spline.is_some() {
+                    built = built.as_natural_cubic()?;
+                    let column = built.get_numeric_columns().keys().next().unwrap();
+                    resolved_knots = Some(
+                        built
+                            .data
+                            .column(column)?
+                            .f64()?
+                            .into_no_null_iter()
+                            .collect(),
+                    );
+                }
                 if *role == GivenRole::Offset {
                     built = built.as_offset();
                 }
@@ -1403,7 +1441,12 @@ impl Plan {
                         name: name.clone(),
                         kind: match role {
                             GivenRole::Offset => "offset".to_string(),
-                            GivenRole::Structure => "given".to_string(),
+                            GivenRole::Structure => if spline.is_some() {
+                                "given_spline"
+                            } else {
+                                "given"
+                            }
+                            .to_string(),
                         },
                         columns: Vec::new(),
                         rows,
@@ -1418,7 +1461,7 @@ impl Plan {
                             GivenRole::Structure => Some("first row".to_string()),
                         },
                         variate_values: None,
-                        knots: None,
+                        knots: resolved_knots,
                     },
                 ))
             }

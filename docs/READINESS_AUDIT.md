@@ -37,6 +37,12 @@ synthetic selection/final-holdout delivery example pass. Current editable-source
 verification is 278 Rust and 121 Python tests; spline inference, penalties and broader
 real-portfolio acceptance remain open.
 
+Fixed spline priors now survive the ordinary offset-model update and delivery path.
+New ordinary factors support covariance and term tests conditional on the fixed prior,
+verified against dense model-based/HC0/CR0 Poisson calculations. The corresponding
+editable-source suites pass 278 Rust and 123 Python tests; inference for newly
+estimated splines remains unavailable.
+
 ## Fresh installed-wheel evidence
 
 [The runner](../studies/readiness_acceptance.py) verifies every installed package payload

@@ -74,11 +74,12 @@ Unpenalized Gaussian, Poisson, Gamma, Tweedie and binomial fits use the existing
 solver with safeguarded Fisher scoring. Base-level normalization anchors the first
 knot; weighted-mean normalization centers observed continuous contributions.
 
-Spline covariance, whole-term tests and inference parameter counts are unavailable.
+Covariance, whole-term tests and inference parameter counts for newly estimated
+splines are unavailable.
 Roughness penalties, ridge/elastic-net options, robust covariance, individual locked
 knots, global solving and spline acceleration are not implemented. Fully fixed
-curves work in the low-level Rust fitter; carrying spline tables through a Plan's
-existing offset-model/Given interface remains unsupported. These limits are explicit
+curves can be carried through `Plan.offset_model`, including Plan/bundle round trips.
+These limits are explicit
 rather than silently substituting step-table inference or a band approximation.
 
 Run the complete synthetic pricing example:
@@ -92,3 +93,28 @@ refits the selected plan, saves selection evidence and a validated bundle, verif
 reload parity, and exports a continuous quote curve as CSV. The synthetic study is
 an API example, not evidence of real-portfolio calibration or production performance.
 See [implementation and independent references](SMOOTH_EFFECTS_IMPLEMENTATION.md).
+
+## Update a filed continuous curve
+
+```python
+updated_plan = (
+    Plan.frequency('exposure')
+    .offset_model(prior_model, prefix='prior')
+    .categorical('new_factor')
+)
+updated = updated_plan.fit(update_data, 'claim_frequency')
+```
+
+The prior's intercept, continuous knot values and category encodings remain fixed.
+The new plan applies its own declared exposure convention once; offset-model tables
+do not carry a second observation exposure multiplier. Declare the update target
+and exposure convention consistently with the prior's rate/count meaning.
+
+Serialized Given terms retain the spline interpolation/tail declaration, so an
+integer-looking knot cannot become a category code. Fixed prior intercepts also
+survive workbook reloads. New factors receive ordinary model-based, HC0 or clustered
+covariance and term tests when their free design is otherwise supported. This
+inference is **conditional on the fixed prior**: it does not propagate uncertainty
+from the earlier spline fit. The prior's knot values remain locked and are not
+reported as newly estimated parameters. If the update also estimates a new spline,
+spline covariance remains unavailable for that fit.

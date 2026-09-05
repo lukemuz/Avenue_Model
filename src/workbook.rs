@@ -752,7 +752,10 @@ impl Workbook {
                     frame,
                     &self.manifest.tables[index].name,
                     factor_column,
-                    index == 0,
+                    index == 0
+                        || (self.manifest.tables[index].is_offset
+                            && frame.width() == 1
+                            && frame.column(factor_column).is_ok()),
                 )
                 .into_iter()
                 .filter(|issue| {
