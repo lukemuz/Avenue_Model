@@ -1,0 +1,45 @@
+{
+  "source_commit": "57aa8d0f48738b701ab7fce2252f3bd19613cd23",
+  "matching_sha256": "f96b52d707cf1b41a08835454b6b96b2369aac1526a6aef2521e0c81f31d6e3b",
+  "script_sha256": "efccd027254f8a573a7f66d6dce576e7aad724b483bdcea1709b19a42486bc85",
+  "extension_sha256": "d929b6c00b966a68b114c20201817f4011a92026c1f6c7382137b870f5775e74",
+  "artifact_source": "supplied_workbook",
+  "artifact_setup_seconds": 0.017183522999403067,
+  "model_json_sha256": "ebda2a51c3e2c3411435cac057f668e91074715d1466a4a7de096cb95d274270",
+  "inputs": {
+    "data/freMTPL2freq.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f",
+    "fork_results/fork_numeric/selected_booster.txt": "98cc39b552de9aa00472edbff9b7dce1a11a5abb6834844e68443423bfac6174",
+    "/tmp/avenue-missing-grid-before/model.json": "6bfc03b06cfc9f116ec1bf2d7fdced37d9f8bff405069fa31ed8d7aa95df537d"
+  },
+  "versions": {
+    "avenue_model": "0.1.0",
+    "lightgbm": "4.6.0.99",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "polars": "1.31.0"
+  },
+  "threads": {
+    "OMP_NUM_THREADS": "4",
+    "POLARS_MAX_THREADS": "4",
+    "RAYON_NUM_THREADS": "4"
+  },
+  "train_rows": 508509,
+  "quote_rows": 169504,
+  "quote_sha256": "a964dabbf7f89ba9b373df78f1e0700b9450e53562294caad3821bddde6e204a",
+  "tables": 4,
+  "table_rows": 21723,
+  "largest_table": 21080,
+  "seconds": [
+    0.010250102001009509,
+    0.009266695000405889,
+    0.008934288001910318,
+    0.008765429003688041,
+    0.009177357002045028
+  ],
+  "median_seconds": 0.009177357002045028,
+  "max_relative_error": 4.9960036108132044e-15,
+  "prediction_sha256": "c7556920360c38edabb2621e112c9d4731713482a9a78941c5750e1bab94417c",
+  "process_peak_rss_kib": 694036,
+  "interpretation": "Repeated public scoring including frame preparation and matching; no reusable cache. Peak RSS includes inputs, booster and workbook, not isolated scoring memory.",
+  "passed": true
+}

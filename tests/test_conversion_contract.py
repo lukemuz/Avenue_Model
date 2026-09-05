@@ -56,10 +56,16 @@ class ConversionContract(unittest.TestCase):
                 json_path = str(Path(path, 'model.json'))
                 model.to_workbook().save_json(json_path)
                 for artifact in (model, Workbook.load_csv_dir(path).to_model(), Workbook.load_json(json_path).to_model()):
-                    actual = artifact.predict(frame)['predictions'].to_list()
-                    for row, (a, e) in enumerate(zip(actual, expected)):
-                        self.assertTrue(math.isclose(a, e, abs_tol=1e-12, rel_tol=1e-12),
-                                        (mode, row, a, e))
+                    # Exercise both tiny-batch scans and indexed batch matching,
+                    # including explicit missing routes and chunked quote columns.
+                    copies = [1, 128 // frame.height + 1] if frame.height < 128 else [1]
+                    for repeat in copies:
+                        batch = pl.concat([frame] * repeat)
+                        actual = artifact.predict(batch)['predictions'].to_list()
+                        self.assertEqual(len(actual), len(expected) * repeat)
+                        for row, (a, e) in enumerate(zip(actual, expected * repeat)):
+                            self.assertTrue(math.isclose(a, e, abs_tol=1e-12, rel_tol=1e-12),
+                                            (mode, row, a, e))
 
     def test_numeric_missing_routes_and_nulls_survive_exports(self):
         for missing_type in ('None', 'NaN'):

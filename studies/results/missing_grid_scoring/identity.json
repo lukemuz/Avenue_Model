@@ -1,0 +1,6 @@
+{
+  "canonical_workbook_sha256": "b0ec1cbe67160dc9ae56aef6a98c488d7e63105f9583437917ccc809387b21b8",
+  "normalization": "Only manifest.created removed; table row order, factors and all other fields unchanged.",
+  "prediction_sha256": "c7556920360c38edabb2621e112c9d4731713482a9a78941c5750e1bab94417c",
+  "passed": true
+}

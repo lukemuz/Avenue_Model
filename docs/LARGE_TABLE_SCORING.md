@@ -14,17 +14,26 @@ Tests compare both sides of the batch-size cutoff with the independent row match
 including empty and chunked frames. The cutoff is a conservative local heuristic,
 not a guarantee of optimal dispatch for every table geometry and machine.
 
-Recognition requires unique complete coordinates, non-null/non-NaN thresholds, and
-row order in which each coordinate's immediate predecessor occurs earlier. Transitivity
+Recognition requires unique complete coordinates, non-null thresholds, and
+row order in which each numeric coordinate's immediate predecessor occurs earlier. Transitivity
 then proves that the coordinate found by binary search precedes every other matching
-row. This supports valid orders beyond a particular lexicographic layout. Incomplete,
-duplicate, reordered, missing-route and mixed categorical/numeric tables retain the
+row. Explicit missing-only `NaN` bounds use a separate coordinate on each axis,
+outside the ordered numeric search. Null quote values and NaNs select that coordinate
+when it exists; finite quotes cannot select it. No predecessor relation is imposed
+between missing and numeric coordinates. A null *table threshold* still means an
+unconstrained bound and prevents this index from being used.
+
+This supports valid orders beyond a particular lexicographic layout. Incomplete,
+duplicate, incorrectly ordered and mixed categorical/numeric tables retain the
 general matcher. This optimization does not approximate a table or change its factors.
 
 The independent row matcher checks a three-dimensional grid against all 2,197
 combinations of boundary, tail, signed-zero, infinite, null and NaN probes, plus invalid
-grid variants. Existing conversion, scoring, fitting and workbook tests exercise the
-shared matcher. Verification passed 283 active Rust tests (six ignored) and 143 Python
+grid variants. Two additional three-dimensional grids check explicit missing routes,
+including a missing-only axis, 2,662 probe combinations, NaN payloads and chunked data.
+Existing conversion tests now exercise both tiny and indexed-size quote batches
+through both consolidation modes and workbook reloads. Verification passed 284 active
+Rust tests (six ignored) and 147 Python
 tests; the doctest remains ignored.
 
 ## Reproduced historical workload
@@ -72,6 +81,25 @@ The output directory must be new. NumPy, pandas, Polars and LightGBM are require
 this benchmark. The recorded run uses the fork environment; it loads the saved model
 without training. A reusable prepared-scoring API and full stage/memory profiling remain
 separate work.
+
+## Current conversion with explicit missing routes
+
+`--reconvert` measures a new conversion of the same saved booster. This produces
+four tables and 21,723 rows, including explicit missing routes, rather than the
+historical workbook's 19,181 rows. Before missing-coordinate indexing, the current
+conversion scored the same 169,504 finite quotes in 0.7566 seconds (median of five).
+With indexing it takes about 9 ms, with byte-identical predictions and maximum
+relative booster error `4.996e-15`. This extends the speed improvement to the current
+conversion path; it is not a claim that the two workbook snapshots are identical.
+
+The baseline saves its exact `model.json`. Subsequent runs use
+`--model /path/to/baseline/model.json`, preserving row order as well as table geometry
+and factors. This matters because fresh conversions can enumerate equivalent grid
+coordinates in different valid orders. The [retained follow-up](../studies/results/missing_grid_scoring/)
+checks exact workbook equality excluding only the creation timestamp, prediction
+bytes, input fingerprints and booster parity. Missing-valued quotes are covered by
+the independent tests, not by this finite-quote timing workload. No persistent cache,
+irregular-grid or categorical-grid speedup is claimed.
 
 For small-batch measurements, add `--quote-rows 1 --repeats 21` (or another positive
 batch size). This scores the leading holdout rows with the same training-only category

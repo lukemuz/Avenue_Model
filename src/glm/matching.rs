@@ -50,6 +50,7 @@ enum MatchPlan {
     /// Binary search each axis, then translate the dense coordinate to a table row.
     NumericGrid {
         columns: Vec<String>,
+        /// Ordered numeric bounds followed by an optional missing-only NaN slot.
         axes: Vec<Vec<f64>>,
         strides: Vec<usize>,
         rows: Vec<u32>,
@@ -185,10 +186,7 @@ fn precompute_table_matches(table: &RatingTable, df: &DataFrame, n_rows: usize) 
                 .map(|i| {
                     let mut key = 0;
                     for ((values, axis), stride) in values.iter().zip(&axes).zip(&strides) {
-                        let Some(value) = values.get(i) else {
-                            return NO_MATCH;
-                        };
-                        let coordinate = lower_bound(axis, value);
+                        let coordinate = grid_coordinate(axis, values.get(i).unwrap_or(f64::NAN));
                         if coordinate == NO_MATCH {
                             return NO_MATCH;
                         }
@@ -282,12 +280,21 @@ fn numeric_grid_plan(table: &RatingTable, df: &DataFrame) -> Option<MatchPlan> {
         if values.null_count() > 0 {
             return None;
         }
-        let mut axis: Vec<_> = values.into_no_null_iter().collect();
-        if axis.iter().any(|v| v.is_nan()) {
-            return None;
+        let mut axis = Vec::new();
+        let mut missing = false;
+        for value in values.into_no_null_iter() {
+            if value.is_nan() {
+                missing = true;
+            } else {
+                axis.push(value);
+            }
         }
         axis.sort_by(f64::total_cmp);
         axis.dedup_by(|a, b| *a == *b);
+        // Missing-only is a separate coordinate, not an ordered numeric bound.
+        if missing {
+            axis.push(f64::NAN);
+        }
         let stride = size;
         size = size.checked_mul(axis.len())?;
         // Never allocate the potentially enormous Cartesian product of an irregular table.
@@ -295,7 +302,7 @@ fn numeric_grid_plan(table: &RatingTable, df: &DataFrame) -> Option<MatchPlan> {
             return None;
         }
         for (key, value) in keys.iter_mut().zip(values.into_no_null_iter()) {
-            *key += axis.partition_point(|v| *v < value) * stride;
+            *key += grid_coordinate(&axis, value) as usize * stride;
         }
         axes.push(axis);
         strides.push(stride);
@@ -315,7 +322,8 @@ fn numeric_grid_plan(table: &RatingTable, df: &DataFrame) -> Option<MatchPlan> {
     // row orders while rejecting grids where first-match semantics differ.
     for (key, row) in rows.iter().enumerate() {
         for (axis, stride) in axes.iter().zip(&strides) {
-            if (key / stride) % axis.len() > 0 && rows[key - stride] >= *row {
+            let coordinate = (key / stride) % axis.len();
+            if coordinate > 0 && !axis[coordinate].is_nan() && rows[key - stride] >= *row {
                 return None;
             }
         }
@@ -326,6 +334,20 @@ fn numeric_grid_plan(table: &RatingTable, df: &DataFrame) -> Option<MatchPlan> {
         strides,
         rows,
     })
+}
+
+/// Numeric lower bound or the explicit missing-only coordinate at the end.
+/// Keeping NaN out of binary search preserves the numeric ordering proof.
+fn grid_coordinate(axis: &[f64], value: f64) -> u32 {
+    let missing = axis.last().is_some_and(|v| v.is_nan());
+    if value.is_nan() {
+        return if missing {
+            (axis.len() - 1) as u32
+        } else {
+            NO_MATCH
+        };
+    }
+    lower_bound(&axis[..axis.len() - usize::from(missing)], value)
 }
 
 /// Builds the categorical lookup, or hands the table back to the scan.
@@ -820,6 +842,78 @@ mod tests {
         let t = table("x", &[10.0, 20.0, f64::INFINITY]);
         let df = DataFrame::new(vec![Series::new("x".into(), vec![f64::NAN, 5.0]).into()]).unwrap();
         agrees_with_scan(&t, &df);
+    }
+
+    #[test]
+    fn numeric_grid_missing_coordinates_agree_with_independent_scan() {
+        for c_axis in [vec![f64::NAN], vec![f64::NAN, 2.]] {
+            let mut a = Vec::new();
+            let mut b = Vec::new();
+            let mut c = Vec::new();
+            // Missing rows deliberately precede finite rows: they are disjoint
+            // domains and need no numeric predecessor ordering between them.
+            for x in [f64::NAN, -0., f64::INFINITY] {
+                for y in [f64::NAN, -1., 1.] {
+                    for z in &c_axis {
+                        a.push(x);
+                        b.push(y);
+                        c.push(*z);
+                    }
+                }
+            }
+            let n = a.len();
+            let t = RatingTable::new(
+                DataFrame::new(vec![
+                    Series::new("a".into(), a).into(),
+                    Series::new("b".into(), b).into(),
+                    Series::new("c".into(), c).into(),
+                    Series::new("Rating_Factor".into(), vec![0.; n]).into(),
+                ])
+                .unwrap(),
+                None,
+            );
+            let probes = [
+                None,
+                Some(f64::NAN),
+                Some(f64::from_bits(0xfff8000000000012)),
+                Some(f64::NEG_INFINITY),
+                Some(-1.),
+                Some(-0.),
+                Some(0.),
+                Some(f64::from_bits(1)),
+                Some(1.),
+                Some(2.),
+                Some(f64::INFINITY),
+            ];
+            let mut a = Vec::new();
+            let mut b = Vec::new();
+            let mut c = Vec::new();
+            for x in probes {
+                for y in probes {
+                    for z in probes {
+                        a.push(x);
+                        b.push(y);
+                        c.push(z);
+                    }
+                }
+            }
+            let df = DataFrame::new(vec![
+                Series::new("a".into(), a).into(),
+                Series::new("b".into(), b).into(),
+                Series::new("c".into(), c).into(),
+            ])
+            .unwrap();
+            assert!(matches!(plan_for(&t, &df), MatchPlan::NumericGrid { .. }));
+            agrees_with_scan(&t, &df);
+            let chunked = df
+                .slice(0, 500)
+                .vstack(&df.slice(500, df.height() - 500))
+                .unwrap();
+            agrees_with_scan(&t, &chunked);
+            let incomplete = RatingTable::new(t.data.slice(1, n - 1), None);
+            assert!(matches!(plan_for(&incomplete, &df), MatchPlan::General));
+            agrees_with_scan(&incomplete, &df);
+        }
     }
 
     #[test]

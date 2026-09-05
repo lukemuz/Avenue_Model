@@ -14,7 +14,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import polars as pl
-from avenue_model import Workbook
+from avenue_model import Workbook, from_booster
 
 
 def digest(path):
@@ -27,6 +27,9 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--repeats', type=int, default=5)
     parser.add_argument('--quote-rows', type=int, help='Score this many leading holdout rows for a batch-size study')
+    artifact = parser.add_mutually_exclusive_group()
+    artifact.add_argument('--reconvert', action='store_true', help='Measure a fresh conversion, including current missing routes, instead of the historical workbook')
+    artifact.add_argument('--model', type=Path, help='Score an exact saved JSON artifact against the same original booster and quotes')
     args = parser.parse_args()
     if args.repeats < 3:
         parser.error('at least three repeats are required')
@@ -58,9 +61,15 @@ def main():
     quotes = pl.DataFrame({n: x[:, i] for i, n in enumerate(names)})
     booster_path = source / 'selected_booster.txt'
     booster = lgb.Booster(model_file=str(booster_path))
-    model = Workbook.load_csv_dir(str(source / 'selected')).to_model()
+    started = time.perf_counter()
+    if args.model:
+        model = Workbook.load_json(str(args.model)).to_model()
+    else:
+        model = from_booster(booster).model if args.reconvert else Workbook.load_csv_dir(str(source / 'selected')).to_model()
+    artifact_setup_seconds = time.perf_counter() - started
     tables = model.to_workbook().tables
-    assert len(tables) == 4 and sum(t.height for t in tables) == 19181
+    if not args.reconvert and not args.model:
+        assert len(tables) == 4 and sum(t.height for t in tables) == 19181
     reference = booster.predict(x, num_threads=4)
     timings = []
     for _ in range(args.repeats):
@@ -70,12 +79,20 @@ def main():
         np.testing.assert_allclose(actual, reference, atol=1e-12, rtol=1e-12)
     np.save(args.output / 'prediction.npy', actual)
     extension = Path(importlib.import_module('avenue_model.avenue_model').__file__)
-    artifact_paths = [data_path, booster_path, *sorted((source / 'selected').iterdir())]
+    artifact_paths = [data_path, booster_path]
+    if args.model:
+        artifact_paths.append(args.model)
+    elif not args.reconvert:
+        artifact_paths += sorted((source / 'selected').iterdir())
+    model.to_workbook(scale='factor').save_json(str(args.output / 'model.json'))
     result = {
         'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
         'matching_sha256': digest(Path(__file__).resolve().parents[1] / 'src/glm/matching.rs'),
         'script_sha256': digest(Path(__file__)), 'extension_sha256': digest(extension),
-        'inputs': {str(p.relative_to(args.evaluation)): digest(p) for p in artifact_paths if p.is_file()},
+        'artifact_source': 'supplied_workbook' if args.model else ('fresh_conversion' if args.reconvert else 'historical_workbook'),
+        'artifact_setup_seconds': artifact_setup_seconds,
+        'model_json_sha256': digest(args.output / 'model.json'),
+        'inputs': {str(p.relative_to(args.evaluation) if p.is_relative_to(args.evaluation) else p): digest(p) for p in artifact_paths if p.is_file()},
         'versions': {p: importlib.metadata.version(p) for p in ['avenue_model', 'lightgbm', 'numpy', 'pandas', 'polars']},
         'threads': {k: os.environ.get(k) for k in ['OMP_NUM_THREADS', 'POLARS_MAX_THREADS', 'RAYON_NUM_THREADS']},
         'train_rows': train.height, 'quote_rows': quotes.height,
