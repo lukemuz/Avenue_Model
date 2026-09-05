@@ -39,22 +39,27 @@ class Comparison:
 
 def _concentration(y, w, scores):
     """Ascending-score concentration curve; aggregate ties before integration."""
+    center = min(a for a, b in zip(y, w) if b > 0)
     curve = (pl.DataFrame({'score': scores, 'weight': w,
-                           'actual': [a * b for a, b in zip(y, w)]})
+                           'actual': [a * b for a, b in zip(y, w)],
+                           '_centered_actual': [(a - center) * b for a, b in zip(y, w)]})
              .filter(pl.col('weight') > 0)
              .group_by('score').agg(pl.len().alias('rows'), pl.col('weight').sum(),
-                                    pl.col('actual').sum())
+                                    pl.col('actual').sum(), pl.col('_centered_actual').sum())
              .sort('score')
              .with_columns((pl.col('weight').cum_sum() / pl.col('weight').sum()).alias('weight_share'),
                            (pl.col('actual').cum_sum() / pl.col('actual').sum()).alias('actual_share')))
-    # The area under the piecewise-linear curve treats equal scores as one block,
-    # so row order cannot award discrimination for arbitrary ordering within ties.
-    twice_area = curve.select(((pl.col('actual_share') + pl.col('actual_share').shift(1).fill_null(0))
-                               * (pl.col('weight_share') - pl.col('weight_share').shift(1).fill_null(0)))
-                              .sum()).item()
+    # Equivalent to 1 - twice the trapezoidal area, but avoids subtracting nearly
+    # equal numbers for nearly constant targets. A constant target component has
+    # zero rank covariance, so center before multiplying by signed rank support.
+    before = pl.col('weight').cum_sum().shift(1).fill_null(0)
+    after = pl.col('weight').reverse().cum_sum().reverse().shift(-1).fill_null(0)
+    gini = curve.select(((pl.col('_centered_actual') / pl.col('actual').sum())
+                         * ((before - after) / pl.col('weight').sum())).sum()).item()
+    curve = curve.drop('_centered_actual')
     origin = pl.DataFrame({'score': [None], 'rows': [0], 'weight': [0.], 'actual': [0.],
                            'weight_share': [0.], 'actual_share': [0.]}, schema=curve.schema)
-    return 1. - twice_area, pl.concat([origin, curve])
+    return gini, pl.concat([origin, curve])
 
 
 def _numbers(values, name, n):

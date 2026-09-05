@@ -55,7 +55,9 @@ shares. The first row is the origin with a null score and zero support. Zero-wei
 observations remain in the common prediction population but contribute no rank support.
 
 Gini is one minus twice the area under this curve, integrating linearly between
-tied-score groups. Positive values indicate that higher predicted means concentrate
+tied-score groups. Computation uses an equivalent centered rank-covariance formula
+to avoid cancellation when observed targets are nearly constant. Positive values
+indicate that higher predicted means concentrate
 more observed loss; reversed rankings can produce negative values. Normalized Gini
 divides by the same statistic obtained by ranking on the observed target. This oracle
 is descriptive and uses the evaluation outcomes; it is never a fitted candidate.

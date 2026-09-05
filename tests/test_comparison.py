@@ -5,6 +5,19 @@ from avenue_model import Candidate, Plan, compare_models
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_nearly_constant_targets_have_stable_normalized_discrimination(self):
+        for epsilon in [1e-12, 1e-14, 1e-15]:
+            y = [1., 1. + epsilon, 1. + 2 * epsilon]
+            result = compare_models(pl.DataFrame({'y': y}),
+                                    {'oracle': Candidate(y, 'mean', True),
+                                     'reverse': Candidate(y[::-1], 'mean', True),
+                                     'constant': Candidate([1.] * 3, 'mean', True)},
+                                    target='y', unit='mean', metric='squared_error')
+            pairwise = sum(abs(a - b) for a in y for b in y) / (2 * len(y) * sum(y))
+            self.assertAlmostEqual(result.summary['gini'][0] / pairwise, 1.)
+            for actual, expected in zip(result.summary['normalized_gini'], [1., -1., 0.]):
+                self.assertAlmostEqual(actual, expected, places=14)
+
     def test_discrimination_matches_pairwise_reference_and_reconciles(self):
         y, w = [0., 1., 4., 8., 100.], [.5, 2., 1., 3., 0.]
         data = pl.DataFrame({'y': y, 'w': w})

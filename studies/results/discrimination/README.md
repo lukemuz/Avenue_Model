@@ -1,5 +1,15 @@
 # Shared discrimination acceptance
 
+Numerical follow-up: the initial `1 - 2 * area` calculation lost relative precision
+for nearly constant targets, yielding normalized Gini -2 for a reversed ranking
+whose correct value is -1. The implementation now computes the equivalent weighted
+rank covariance after centering targets. Regression cases with target differences
+from 1e-12 through 1e-15 agree with independent pairwise calculations. All 130 Python
+tests and the auto example pass. Recomputing the statistic from the retained real
+tied-score group totals differs from the original area calculation by less than
+2e-13 (`stability_check.json`). This follow-up does not rerun model fitting or replace
+the historical acceptance source hashes below.
+
 The real motor smooth study was rerun with common concentration curves and Gini
 exhibits for the composed frequency/severity model, Avenue Tweedie and independent
 glum predictions. The population, specification and interpretation remain those in
