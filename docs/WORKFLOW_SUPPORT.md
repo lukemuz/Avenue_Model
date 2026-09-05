@@ -35,7 +35,7 @@ held-out calibration as well as loss and fit diagnostics before selecting an art
 |---|---|---|
 | Inputs | Native Polars; explicit optional pandas adapter retaining labels/nulls | Polars 1.31.0 pinned; no arbitrary object/preprocessing inference |
 | Pricing populations | Frequency, positive-loss severity, pure premium; row audits; factor experience | Development/trend/coverage assumptions supplied by user; zero-payment severity needs explicit treatment |
-| GLM structures | Intercept, categorical/banded factors, polynomial variates, interaction tables, supplied/locked tables | Ordinary hierarchical interaction contrasts, splines, monotonic constraints and partial pooling remain planned |
+| GLM structures | Intercept, categorical/banded factors, polynomial variates, two-way main-effect/interaction contrasts, interaction tables, supplied/locked tables | Higher-order hierarchical contrasts, splines, monotonic constraints and partial pooling remain planned |
 | Families | Gaussian, Poisson, Gamma, Tweedie, binary | No negative-binomial or general mixed-model estimator |
 | Penalties/inference | Existing GLM penalty controls and classical supported inference; named factor estimates | Automatic GLM selection, robust/cluster covariance and post-selection uncertainty remain open |
 | Validation | Random/grouped/out-of-time splits; common candidate comparison; deviance, segment/period A/E; paired fixed-prediction bootstrap | No automatic temporal-block or refit uncertainty; explicit common units/metric required |
@@ -51,5 +51,6 @@ held-out calibration as well as loss and fit diagnostics before selecting an art
 - [Preparation and experience](PRICING_PREPARATION.md), [pandas adapter](PANDAS.md)
 - [Scoring contract](SCORING_CONTRACT.md), [quote explanations and model changes](EXPLANATIONS.md)
 - [Reproducible splits](VALIDATION_SPLITS.md), [common model comparison](MODEL_COMPARISON.md)
+- [Hierarchical interactions](HIERARCHICAL_INTERACTIONS.md)
 - [Named composition](COMPOSITION.md), [booster conversion and parity](CONVERSION.md)
 - [Implementation evidence and outstanding work](IMPLEMENTATION_STATUS.md)

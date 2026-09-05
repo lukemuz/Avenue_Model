@@ -194,6 +194,39 @@ pub fn compute_inference(
     normalization: Normalization,
     penalty: Option<&PenaltyPlan>,
 ) -> Result<GLMInference, PolarsError> {
+    let locked_rows: Vec<Vec<bool>> = factors.iter().map(|rows| vec![false; rows.len()]).collect();
+    compute_inference_with_locks(
+        loss_fn,
+        target,
+        weights,
+        means,
+        matches,
+        factors,
+        row_exposure,
+        updatable,
+        variate_values,
+        normalization,
+        penalty,
+        &locked_rows,
+    )
+}
+
+/// Covariance on the actual free-parameter design, respecting fixed table rows.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_inference_with_locks(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    factors: &[Vec<f64>],
+    row_exposure: &[Vec<f64>],
+    updatable: &[bool],
+    variate_values: &[Option<(Vec<f64>, usize)>],
+    normalization: Normalization,
+    penalty: Option<&PenaltyPlan>,
+    locked_rows: &[Vec<bool>],
+) -> Result<GLMInference, PolarsError> {
     let n_obs = target.len();
     let n_tables = factors.len();
 
@@ -212,7 +245,7 @@ pub fn compute_inference(
         if t == 0 {
             // The intercept table itself is column 0.
             for r in 0..n_rows {
-                table_layout.push(if r == 0 && updatable[0] {
+                table_layout.push(if r == 0 && updatable[0] && !locked_rows[0][r] {
                     ReducedColumn::Loadings(vec![(0, 1.0)])
                 } else {
                     ReducedColumn::Excluded
@@ -265,13 +298,15 @@ pub fn compute_inference(
             // A penalised table's reference is its base level, because that is the level
             // the fit actually held still and shrank the others toward. An unpenalised
             // table is free to anchor on the first level carrying any exposure.
-            let reference = if penalty.is_some_and(|p| p.covers(t)) {
+            let reference = if locked_rows[t].iter().any(|locked| *locked) {
+                None
+            } else if penalty.is_some_and(|p| p.covers(t)) {
                 Some(ANCHOR_ROW)
             } else {
                 reference_row(&row_exposure[t])
             };
             for r in 0..n_rows {
-                if Some(r) == reference {
+                if locked_rows[t][r] || Some(r) == reference {
                     table_layout.push(ReducedColumn::Reference);
                 } else if row_exposure[t][r] <= 0.0 {
                     table_layout.push(ReducedColumn::Excluded);
@@ -460,7 +495,10 @@ pub fn compute_inference(
         // Under WeightedMean anchoring a reported factor is the level's parameter
         // minus the table's exposure-weighted average, so the contrast touches every
         // level of the table rather than just one.
-        let shares: Option<Vec<f64>> = if t > 0 && normalization == Normalization::WeightedMean {
+        let shares: Option<Vec<f64>> = if t > 0
+            && normalization == Normalization::WeightedMean
+            && !locked_rows[t].iter().any(|locked| *locked)
+        {
             let total: f64 = row_exposure[t].iter().sum();
             if total > 0.0 {
                 Some(row_exposure[t].iter().map(|e| e / total).collect())

@@ -996,6 +996,68 @@ impl Plan {
             tables.push(table);
         }
 
+        // A two-way interaction alongside both main effects uses treatment
+        // contrasts: its reference row/column are fixed at zero. Interaction-only
+        // tables retain their existing full-cell representation.
+        for (term_index, term) in self.terms.iter().enumerate() {
+            let Term::Interaction { columns, breaks } = term else {
+                continue;
+            };
+            if columns.len() != 2 || breaks.len() != 2 {
+                continue;
+            }
+            let mains: Vec<Option<usize>> = columns
+                .iter()
+                .zip(breaks)
+                .map(|(column, spec)| {
+                    self.terms
+                        .iter()
+                        .position(|candidate| match candidate {
+                            Term::Categorical { column: c, .. } => c == column && spec.is_none(),
+                            Term::Banded {
+                                column: c,
+                                breaks: b,
+                            } => c == column && spec.as_ref() == Some(b),
+                            _ => false,
+                        })
+                        .map(|i| i + 1)
+                })
+                .collect();
+            let (Some(left), Some(right)) = (mains[0], mains[1]) else {
+                continue;
+            };
+            let t = term_index + 1;
+            let mut locked = Vec::new();
+            for row in 0..tables[t].data.height() {
+                let is_reference = [(0, left), (1, right)].iter().any(|(axis, main)| {
+                    tables[t]
+                        .data
+                        .column(&columns[*axis])
+                        .unwrap()
+                        .get(row)
+                        .unwrap()
+                        == tables[*main]
+                            .data
+                            .column(&columns[*axis])
+                            .unwrap()
+                            .get(0)
+                            .unwrap()
+                });
+                if is_reference {
+                    locked.push(row);
+                }
+            }
+            for row in &locked {
+                tables[t].set_row_offset(*row, true);
+            }
+            resolved[t].parameters = tables[t].data.height() - locked.len();
+            resolved[t].kind = "interaction_contrast".into();
+            resolved[t].base_level = Some(format!(
+                "zero on either main-effect reference: {} / {}",
+                columns[0], columns[1]
+            ));
+        }
+
         let mut seen = HashSet::new();
         for name in &names {
             if !seen.insert(name.clone()) {
@@ -1241,7 +1303,15 @@ impl Plan {
                             axes.push(Axis::Categorical(ordered_levels(
                                 &codes,
                                 weights,
-                                &Base::First,
+                                self.terms
+                                    .iter()
+                                    .find_map(|term| match term {
+                                        Term::Categorical { column: c, base } if c == column => {
+                                            Some(base)
+                                        }
+                                        _ => None,
+                                    })
+                                    .unwrap_or(&Base::First),
                                 encoding,
                                 column,
                             )?));
@@ -1795,7 +1865,11 @@ impl Plan {
                 .model
                 .tables
                 .iter()
-                .map(|t| !t.metadata.is_offset && t.variate_values().is_none())
+                .map(|t| {
+                    !t.metadata.is_offset
+                        && t.variate_values().is_none()
+                        && !(0..t.data.height()).any(|r| t.is_row_offset(r))
+                })
                 .collect();
             let pairs = crate::glm::table_correlations(matches, &weights, &shapes, &eligible);
             if !pairs.is_empty() {

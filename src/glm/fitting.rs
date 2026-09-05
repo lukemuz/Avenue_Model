@@ -1,4 +1,4 @@
-use super::inference::{compute_inference, solve_spd, GLMInference};
+use super::inference::{compute_inference_with_locks, solve_spd, GLMInference};
 use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
 use super::penalty::{soft_threshold, PenaltyPlan, TablePenalty, ANCHOR_ROW};
@@ -1051,7 +1051,7 @@ pub fn fit_glm_with_diagnostics(
     // rather than allowed to discard the fit the caller asked for.
     let mut inference_error: Option<String> = None;
     let inference = if options.compute_standard_errors {
-        match compute_inference(
+        match compute_inference_with_locks(
             &loss_fn,
             &target,
             &weights,
@@ -1063,6 +1063,15 @@ pub fn fit_glm_with_diagnostics(
             &variate_values,
             options.normalization,
             penalty.as_ref(),
+            &working_model
+                .tables
+                .iter()
+                .map(|table| {
+                    (0..table.data.height())
+                        .map(|r| table.is_row_offset(r))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
         ) {
             Ok(inf) => Some(inf),
             Err(e) => {
@@ -1682,7 +1691,7 @@ fn fit_global_irls(
 
     let mut inference_error = None;
     let inference = if options.compute_standard_errors {
-        match compute_inference(
+        match compute_inference_with_locks(
             &loss_fn,
             &target,
             &weights,
@@ -1694,6 +1703,15 @@ fn fit_global_irls(
             &variate_values,
             options.normalization,
             penalty.as_ref(),
+            &model
+                .tables
+                .iter()
+                .map(|table| {
+                    (0..table.data.height())
+                        .map(|r| table.is_row_offset(r))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
         ) {
             Ok(value) => Some(value),
             Err(error) => {

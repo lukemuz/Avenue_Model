@@ -237,6 +237,24 @@ called dependable for arbitrary quote inputs.
 - All 79 Python tests pass. Example outputs: `/tmp/avenue-homeowners-study`; log:
   `/tmp/avenue-homeowners-study.log`. No Rust changes in this increment.
 
+## Completed increment: identifiable two-way hierarchical interactions
+
+- Compatible categorical/banded two-way interactions with both main effects now
+  fix either reference margin at zero, preserving estimable interior contrasts.
+  References follow main-effect choices independently of term order; matched numeric
+  break specifications resolve from the training population.
+- Constraints are stored as fixed table rows, visible in resolved/review output and
+  portable through workbook reload. Interaction-only representation is unchanged.
+- Independent treatment-coded Poisson tests verify means, interaction contrasts,
+  parameter counts and covariance/standard errors; additional tests cover banded
+  axes, most-exposed references and reordered terms.
+- Fixed-row inference was previously unaware of row locks. It now constructs the
+  actual free design; the existing public unconstrained inference entry point is
+  preserved as a wrapper. Pairwise full-table redundancy checks no longer mislabel
+  constrained tables as unconstrained duplicate main effects.
+- All 82 Python tests, 258 Rust tests and formatting pass. Supported scope and global
+  solver/higher-order limitations: [HIERARCHICAL_INTERACTIONS.md](HIERARCHICAL_INTERACTIONS.md).
+
 ## Next required work
 
 Complete general response-unit semantics and complete preprocessing persistence and evaluate the remaining explicit conversion limitations.
