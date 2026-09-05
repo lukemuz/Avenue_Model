@@ -41,4 +41,25 @@ Externally prepared train/validation datasets remain supported directly:
 `plan.fit(training, target).validate(validation)`. There is no mandatory random
 split. These helpers do not infer temporal gaps, renewal leakage, loss development,
 trend or coverage changes; encode those study assumptions in the input populations.
-Common candidate comparison, uncertainty and automatic GLM selection remain planned.
+Use [common model comparison](MODEL_COMPARISON.md) for candidate predictions on the
+same held-out frame, and [GLM grid selection](GLM_SELECTION.md) for fitting named
+specifications across retained folds. Its selection loss uses a common prespecified
+metric; a selected model still needs a separate final holdout.
+
+Random splits do not keep repeated policies together. Grouped splits keep the selected
+identifier together but do not enforce chronological order. A time split can place the
+same policy on both sides of its cutoff. Choose membership to match the intended
+generalization question; none of these helpers automatically detects every dependence
+or implements an embargo. Greedy grouped balancing targets row counts, not total
+exposure, and changing the seed may leave assignments of differently sized groups
+unchanged.
+
+Pass the original **full frame** to `Fold.frames`, `Fold.fit` and `FoldFit.validate`.
+They select their own populations. Changing even an unused column invalidates the
+frame fingerprint. Fold JSON preserves indices and metadata, not observations or a
+recipe that is automatically rerun when loaded.
+
+Only transformations still unresolved when `Plan.fit` runs are learned within the
+training fold. Explicit breaks, precomputed predictors and supplied prior tables are
+kept as provided. A fold helper cannot undo information leakage from preprocessing or
+model choices already made using the full dataset.
