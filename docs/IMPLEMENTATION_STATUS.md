@@ -103,6 +103,22 @@ called dependable for arbitrary quote inputs.
   leakage. Verification: all 50 Python tests passed. No Rust changes in this increment.
 - Usage and limitations: [VALIDATION_SPLITS.md](VALIDATION_SPLITS.md).
 
+## Completed increment: common candidate comparison
+
+- Added `Candidate`, `compare_models` and `Comparison` for Avenue models and external
+  prediction vectors on one explicitly declared response unit/population/loss.
+- Named summary, row predictions and segment/period A/E exhibits reconcile weighted
+  portfolio totals. Failed scoring is retained without reducing the population.
+- Recommendations require known convergence; recorded nonconvergence cannot be
+  overridden by a lower holdout loss or caller-supplied flag.
+- Paired row/cluster bootstrap percentile intervals report fixed-prediction loss
+  differences against a named baseline, with seed and effective replicate counts.
+- Independent scikit-learn reference tests cover weighted Poisson/Gamma/Tweedie losses;
+  tests also verify portfolio reconciliation, failure retention, paired uncertainty
+  and shared review of Avenue/external means. All 56 Python tests passed.
+- Declared the independent test extra and installed it in Python CI. Usage and
+  statistical limits: [MODEL_COMPARISON.md](MODEL_COMPARISON.md).
+
 ## Next required work
 
 Complete general response-unit semantics and complete LightGBM missing/default routing, constant boosters and preprocessing persistence.

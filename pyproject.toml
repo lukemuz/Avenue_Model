@@ -36,6 +36,8 @@ Repository = "https://github.com/lukemuz/Avenue_Model"
 Issues = "https://github.com/lukemuz/Avenue_Model/issues"
 
 [project.optional-dependencies]
+# Independent deviance references used by the public Python regression suite.
+test = ["scikit-learn>=1.4"]
 # `avenue_model.tune_lgbm` and the LightGBM examples. Kept optional because the core
 # package is a GLM engine and most users of it never touch a booster.
 tuning = [
