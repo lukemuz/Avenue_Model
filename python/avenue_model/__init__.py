@@ -21,9 +21,10 @@ from .tuning import (  # noqa: F401
 )
 
 from .conversion import ConversionResult, from_booster
+from .splitting import Fold, FoldFit, SplitSpec
 
 __all__ = [
-    "ConversionResult", "from_booster",
+    "ConversionResult", "from_booster", "Fold", "FoldFit", "SplitSpec",
     *(getattr(_rust, "__all__", None) or
       [n for n in dir(_rust) if not n.startswith("_")]),
     "TuningResult",

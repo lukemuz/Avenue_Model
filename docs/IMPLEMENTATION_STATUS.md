@@ -90,6 +90,19 @@ called dependable for arbitrary quote inputs.
   schema mappings, ambiguous conversion rejection and invalid exposure in fitting
   and validation. Verification: 44 Python tests and 258 Rust tests passed.
 
+## Completed increment: reproducible split specifications
+
+- Added `SplitSpec.random`, `grouped` and `out_of_time`, retained row membership,
+  seeds/specifications, content/order/schema fingerprint and stable split IDs.
+- `Fold.fit` resolves an ordinary Plan on training rows only; `FoldFit.validate`
+  uses exactly the retained holdout. Externally prepared datasets remain supported.
+- Versioned membership serialization rejects overlaps, invalid indices, future
+  schema versions and reuse against changed/reordered data.
+- Six tests cover complete K-fold coverage, reproducibility, group isolation, time
+  boundaries, dates, membership round trips and holdout-only category/extreme-value
+  leakage. Verification: all 50 Python tests passed. No Rust changes in this increment.
+- Usage and limitations: [VALIDATION_SPLITS.md](VALIDATION_SPLITS.md).
+
 ## Next required work
 
 Complete general response-unit semantics and complete LightGBM missing/default routing, constant boosters and preprocessing persistence.
