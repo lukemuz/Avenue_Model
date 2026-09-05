@@ -1,0 +1,28 @@
+{
+  "rows": 169504,
+  "contribution_rows": 1017024,
+  "seconds": 0.5154654319994734,
+  "peak_rss_before_kib": 217720,
+  "peak_rss_after_kib": 1029948,
+  "peak_rss_increase_kib": 812228,
+  "polars_version": "1.31.0",
+  "totals": [
+    {
+      "rows": 169504,
+      "weight": 103931.19919005914,
+      "old": 15194535.164728735,
+      "new": 15954261.922965175,
+      "change": 759726.7582364399,
+      "relative_change": 0.05000000000000021
+    }
+  ],
+  "metadata": {
+    "unit": "loss/exposure",
+    "weight": "exposure",
+    "excluded_rows": 0,
+    "population_fingerprint": "55b4b4fdf66225df01d49a509b223b1361708af0a493beec96cf0af521bcffe7",
+    "link": "log",
+    "interpretation": "Artifact changes on supplied rows; no inference for edited coefficients."
+  },
+  "limitations": "Linux process high-water marks; includes input/artifact allocations, not allocator-isolated memory"
+}

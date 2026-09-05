@@ -80,3 +80,27 @@ class ExplanationTests(unittest.TestCase):
                 self.assertAlmostEqual(delta, math.log(1.1))
             intercept = changes.contributions.filter(pl.col('kind') == 'intercept')
             self.assertEqual(intercept['coefficient_change'].to_list(), [0.] * data.height)
+
+    def test_added_removed_terms_and_zero_offsets_have_defined_changes(self):
+        from avenue_model import compare_changes
+        data = self.data()
+        old = Plan('poisson', exposure='exposure', exposure_role='offset').categorical('region').fit(data, 'count')
+        new = Plan('poisson', exposure='exposure', exposure_role='offset').banded('age', breaks=[30.]).fit(data, 'count')
+        quotes = data.with_columns(pl.lit(0.).alias('exposure'))
+        result = compare_changes(old, new, quotes, unit='count')
+        contributions = result.contributions
+        removed = contributions.filter(pl.col('term') == 'region')
+        added = contributions.filter(pl.col('term') == 'age')
+        self.assertEqual(removed['presence'].unique().to_list(), ['removed'])
+        self.assertEqual(added['presence'].unique().to_list(), ['added'])
+        self.assertEqual(removed['new_table_row'].null_count(), data.height)
+        self.assertEqual(added['old_table_row'].null_count(), data.height)
+        self.assertEqual(removed['new_coefficient'].to_list(), [0.] * data.height)
+        self.assertEqual(added['old_coefficient'].to_list(), [0.] * data.height)
+        offsets = contributions.filter(pl.col('kind') == 'exposure')
+        self.assertEqual(offsets['presence'].unique().to_list(), ['both'])
+        self.assertEqual(offsets['coefficient_change'].to_list(), [0.] * data.height)
+        self.assertEqual(offsets['old_coefficient'].to_list(), [-math.inf] * data.height)
+        self.assertEqual(result.policies['relative_change'].null_count(), data.height)
+        self.assertEqual(result.totals['change'][0], 0.)
+        self.assertEqual(contributions['row'].to_list(), sorted(contributions['row'].to_list()))

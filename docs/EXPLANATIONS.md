@@ -46,3 +46,7 @@ An edited workbook is a new scoring artifact. These exhibits do not assign old
 standard errors to edited coefficients. Obtain fresh validation evidence for it.
 The executable auto study demonstrates a known 5% factor edit, policy movements,
 quote explanations and a separate edited-artifact validation report.
+
+Large change reviews keep contribution tables columnar. The [controlled performance
+study](CHANGE_REVIEW_PERFORMANCE.md) verifies unchanged million-row exhibits with
+lower memory use and shorter runtime on a real six-table workload.

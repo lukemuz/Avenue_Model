@@ -455,3 +455,25 @@ that evidence.
   Full output: `/tmp/avenue-real-fork-acceptance`; complete run 26.10 seconds and
   whole-process peak around 3.06 GiB (not isolated model memory). Remaining statistical,
   performance, release and final-audit gates are explicitly retained.
+
+## Completed increment: lower-memory change review
+
+- Profiling isolated a large allocation in `compare_changes`: converting both long
+  contribution frames into Python dictionaries, unioned tuple keys and output dictionaries.
+  Replaced that materialization with a Polars full join, column expressions and stable
+  sorting. Policy/portfolio/segment calculations retain their existing arithmetic.
+- On 169,504 real raw-quote rows and six tables (1,017,024 contributions), three fresh
+  process runs per implementation gave median 3.944→0.516 seconds (7.65×) and peak RSS
+  increase 2.24→0.78 GiB (65.0% lower). Total process peak 2.44→0.99 GiB. This is one
+  controlled change-review workload, not a universal performance or raw-scoring claim.
+- Every Arrow exhibit from all six runs exactly matches the baseline's values, dtypes
+  and ordering; metadata matches. Tests additionally cover added/removed factors and
+  zero-exposure offsets. All 104 Python tests pass; no Rust changes were needed.
+- The complete real GLM/glum study passed again at `/tmp/avenue-real-memory-acceptance`,
+  including raw-quote bundles and the edited plan. Whole-run time 9.88 seconds and peak
+  1.67 GiB, compared with earlier single observations 14.11 seconds/2.91 GiB. These
+  whole-study observations are distinct from the controlled process benchmark.
+- [Method and evidence](CHANGE_REVIEW_PERFORMANCE.md) includes the reusable profiler,
+  exact baseline source reference, all measurements, source hashes and interpretation
+  limits. Broader model shapes, preparation/inference profiling and the original
+  large-booster scoring target remain separate work.

@@ -1,0 +1,33 @@
+{
+  "baseline_commit": "b158b2c",
+  "rows": 169504,
+  "contribution_rows": 1017024,
+  "threads": 4,
+  "fresh_process_repetitions": 3,
+  "exact_exhibits_verified": [
+    "policies",
+    "contributions",
+    "totals",
+    "region",
+    "fuel"
+  ],
+  "median_measurements": {
+    "before": {
+      "seconds": 3.944409738000104,
+      "peak_rss_after_kib": 2560472,
+      "peak_rss_increase_kib": 2348076
+    },
+    "after": {
+      "seconds": 0.5155462070033536,
+      "peak_rss_after_kib": 1037808,
+      "peak_rss_increase_kib": 822552
+    }
+  },
+  "speedup": 7.650933484560475,
+  "peak_increase_reduction_fraction": 0.6496910662176182,
+  "source_sha256": {
+    "python/avenue_model/changes.py": "dc2bc7ce63e5eaf2c2e11e3e8337c88261e55540b6cf4f677219a98c01d9fc27",
+    "studies/profile_change_review.py": "42dfd21c29e9a53ce2231da202e3503d0ed666273d1977b95b32f8eb1b635c42"
+  },
+  "limitations": "One real-data six-table workload; Linux process high-water marks, not allocator-isolated memory"
+}

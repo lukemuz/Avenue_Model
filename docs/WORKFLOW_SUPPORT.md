@@ -74,3 +74,7 @@ It also retains the unfavorable held-out calibration and remaining acceptance ga
 The [real fork challenger](REAL_FORK_ACCEPTANCE.md) also passes full holdout, threshold
 and default-route parity in both modes, with raw-label reload and explicit complexity
 measurements. Its improved loss does not resolve the real study's loss-cost calibration.
+
+[Change-review profiling](CHANGE_REVIEW_PERFORMANCE.md) identified and removed a large
+Python-object allocation, with exact before/after exhibit checks and three-process
+measurements on the real study's million-row contribution table.

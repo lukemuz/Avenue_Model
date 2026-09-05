@@ -29,7 +29,7 @@ def compare_changes(old, new, data, *, unit, weight=None, segments=()):
     if not data.height:
         raise ValueError('Change analysis requires nonempty data')
     before, after = old.explain(data), new.explain(data)
-    if before['summary']['link'].to_list() != after['summary']['link'].to_list():
+    if not before['summary']['link'].equals(after['summary']['link']):
         raise ValueError('Factor change analysis requires a shared link')
     old_kind, new_kind = old.prediction_kind, new.prediction_kind
     if old_kind != new_kind:
@@ -43,22 +43,33 @@ def compare_changes(old, new, data, *, unit, weight=None, segments=()):
                              'old': a, 'new': b, 'change': [y - x for x, y in zip(a, b)],
                              'relative_change': [(y - x) / x if x else None for x, y in zip(a, b)],
                              'weighted_change': [w * (y - x) for w, x, y in zip(weights, a, b)]})
-    def indexed(frame):
-        return {(r['row'], r['kind'], r['term']): r for r in frame.to_dicts()}
-    left, right = indexed(before['contributions']), indexed(after['contributions'])
-    contributions = []
-    for key in sorted(left.keys() | right.keys()):
-        old_part, new_part = left.get(key), right.get(key)
-        old_value = old_part['coefficient'] if old_part else 0.
-        new_value = new_part['coefficient'] if new_part else 0.
-        # Identical -inf offsets at zero exposure have no change.
-        delta = 0. if old_value == new_value else new_value - old_value
-        contributions.append({'row': key[0], 'kind': key[1], 'term': key[2],
-                              'old_table_row': old_part['table_row'] if old_part else None,
-                              'new_table_row': new_part['table_row'] if new_part else None,
-                              'old_coefficient': old_value, 'new_coefficient': new_value,
-                              'coefficient_change': delta,
-                              'presence': 'added' if old_part is None else 'removed' if new_part is None else 'both'})
+    # Keep the long exhibit columnar: row dictionaries and a union of tuple keys
+    # previously used several GiB on ordinary six-table portfolios.
+    keys = ['row', 'kind', 'term']
+    def side(frame, prefix):
+        return frame.select(
+            *keys,
+            pl.col('table_row').cast(pl.Int64).alias(prefix + '_table_row'),
+            pl.col('coefficient').alias(prefix + '_coefficient'),
+            pl.lit(True).alias('_' + prefix + '_present'))
+    contributions = (
+        side(before['contributions'], 'old')
+        .join(side(after['contributions'], 'new'), on=keys, how='full', coalesce=True)
+        .with_columns(
+            pl.col('row').cast(pl.Int64),
+            pl.col('old_coefficient').fill_null(0.),
+            pl.col('new_coefficient').fill_null(0.),
+            pl.when(pl.col('_old_present').is_null()).then(pl.lit('added'))
+              .when(pl.col('_new_present').is_null()).then(pl.lit('removed'))
+              .otherwise(pl.lit('both')).alias('presence'))
+        .with_columns(
+            # Equal -inf exposure offsets at zero exposure have no change.
+            pl.when(pl.col('old_coefficient') == pl.col('new_coefficient')).then(0.)
+              .otherwise(pl.col('new_coefficient') - pl.col('old_coefficient'))
+              .alias('coefficient_change'))
+        .select(*keys, 'old_table_row', 'new_table_row', 'old_coefficient',
+                'new_coefficient', 'coefficient_change', 'presence')
+        .sort(keys))
     def totals(indices):
         old_total = math.fsum(weights[i] * a[i] for i in indices)
         new_total = math.fsum(weights[i] * b[i] for i in indices)
@@ -73,7 +84,7 @@ def compare_changes(old, new, data, *, unit, weight=None, segments=()):
         for row, level in enumerate(data[column]):
             groups.setdefault(level, []).append(row)
         exhibits[column] = pl.DataFrame([{'level': level, **totals(indices)} for level, indices in groups.items()])
-    return ModelChange(policies, pl.DataFrame(contributions), pl.DataFrame([totals(list(range(data.height)))]),
+    return ModelChange(policies, contributions, pl.DataFrame([totals(list(range(data.height)))]),
                        exhibits, {'unit': unit, 'weight': weight, 'excluded_rows': 0,
                                   'population_fingerprint': _fingerprint(data),
                                   'link': before['summary']['link'][0],
