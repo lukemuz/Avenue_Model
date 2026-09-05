@@ -9,7 +9,7 @@ from pathlib import Path
 import random
 
 import polars as pl
-from avenue_model import Candidate, Plan, SplitSpec, Workbook, compare_models, prepare_pricing
+from avenue_model import Candidate, Plan, SplitSpec, Workbook, compare_models, prepare_pricing, compare_changes
 
 
 def synthetic(path):
@@ -75,6 +75,22 @@ def run(output, data_path=None):
     comparison.summary.write_csv(output / 'comparison.csv')
     for name, table in comparison.segments.items():
         table.write_csv(output / f'comparison_{name}.csv')
+    # A manual factor edit creates a new scoring artifact; its evidence is separate.
+    edit_directory = output / 'edited_premium'
+    premium.to_workbook().save_csv_dir(str(edit_directory))
+    factor_path = next(edit_directory.glob('*region.csv'))
+    factors = pl.read_csv(factor_path)
+    factors.with_columns((pl.col('Relativity') * 1.05).alias('Relativity')).write_csv(factor_path)
+    edited = Workbook.load_csv_dir(str(edit_directory)).to_model()
+    changes = compare_changes(premium, edited, holdout, unit='loss_per_exposure',
+                              weight='exposure', segments=['region'])
+    changes.totals.write_csv(output / 'edit_totals.csv')
+    changes.policies.sort('weighted_change', descending=True).head(20).write_csv(output / 'largest_changes.csv')
+    changes.contributions.write_csv(output / 'factor_changes.csv')
+    explained = edited.explain(holdout.head(5))
+    explained['contributions'].write_csv(output / 'quote_explanations.csv')
+    # Fresh validation evidence belongs to the edited artifact, not the original fit.
+    (output / 'edited_review.md').write_text(edited.report(holdout).markdown)
     print(comparison.summary)
     return comparison
 

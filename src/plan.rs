@@ -2483,6 +2483,72 @@ impl FittedModel {
         ])
     }
 
+    /// Policy-level table contributions on the linear-predictor scale.
+    /// The summary and long contribution table retain original row positions.
+    pub fn explain(&self, df: &DataFrame) -> Result<(DataFrame, DataFrame), PolarsError> {
+        use crate::glm::matching::precompute_all_matches;
+        // Share strict scoring validation, including invalid exposures and factors.
+        let predictions = self.predict(df)?;
+        let prepared = self.prepare_inputs(df, false)?;
+        let matches = precompute_all_matches(&self.model, &prepared.df)?;
+        let log_link = self.model.get_link_function() == "log";
+        let mut rows = Vec::new();
+        let mut names = Vec::new();
+        let mut kinds = Vec::new();
+        let mut table_rows: Vec<Option<u64>> = Vec::new();
+        let mut coefficients = Vec::new();
+        let mut multipliers: Vec<Option<f64>> = Vec::new();
+        let mut eta = vec![0.0; df.height()];
+        for (t, table) in self.model.tables.iter().enumerate() {
+            let factors = table.data.column("Rating_Factor")?.f64()?;
+            for row in 0..df.height() {
+                let index = matches[t][row] as usize;
+                let value = factors.get(index).unwrap();
+                eta[row] += value;
+                rows.push(row as u64);
+                names.push(self.table_names[t].clone());
+                kinds.push(if t == 0 { "intercept" } else { "table" });
+                table_rows.push(Some(index as u64));
+                coefficients.push(value);
+                multipliers.push(if log_link { Some(value.exp()) } else { None });
+            }
+        }
+        if self.exposure_role == Some(ExposureRole::Offset) {
+            if let Some(exposure) = &self.exposure {
+                let values = df.column(exposure)?.cast(&DataType::Float64)?;
+                for (row, value) in values.f64()?.into_iter().enumerate() {
+                    let value = value.unwrap();
+                    eta[row] += value.ln();
+                    rows.push(row as u64);
+                    names.push(exposure.clone());
+                    kinds.push("exposure");
+                    table_rows.push(None);
+                    coefficients.push(value.ln());
+                    multipliers.push(if log_link { Some(value) } else { None });
+                }
+            }
+        }
+        let summary = DataFrame::new(vec![
+            Series::new("row".into(), (0..df.height() as u64).collect::<Vec<_>>()).into(),
+            Series::new("linear_predictor".into(), eta).into(),
+            Series::new(
+                "link".into(),
+                vec![self.model.get_link_function(); df.height()],
+            )
+            .into(),
+            predictions.into(),
+        ])?;
+        let contributions = DataFrame::new(vec![
+            Series::new("row".into(), rows).into(),
+            Series::new("term".into(), names).into(),
+            Series::new("kind".into(), kinds).into(),
+            Series::new("table_row".into(), table_rows).into(),
+            Series::new("coefficient".into(), coefficients).into(),
+            Series::new("multiplier".into(), multipliers).into(),
+        ])?;
+        Ok((summary, contributions))
+    }
+
     /// Validate against data, using the same weight and offset roles the fit used.
     ///
     /// The actual-versus-expected frames come back carrying each categorical column's

@@ -877,6 +877,16 @@ impl PyFittedModel {
             .collect())
     }
 
+    /// Policy-level summary and long factor contributions, keyed by input row.
+    fn explain<'py>(&self, py: Python<'py>, df: PyDataFrame) -> PyResult<Bound<'py, PyDict>> {
+        let df: DataFrame = df.into();
+        let (summary, contributions) = self.inner.explain(&df).map_err(value_error)?;
+        let result = PyDict::new(py);
+        result.set_item("summary", PyDataFrame(summary))?;
+        result.set_item("contributions", PyDataFrame(contributions))?;
+        Ok(result)
+    }
+
     /// Estimated factor tables keyed by stable table names.
     fn rating_tables_by_name<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let result = PyDict::new(py);

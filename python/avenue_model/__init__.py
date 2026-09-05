@@ -24,8 +24,10 @@ from .conversion import ConversionResult, from_booster
 from .splitting import Fold, FoldFit, SplitSpec
 from .comparison import Candidate, Comparison, compare_models
 from .preparation import PreparedPricing, prepare_pricing
+from .changes import ModelChange, compare_changes
 
 __all__ = [
+    "ModelChange", "compare_changes",
     "Candidate", "Comparison", "compare_models", "PreparedPricing", "prepare_pricing",
     "ConversionResult", "from_booster", "Fold", "FoldFit", "SplitSpec",
     *(getattr(_rust, "__all__", None) or

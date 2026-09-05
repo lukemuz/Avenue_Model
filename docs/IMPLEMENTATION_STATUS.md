@@ -138,6 +138,21 @@ called dependable for arbitrary quote inputs.
 - Documentation: [PRICING_PREPARATION.md](PRICING_PREPARATION.md). Local example outputs
   are in `/tmp/avenue-auto-study`; log is `/tmp/avenue-auto-study.log`.
 
+## Completed increment: quote explanations and model-change exhibits
+
+- `FittedModel.explain` returns named summary/contribution tables with matched table
+  rows, link-scale effects, log-link multipliers, exposure application and final means.
+- `compare_changes` reconciles old/new means at policy, segment and portfolio levels,
+  retains matched factor changes and explicitly identifies added/removed terms.
+- Tests reconstruct predictions for log/identity links, fitted/loaded models and zero
+  exposure; unmatched rows remain strict. A known 10% manual workbook edit is correctly
+  attributed to its factor and reconciles to portfolio/segment changes.
+- The auto study now demonstrates a 5% manual factor edit, quote explanations, largest
+  policy movements and separate validation of the edited artifact. Its observed
+  portfolio change is 5.000000000000062%, within floating-point precision of 5%.
+- All 64 Python tests, 258 Rust tests, formatting and the extended auto study pass.
+  Usage and attribution limits: [EXPLANATIONS.md](EXPLANATIONS.md).
+
 ## Next required work
 
 Complete general response-unit semantics and complete LightGBM missing/default routing, constant boosters and preprocessing persistence.
