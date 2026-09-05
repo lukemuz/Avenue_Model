@@ -9,7 +9,7 @@ from pathlib import Path
 import random
 
 import polars as pl
-from avenue_model import Candidate, Plan, SplitSpec, Workbook, compare_models, prepare_pricing, compare_changes
+from avenue_model import Candidate, Plan, SplitSpec, Workbook, compare_models, prepare_pricing, compare_changes, frequency_severity
 
 
 def synthetic(path):
@@ -66,9 +66,10 @@ def run(output, data_path=None):
         expected = model.predict(quotes).to_series()
         if (actual - expected).abs().max() > 1e-8:
             raise RuntimeError('Workbook predictions changed')
-    product = frequency.predict(holdout).to_series() * severity.predict(holdout).to_series()
+    product = frequency_severity(frequency, severity)
+    product.save(output / 'frequency_severity')
     comparison = compare_models(
-        holdout, {'frequency_times_severity': Candidate(product, 'loss_per_exposure', True),
+        holdout, {'frequency_times_severity': Candidate(product, 'loss_per_exposure'),
                   'tweedie': Candidate(premium, 'loss_per_exposure')},
         target='avenue_pure_premium', unit='loss_per_exposure', metric='tweedie',
         tweedie_power=1.5, weight='exposure', segments=['region', 'year'], bootstrap=50, seed=47)

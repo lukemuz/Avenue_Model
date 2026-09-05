@@ -185,6 +185,24 @@ called dependable for arbitrary quote inputs.
   Read-only reproduction: `/tmp/avenue-check-captured-missing.py`; output is in
   `/tmp/avenue-captured-missing-parity.log`. Historical evaluation evidence is intact.
 
+## Completed increment: named composition and default preservation
+
+- Fixed a reproduced legacy composition defect: wildcard category sentinels were
+  renumbered as ordinary levels when merging named category encodings. Defaults now
+  survive composition and workbook reload even with different component code maps.
+- Added `frequency_severity`, `sum_loss_costs` and `ComposedModel` with explicit unit,
+  retained names/components, response-scale operations and no inherited likelihood.
+  Validation requires a common explicit metric. Count frequencies are converted to
+  rates without requiring exposure on quote data.
+- Nested composition manifests plus independently editable workbooks preserve scoring
+  lineage/encodings. They do not claim to preserve full analytical fit evidence.
+- The auto study now uses and saves the named frequency-severity model. All 75 Python
+  tests and the extended study pass; 258 Rust tests and formatting pass.
+- The exact-cell composition test also exposes nonconvergence on perfectly fitted
+  synthetic models. Composition preserves the failure status. Investigate the solver's
+  stopping rule on these fixtures; do not treat successful scoring as convergence.
+- Usage and limits: [COMPOSITION.md](COMPOSITION.md).
+
 ## Next required work
 
 Complete general response-unit semantics and complete preprocessing persistence and evaluate the remaining explicit conversion limitations.

@@ -73,6 +73,21 @@ class ConversionContract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'zero_as_missing'):
             FittedModel.from_lgbm_json(json.dumps(dump(root, ['x'])))
 
+    def test_composition_preserves_named_category_defaults(self):
+        left_dump = dump(split(0, '0', leaf(3.), leaf(7.), True), ['region'])
+        right_dump = dump(split(0, '1', leaf(2.), leaf(11.), True), ['region'])
+        quotes = pl.DataFrame({'region': ['A', 'B', 'new', None]})
+        for mode in ('analysis', 'max'):
+            left = FittedModel.from_lgbm_json(json.dumps(left_dump), consolidation=mode).with_categories({'region': ['A', 'B']})
+            right = FittedModel.from_lgbm_json(json.dumps(right_dump), consolidation=mode).with_categories({'region': ['B', 'A']})
+            combined = left + right
+            expected = left.predict(quotes)['predictions'] + right.predict(quotes)['predictions']
+            with tempfile.TemporaryDirectory() as path:
+                combined.to_workbook().save_csv_dir(path)
+                for artifact in (combined, Workbook.load_csv_dir(path).to_model()):
+                    actual = artifact.predict(quotes)['predictions']
+                    self.assertEqual(actual.to_list(), expected.to_list())
+
     def test_constant_boosters_and_later_constant_trees(self):
         constant = {'leaf_value': 2.5, 'leaf_count': 100}
         base = dump(constant, ['x'])

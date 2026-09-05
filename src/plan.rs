@@ -2149,12 +2149,18 @@ impl FittedModel {
 /// model which produced them.
 fn merged_encoding(left: &Encoding, right: &Encoding) -> Encoding {
     let mut columns: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut wildcard_columns = HashSet::new();
     for source in [left, right] {
         for (column, levels) in &source.maps {
-            columns
-                .entry(column.clone())
-                .or_default()
-                .extend(levels.iter().map(|(name, _)| name.clone()));
+            if levels.iter().any(|(_, code)| *code == WILDCARD_CODE) {
+                wildcard_columns.insert(column.clone());
+            }
+            columns.entry(column.clone()).or_default().extend(
+                levels
+                    .iter()
+                    .filter(|(_, code)| *code != WILDCARD_CODE)
+                    .map(|(name, _)| name.clone()),
+            );
         }
     }
     Encoding {
@@ -2163,11 +2169,14 @@ fn merged_encoding(left: &Encoding, right: &Encoding) -> Encoding {
             .map(|(column, mut names)| {
                 names.sort();
                 names.dedup();
-                let levels = names
+                let mut levels: Vec<_> = names
                     .into_iter()
                     .enumerate()
                     .map(|(code, name)| (name, code as i32))
                     .collect();
+                if wildcard_columns.contains(&column) {
+                    levels.push(("(any other level)".to_string(), WILDCARD_CODE));
+                }
                 (column, levels)
             })
             .collect(),
@@ -2209,6 +2218,9 @@ fn remap_model_encoding(
                 .into_iter()
                 .map(|code| {
                     code.map(|old_code| {
+                        if old_code == WILDCARD_CODE {
+                            return Ok(WILDCARD_CODE);
+                        }
                         old_names
                             .get(&old_code)
                             .and_then(|name| new_codes.get(name).copied())

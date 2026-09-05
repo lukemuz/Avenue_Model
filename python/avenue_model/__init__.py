@@ -26,8 +26,10 @@ from .comparison import Candidate, Comparison, compare_models
 from .preparation import PreparedPricing, prepare_pricing
 from .changes import ModelChange, compare_changes
 from .adapters import from_pandas
+from .composition import ComposedModel, frequency_severity, sum_loss_costs
 
 __all__ = [
+    "ComposedModel", "frequency_severity", "sum_loss_costs",
     "from_pandas",
     "ModelChange", "compare_changes",
     "Candidate", "Comparison", "compare_models", "PreparedPricing", "prepare_pricing",
