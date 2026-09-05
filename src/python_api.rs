@@ -601,6 +601,26 @@ impl PyFittedModel {
         })
     }
 
+    /// Inference evidence from the original fit; absent for loaded/converted scorers.
+    #[getter]
+    fn inference_summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let out = PyDict::new(py);
+        if let Some(info) = self
+            .inner
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.inference.as_ref())
+        {
+            out.set_item("dispersion", info.dispersion)?;
+            out.set_item("pearson_chi2", info.pearson_chi2)?;
+            out.set_item("df_residual", info.df_residual)?;
+            out.set_item("n_parameters", info.n_parameters)?;
+            out.set_item("effective_parameters", info.effective_parameters)?;
+            out.set_item("standard_errors_note", &info.standard_errors_note)?;
+        }
+        Ok(out)
+    }
+
     /// Whether the fit converged. `None` when this model was not fitted here, so a
     /// caller cannot mistake "not fitted" for "did not converge".
     #[getter]

@@ -331,3 +331,25 @@ that evidence.
 - [Study limitations](BOOSTER_STUDY.md) explicitly cover shared LightGBM CV binning,
   unknown booster GLM-style convergence, post-selection inference, timing scope and
   CV table screening versus final-artifact resource limits.
+
+## Completed increment: direct intervals and quasi-Poisson review
+
+- Original fitted models expose `inference_summary` with Pearson statistic, residual
+  degrees of freedom, dispersion, parameter counts and unavailable-inference notes.
+  Analytical bundles retain that source evidence.
+- `coefficient_intervals` returns named coefficient and log-link relativity intervals,
+  adjusted standard errors, reference/unavailable status and explicit conditional-Wald
+  metadata. It refuses loaded, nonconverged, penalized or inference-disabled models.
+- The explicit quasi-Poisson route rescales original Poisson uncertainty using Pearson
+  dispersion. It does not change means, family, likelihood or AIC. It supports the
+  existing rate/exposure-weight and count/offset conventions, not replicate weights.
+- Independent OLS and information-matrix/Pearson calculations agree, including both
+  exposure conventions; prediction arrays remain unchanged. Rejection paths are tested.
+  All 94 Python tests and 258 Rust tests pass; six Rust tests and one doc test remain
+  ignored. Release extension rebuilt successfully.
+- The complete auto study ran at `/tmp/avenue-auto-interval-study`, now exporting direct
+  intervals for fixed GLMs and separate quasi-Poisson frequency intervals.
+- [Interpretation and limitations](COEFFICIENT_INTERVALS.md) distinguish reference
+  constraints, model-based/estimated dispersion, aggregate-record degrees of freedom,
+  underdispersion, data-selected structures, and clustering. Robust covariance,
+  whole-term tests and post-selection uncertainty remain open.

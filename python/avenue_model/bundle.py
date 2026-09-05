@@ -79,6 +79,7 @@ def save_bundle(model, directory, *, fit_options=None, training_id=None, fold=No
         'plan': None if model.plan is None else json.loads(model.plan.to_json()),
         'input_schema': model.input_schema,
         'fit_summary': report.fit_summary,
+        'inference_summary': model.inference_summary,
         'findings': report.findings,
         'resolved': report.resolved,
         'estimates': {name: frame.to_dicts() for name, frame in model.rating_tables_by_name().items()},
