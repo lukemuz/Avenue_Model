@@ -931,12 +931,6 @@ impl Plan {
     ///
     /// `prepared` must come from [`Plan::prepare`].
     pub fn build(&self, prepared: &Prepared) -> Result<BuiltPlan, PolarsError> {
-        if self.terms.is_empty() {
-            return Err(PolarsError::ComputeError(
-                "A plan needs at least one term. Add one with Plan::with(Term::...).".into(),
-            ));
-        }
-
         let df = &prepared.df;
         let weights: Vec<f64> = match &prepared.weight_col {
             Some(col) => df
@@ -2240,9 +2234,17 @@ impl FittedModel {
         )
     }
 
-    /// Prepare scoring data with the encoding this model was fitted with.
+    /// Prepare validation data, including response weights and offsets, with the fitted encoding.
     pub fn prepare(&self, df: &DataFrame) -> Result<Prepared, PolarsError> {
+        self.prepare_inputs(df, true)
+    }
+
+    fn prepare_inputs(&self, df: &DataFrame, for_validation: bool) -> Result<Prepared, PolarsError> {
         if let Some(plan) = &self.plan {
+            let mut plan = plan.clone();
+            if !for_validation {
+                plan.exposure = None;
+            }
             return plan.prepare(df, Some(&self.encoding));
         }
 
@@ -2269,7 +2271,7 @@ impl FittedModel {
 
         let mut weight_col = None;
         let mut offset_col = None;
-        if let Some(exposure) = &self.exposure {
+        if let Some(exposure) = self.exposure.as_ref().filter(|_| for_validation) {
             let series = out
                 .column(exposure)
                 .map_err(|_| missing_column(exposure, df))?
@@ -2302,8 +2304,36 @@ impl FittedModel {
 
     /// Fitted means on the response scale.
     pub fn predict(&self, df: &DataFrame) -> Result<Series, PolarsError> {
-        let prepared = self.prepare(df)?;
-        self.model.predict(&prepared.df)
+        // Fitting weights are not scoring inputs. Prepare predictors using the
+        // fitted encoding, then apply an offset only for a declared offset mean.
+        let prepared = self.prepare_inputs(df, false)?;
+        let mut eta = self.model.predict_linear(&prepared.df)?;
+        if self.exposure_role == Some(ExposureRole::Offset) {
+            if let Some(exposure) = &self.exposure {
+                let values = df
+                    .column(exposure)
+                    .map_err(|_| missing_column(exposure, df))?
+                    .cast(&DataType::Float64)?;
+                for (row, value) in values.f64()?.into_iter().enumerate() {
+                    let value = value
+                        .filter(|v| v.is_finite() && *v >= 0.0)
+                        .ok_or_else(|| {
+                            PolarsError::ComputeError(
+                                format!(
+                                    "Exposure '{}' at row {} must be finite, non-null and nonnegative.",
+                                    exposure, row
+                                )
+                                .into(),
+                            )
+                        })?;
+                    eta[row] += value.ln();
+                }
+            }
+        }
+        Ok(Series::new(
+            "predictions".into(),
+            self.model.apply_link_function(eta),
+        ))
     }
 
     /// Validate against data, using the same weight and offset roles the fit used.

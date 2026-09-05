@@ -569,12 +569,13 @@ mod plan_tests {
     }
 
     #[test]
-    fn an_empty_plan_and_a_missing_column_both_explain_themselves() {
+    fn an_intercept_only_plan_builds_and_a_missing_column_explains_itself() {
         let df = motor(120);
 
         let empty = Plan::frequency("exposure");
-        let err = expect_err(empty.build(&empty.prepare(&df, None).unwrap()));
-        assert!(err.contains("at least one term"), "{}", err);
+        let built = empty.build(&empty.prepare(&df, None).unwrap()).unwrap();
+        assert_eq!(built.model.tables.len(), 1);
+        assert_eq!(built.table_names, vec!["intercept"]);
 
         let missing = Plan::frequency("exposure").with(Term::categorical("postcode"));
         let err = expect_err(missing.prepare(&df, None));

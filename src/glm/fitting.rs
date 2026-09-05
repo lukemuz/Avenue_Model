@@ -3144,10 +3144,10 @@ fn validate_inputs(
         }
     }
 
-    // Check that model has at least 2 tables (mean + at least one feature table)
-    if model.tables.len() < 2 {
+    // An intercept alone is a valid GLM; only a model without any tables is invalid.
+    if model.tables.is_empty() {
         return Err(PolarsError::ComputeError(
-            "Model must have at least 2 tables (mean + feature tables)".into(),
+            "Model must have at least an intercept table".into(),
         ));
     }
 
