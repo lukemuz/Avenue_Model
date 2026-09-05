@@ -5,6 +5,10 @@ Branch: `improvement/pricing-workflow`.
 The full scope and acceptance criteria remain in [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md).
 This record is a progress log, not a declaration that the plan is complete.
 Existing evaluation reports, scripts and recorded runs have been preserved.
+Entries below describe their individual implementation checkpoints; phrases such as
+"remains open" and recorded test counts are historical within those entries. For the
+current capability summary, use [workflow support](WORKFLOW_SUPPORT.md); for
+requirement-level evidence and outstanding work, use the [readiness audit](READINESS_AUDIT.md).
 
 ## In progress: exact continuous spline effects
 
