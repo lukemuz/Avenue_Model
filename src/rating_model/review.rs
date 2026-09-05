@@ -4,6 +4,17 @@ use polars::prelude::*;
 use std::collections::HashMap;
 
 impl RatingTable {
+    pub(crate) fn ensure_review_columns_available(&self, names: &[&str]) -> Result<(), PolarsError> {
+        for name in names {
+            if self.data.column(name).is_ok() {
+                return Err(PolarsError::ComputeError(format!(
+                    "Derived review column '{name}' conflicts with an existing table column; rename the predictor before creating this exhibit"
+                ).into()));
+            }
+        }
+        Ok(())
+    }
+
     /// Label complete ordered grids only. General first-match tables can describe
     /// nonrectangular regions, so their thresholds alone do not prove lower bounds.
     pub(crate) fn review_data(&self) -> Result<DataFrame, PolarsError> {
@@ -11,6 +22,7 @@ impl RatingTable {
         if self.metadata.spline.is_some() || self.get_numeric_columns().is_empty() {
             return Ok(data);
         }
+        self.ensure_review_columns_available(&["Band_Interval_Status"])?;
         let mut numeric: Vec<_> = self.get_numeric_columns().keys().cloned().collect();
         numeric.sort();
         let mut categorical: Vec<_> = self.get_categorical_columns().keys().cloned().collect();

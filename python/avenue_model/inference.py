@@ -129,6 +129,12 @@ def coefficient_intervals(model, *, confidence=.95, dispersion='model'):
     z = -NormalDist().inv_cdf((1. - confidence) / 2.)
     tables = {}
     for name, table in model.rating_tables_by_name().items():
+        generated = ['Interval_Standard_Error', 'Coefficient_Lower', 'Coefficient_Upper', 'Interval_Status']
+        if 'Relativity' in table.columns:
+            generated += ['Relativity_Lower', 'Relativity_Upper']
+        collisions = sorted(set(generated).intersection(table.columns))
+        if collisions:
+            raise ValueError(f'Derived interval columns {collisions} conflict with existing columns in {name!r}; rename the predictors before creating this exhibit')
         errors, lowers, uppers, statuses = [], [], [], []
         for row in table.iter_rows(named=True):
             coefficient, error = row['Coefficient'], row['Standard_Error']

@@ -6,6 +6,33 @@ from avenue_model import Plan, Workbook, coefficient_intervals
 
 
 class BandReviewTests(unittest.TestCase):
+    def test_category_level_labels_cannot_replace_an_interaction_predictor(self):
+        data = pl.DataFrame({'g': ['a', 'a', 'b', 'b'] * 10,
+                             'g_Level': [-1., 1., -1., 1.] * 10,
+                             'y': [1., 2., 3., 5.] * 10})
+        model = (Plan('gaussian').categorical('g', base='first').banded('g_Level', breaks=[0.])
+                 .interaction(['g', 'g_Level'], [None, [0.]]).fit(data, 'y'))
+        predictions = model.predict(data).to_dicts()
+        for review in [model.rating_tables_by_name, lambda: model.validate(data)]:
+            with self.assertRaisesRegex(ValueError, 'conflicts'):
+                review()
+        self.assertEqual(model.predict(data).to_dicts(), predictions)
+
+    def test_derived_columns_cannot_overwrite_predictors_in_review(self):
+        for name in ['Coefficient', 'Band_Interval_Status', 'N', 'Coefficient_Lower']:
+            data = pl.DataFrame({name: [-1., 1.] * 20, 'y': [1., 2.] * 20})
+            model = Plan('poisson').banded(name, breaks=[0.]).fit(data, 'y')
+            predictions = model.predict(data).to_dicts()
+            with self.assertRaisesRegex(ValueError, 'conflict'):
+                if name == 'Coefficient_Lower':
+                    coefficient_intervals(model)
+                elif name == 'N':
+                    model.validate(data)
+                else:
+                    model.rating_tables_by_name()
+            self.assertEqual(model.predict(data).to_dicts(), predictions)
+            self.assertIn(name, model.to_workbook().tables[model.table_names.index(name)].columns)
+
     def test_estimates_validation_intervals_and_reload_share_numeric_bounds(self):
         data = pl.DataFrame({'x': [-1., 0., 1., 5., 6.] * 20,
                              'y': [1., 1., 2., 2., 3.] * 20})

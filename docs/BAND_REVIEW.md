@@ -19,8 +19,12 @@ Irregular, incomplete, duplicate, unordered, wildcard or missing-route tables ca
 describe regions that these simple rectangles cannot safely express. They retain
 their thresholds and have `Band_Interval_Status="requires_match_review"`, without
 invented interval bounds. Inspect their matching behavior and quote explanations.
-A generated interval label that collides with an existing predictor raises an
-actionable error instead of replacing that predictor in the exhibit.
+A generated review column that collides with an existing predictor raises an
+actionable error instead of replacing that predictor in the exhibit. This includes
+numeric bounds and band status, category labels such as `region_Level`, coefficient
+and interval fields, and A/E fields such as `N` and `Exposure`. Rename the conflicting
+predictor before fitting to produce the affected exhibit. Scoring and workbook
+export continue to use the original predictor names and values.
 
 Splines retain their separate semantics: coefficient rows are knot values, while
 validation rows show spline support intervals. They are not labeled as constant bands.

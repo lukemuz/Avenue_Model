@@ -2950,6 +2950,12 @@ impl FittedModel {
                     code.and_then(|c| self.encoding.label_for(&name, c).map(str::to_string))
                 })
                 .collect();
+            let label_name = format!("{}_Level", name);
+            if frame.column(&label_name).is_ok() {
+                return Err(PolarsError::ComputeError(format!(
+                    "Derived review column '{label_name}' conflicts with an existing table column"
+                ).into()));
+            }
             frame.with_column(Series::new(
                 format!("{}_Level", name).as_str().into(),
                 labels,
@@ -2975,6 +2981,10 @@ impl FittedModel {
 
         let mut out = Vec::with_capacity(self.model.tables.len());
         for (t, table) in self.model.tables.iter().enumerate() {
+            table.ensure_review_columns_available(&["Coefficient", "Standard_Error", "Status"])?;
+            if self.model.get_link_function() == "log" {
+                table.ensure_review_columns_available(&["Relativity"])?;
+            }
             let mut data = table.review_data()?;
             let coefficients: Vec<f64> = data
                 .column("Rating_Factor")?
@@ -3022,6 +3032,7 @@ impl FittedModel {
                     continue;
                 }
                 if let Ok(codes) = table.data.column(&name).and_then(|c| c.i32()) {
+                    table.ensure_review_columns_available(&[format!("{}_Level", name).as_str()])?;
                     let labels: Vec<Option<String>> = codes
                         .into_iter()
                         .map(|c| {
