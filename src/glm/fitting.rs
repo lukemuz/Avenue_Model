@@ -620,6 +620,10 @@ pub fn fit_glm_with_diagnostics(
     offset_col: Option<&str>,
     options: GLMOptions,
 ) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
+    if model.tables.iter().any(|t| t.metadata.spline.is_some()) {
+        return Err(PolarsError::ComputeError(
+            "Continuous spline fitting is not implemented; spline tables currently support scoring and workbook editing only".into()));
+    }
     validate_inputs(model, df, target_col, weight_col, offset_col)?;
     let covariance_label = if options.covariance_cluster.is_some() {
         "Cluster"

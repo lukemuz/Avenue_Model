@@ -17,6 +17,13 @@ fixed unpenalized designs, with independent covariance checks, explicit unavaila
 cases and source-bundle retention. The follow-up passes 116 Python and 267 Rust tests;
 the clean-wheel manifests below remain evidence for the earlier audited revision.
 
+The subsequent [continuous-spline increment](SMOOTH_EFFECTS_IMPLEMENTATION.md) adds
+exact scoring, explanations, validation support intervals, composition and editable
+version-4 workbook persistence. Independent SciPy probes cover scalar/batch scoring
+and both workbook formats. All 275 Rust and 118 Python tests pass from editable source.
+Smooth Plan terms, spline fitting, inference and shape recovery remain open; this
+does not supersede the historical clean-wheel evidence below.
+
 ## Fresh installed-wheel evidence
 
 [The runner](../studies/readiness_acceptance.py) verifies every installed package payload

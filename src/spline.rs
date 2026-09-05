@@ -327,6 +327,17 @@ pub(crate) struct NaturalCubicCurve {
 }
 
 impl NaturalCubicCurve {
+    /// Compile editable knot values directly, without constructing a cardinal basis.
+    pub(crate) fn new(knots: Vec<f64>, values: Vec<f64>) -> SplineResult<Self> {
+        let geometry = Geometry::new(knots)?;
+        let coefficients = geometry.coefficients(&values)?;
+        Ok(Self {
+            geometry,
+            values,
+            coefficients,
+        })
+    }
+
     pub(crate) fn evaluate(&self, x: f64) -> SplineResult<f64> {
         self.derivative(x, 0)
     }

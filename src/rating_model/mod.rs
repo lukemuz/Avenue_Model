@@ -114,6 +114,13 @@ impl Monotonicity {
     }
 }
 
+/// Exact continuous interpolation and extrapolation rules for a knot-value table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SplineKind {
+    NaturalCubicLinearTails,
+}
+
 /// Metadata for a RatingTable
 #[derive(Debug, Clone)]
 pub struct TableMetadata {
@@ -123,6 +130,7 @@ pub struct TableMetadata {
     /// How many free parameters this table's rows represent. See [`TableSemantics`].
     pub semantics: TableSemantics,
     pub monotonicity: Option<Monotonicity>,
+    pub spline: Option<SplineKind>,
 }
 
 impl Default for TableMetadata {
@@ -133,6 +141,7 @@ impl Default for TableMetadata {
             is_updatable: true,
             semantics: TableSemantics::default(),
             monotonicity: None,
+            spline: None,
         }
     }
 }
@@ -256,6 +265,20 @@ impl RatingTable {
     }
 
     pub fn find_row_match(&self, feature_values: &HashMap<String, FeatureValue>) -> Option<usize> {
+        if self.metadata.spline.is_some() {
+            let (name, _) = self.spline_curve().ok()??;
+            return match feature_values.get(&name) {
+                Some(FeatureValue::Numeric(x)) if x.is_finite() => {
+                    let knots = self.data.column(&name).ok()?.f64().ok()?;
+                    Some(
+                        (0..knots.len() - 1)
+                            .find(|&i| *x <= knots.get(i).unwrap())
+                            .unwrap_or(knots.len() - 1),
+                    )
+                }
+                _ => None,
+            };
+        }
         // Early return if we don't have all required features
         if !self.has_all_required_features(feature_values) {
             return None;
@@ -369,6 +392,17 @@ impl RatingTable {
     }
 
     pub fn predict(&self, feature_values: &HashMap<String, FeatureValue>) -> f64 {
+        if self.metadata.spline.is_some() {
+            return self
+                .spline_curve()
+                .ok()
+                .flatten()
+                .and_then(|(name, curve)| match feature_values.get(&name) {
+                    Some(FeatureValue::Numeric(x)) => curve.evaluate(*x).ok(),
+                    _ => None,
+                })
+                .unwrap_or(f64::NAN);
+        }
         // Matches a row to the feature values and returns the rating factor, does not apply the link function
         match self.find_row_match(feature_values) {
             Some(row) => {
@@ -411,6 +445,13 @@ impl RatingTable {
     }
 
     pub fn predict_batch(&self, df: &DataFrame) -> Vec<f64> {
+        if self.metadata.spline.is_some() {
+            return self
+                .continuous_values(df)
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| vec![f64::NAN; df.height()]);
+        }
         // Predicts a batch of rows, does not apply the link function
         // Uses parallel processing if the number of rows is greater than the ROW_PARALLEL_THRESHOLD
         // Otherwise, it processes rows sequentially
@@ -526,12 +567,70 @@ impl RatingTable {
 
     // NEW: Offset-related methods
 
+    /// Interpret the numeric column as knots and factors as function values on
+    /// the link scale. Interpolate naturally and use endpoint-tangent linear tails.
+    /// Spline fitting is not yet supported; this builder declares a scoring table.
+    pub fn as_natural_cubic(mut self) -> Result<Self, PolarsError> {
+        self.metadata.spline = Some(SplineKind::NaturalCubicLinearTails);
+        self.spline_curve()?;
+        Ok(self)
+    }
+
+    pub(crate) fn spline_curve(
+        &self,
+    ) -> Result<Option<(String, crate::spline::NaturalCubicCurve)>, PolarsError> {
+        if self.metadata.spline.is_none() {
+            return Ok(None);
+        }
+        if self.numeric_columns.len() != 1
+            || !self.categorical_columns.is_empty()
+            || self.data.width() != 2
+            || self.metadata.semantics != TableSemantics::Step
+            || self.metadata.monotonicity.is_some()
+        {
+            return Err(PolarsError::ComputeError("A natural cubic table requires exactly one Float64 knot column and Rating_Factor, without variate or monotonic semantics".into()));
+        }
+        let name = self.numeric_columns.keys().next().unwrap();
+        let knots = self.data.column(name)?.f64()?;
+        let values = self.data.column("Rating_Factor")?.f64()?;
+        if knots.null_count() > 0 || values.null_count() > 0 {
+            return Err(PolarsError::ComputeError(
+                "Spline knots and factors must not contain nulls".into(),
+            ));
+        }
+        let curve = crate::spline::NaturalCubicCurve::new(
+            knots.into_no_null_iter().collect(),
+            values.into_no_null_iter().collect(),
+        )
+        .map_err(|e| PolarsError::ComputeError(e.into()))?;
+        Ok(Some((name.clone(), curve)))
+    }
+
+    /// Compile once per batch from the current editable factors. Invalid quotes
+    /// produce NaN, allowing the strict scorer to identify their row status.
+    pub(crate) fn continuous_values(
+        &self,
+        df: &DataFrame,
+    ) -> Result<Option<Vec<f64>>, PolarsError> {
+        let Some((name, curve)) = self.spline_curve()? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            df.column(&name)?
+                .f64()?
+                .into_iter()
+                .map(|x| x.and_then(|x| curve.evaluate(x).ok()).unwrap_or(f64::NAN))
+                .collect(),
+        ))
+    }
+
     /// Declare an order constraint on one numeric step table. The factors are
     /// updated by fitting; this declaration does not rewrite existing factors.
     pub fn as_monotone(mut self, direction: Monotonicity) -> Result<Self, PolarsError> {
         if self.numeric_columns.len() != 1
             || !self.categorical_columns.is_empty()
             || self.metadata.semantics != TableSemantics::Step
+            || self.metadata.spline.is_some()
         {
             return Err(PolarsError::ComputeError(
                 "Monotonicity requires a one-dimensional numeric step table".into(),
@@ -627,6 +726,11 @@ impl RatingTable {
         values: Vec<f64>,
         degree: usize,
     ) -> Result<Self, PolarsError> {
+        if self.metadata.spline.is_some() {
+            return Err(PolarsError::ComputeError(
+                "A spline cannot also be a banded polynomial variate".into(),
+            ));
+        }
         let label = if self.metadata.name.is_empty() {
             "table".to_string()
         } else {
@@ -1091,6 +1195,28 @@ impl RatingModel {
 
         let n_rows = df.height();
         let n_tables = self.tables.len();
+
+        if self.tables.iter().any(|t| t.metadata.spline.is_some()) {
+            let matches = crate::glm::matching::precompute_all_matches(self, df)?;
+            let mut eta = vec![0.0; n_rows];
+            for (t, table) in self.tables.iter().enumerate() {
+                if let Some(values) = table.continuous_values(df)? {
+                    for (sum, value) in eta.iter_mut().zip(values) {
+                        *sum += value;
+                    }
+                } else {
+                    let factors = table.data.column("Rating_Factor")?.f64()?;
+                    for row in 0..n_rows {
+                        eta[row] += if matches[t][row] == crate::glm::matching::NO_MATCH {
+                            f64::NAN
+                        } else {
+                            factors.get(matches[t][row] as usize).unwrap_or(f64::NAN)
+                        };
+                    }
+                }
+            }
+            return Ok(eta);
+        }
 
         // Thresholds could be tuned based on benchmarking
         const ROW_PARALLEL_THRESHOLD: usize = 10;

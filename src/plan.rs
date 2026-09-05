@@ -402,6 +402,11 @@ impl Plan {
             ));
         }
         for (index, table) in model.tables.iter().enumerate() {
+            if table.metadata.spline.is_some() {
+                return Err(PolarsError::ComputeError(
+                    "Carrying a spline into a fitting plan is not implemented".into(),
+                ));
+            }
             self.terms.push(Term::Given {
                 name: format!("{}.{}", prefix, table_names[index]),
                 table: crate::workbook::frame_to_records(&table.data)?,
@@ -2564,6 +2569,7 @@ impl FittedModel {
         let mut unmatched = vec![Vec::<String>::new(); df.height()];
         for (t, table) in self.model.tables.iter().enumerate() {
             let factors = table.data.column("Rating_Factor")?.f64()?;
+            let continuous = table.continuous_values(&prepared.df)?;
             for row in 0..df.height() {
                 if matches[t][row] == NO_MATCH {
                     unmatched[row].push(
@@ -2573,7 +2579,9 @@ impl FittedModel {
                             .unwrap_or_else(|| format!("table_{}", t)),
                     );
                 } else {
-                    eta[row] += factors.get(matches[t][row] as usize).unwrap_or(f64::NAN);
+                    eta[row] += continuous.as_ref().map(|v| v[row]).unwrap_or_else(|| {
+                        factors.get(matches[t][row] as usize).unwrap_or(f64::NAN)
+                    });
                 }
             }
         }
@@ -2648,14 +2656,28 @@ impl FittedModel {
         let mut eta = vec![0.0; df.height()];
         for (t, table) in self.model.tables.iter().enumerate() {
             let factors = table.data.column("Rating_Factor")?.f64()?;
+            let continuous = table.continuous_values(&prepared.df)?;
             for row in 0..df.height() {
                 let index = matches[t][row] as usize;
-                let value = factors.get(index).unwrap();
+                let value = continuous
+                    .as_ref()
+                    .map(|v| v[row])
+                    .unwrap_or_else(|| factors.get(index).unwrap());
                 eta[row] += value;
                 rows.push(row as u64);
                 names.push(self.table_names[t].clone());
-                kinds.push(if t == 0 { "intercept" } else { "table" });
-                table_rows.push(Some(index as u64));
+                kinds.push(if continuous.is_some() {
+                    "spline"
+                } else if t == 0 {
+                    "intercept"
+                } else {
+                    "table"
+                });
+                table_rows.push(if continuous.is_some() {
+                    None
+                } else {
+                    Some(index as u64)
+                });
                 coefficients.push(value);
                 multipliers.push(if log_link { Some(value.exp()) } else { None });
             }

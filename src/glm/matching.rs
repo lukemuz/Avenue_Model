@@ -77,6 +77,7 @@ pub fn precompute_all_matches(
 
     for (t, table) in model.tables.iter().enumerate() {
         reject_unreadable_columns(table, t)?;
+        table.spline_curve()?;
     }
 
     Ok(model
@@ -126,6 +127,31 @@ fn reject_unreadable_columns(table: &RatingTable, index: usize) -> Result<(), Po
 
 /// Pre-computes matches for a single table.
 fn precompute_table_matches(table: &RatingTable, df: &DataFrame, n_rows: usize) -> Vec<u32> {
+    if table.metadata.spline.is_some() {
+        // These are support groups, not lookup factors: the final group covers
+        // the last interval and the whole right tail. Scoring evaluates the curve.
+        let name = table.get_numeric_columns().keys().next().unwrap();
+        let knots: Vec<f64> = table
+            .data
+            .column(name)
+            .unwrap()
+            .f64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect();
+        return match df.column(name).and_then(|c| c.f64()) {
+            Ok(xs) => xs
+                .into_iter()
+                .map(|x| match x {
+                    Some(x) if x.is_finite() => {
+                        knots[..knots.len() - 1].partition_point(|k| *k < x) as u32
+                    }
+                    _ => NO_MATCH,
+                })
+                .collect(),
+            Err(_) => vec![NO_MATCH; n_rows],
+        };
+    }
     match plan_for(table, df) {
         MatchPlan::Constant(row) => vec![row; n_rows],
         MatchPlan::SortedNumeric { column, thresholds } => {

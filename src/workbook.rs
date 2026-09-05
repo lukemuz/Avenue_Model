@@ -38,7 +38,7 @@
 //! because fitting reconstructs tables on every sweep and must not pay for it.
 
 use crate::plan::Encoding;
-use crate::rating_model::{LinkFunction, Monotonicity, RatingModel, RatingTable};
+use crate::rating_model::{LinkFunction, Monotonicity, RatingModel, RatingTable, SplineKind};
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -46,8 +46,9 @@ use std::path::{Path, PathBuf};
 
 /// Bumped when the on-disk shape changes in a way older readers cannot handle.
 // Version 2 defines missing-only rows; version 3 preserves monotonic constraints.
+// Version 4 declares exact natural cubic scoring with linear tails.
 // Ordinary workbooks continue to use version 2 for compatibility.
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 
 /// Factors that lie this far off the variate's own curve are worth remarking on.
 const VARIATE_TOLERANCE: f64 = 1e-6;
@@ -126,6 +127,8 @@ pub struct TableManifest {
     pub variate: Option<VariateManifest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub monotonicity: Option<Monotonicity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spline: Option<SplineKind>,
 }
 
 /// Everything about a model that its tables cannot say on their own.
@@ -565,6 +568,7 @@ impl Workbook {
         let mut manifests = Vec::with_capacity(model.tables.len());
 
         for (index, table) in model.tables.iter().enumerate() {
+            table.spline_curve()?;
             let factors: Vec<f64> = table
                 .data
                 .column("Rating_Factor")?
@@ -626,6 +630,7 @@ impl Workbook {
                 file: Some(csv_file_name(index, &table_names[index])),
                 is_offset: table.metadata.is_offset,
                 monotonicity: table.metadata.monotonicity,
+                spline: table.metadata.spline,
                 locked_rows,
                 variate: table.variate_values().map(|values| VariateManifest {
                     values: values.to_vec(),
@@ -637,12 +642,14 @@ impl Workbook {
 
         Ok(Workbook {
             manifest: Manifest {
-                format_version: if model
+                format_version: if model.tables.iter().any(|t| t.metadata.spline.is_some()) {
+                    FORMAT_VERSION
+                } else if model
                     .tables
                     .iter()
                     .any(|t| t.metadata.monotonicity.is_some())
                 {
-                    FORMAT_VERSION
+                    3
                 } else {
                     2
                 },
@@ -671,6 +678,13 @@ impl Workbook {
     /// Every blocking fault is reported together, not just the first: a caller fixing a
     /// hand-edited file should learn everything wrong with it in one pass.
     pub fn to_model(&self) -> Result<crate::plan::FittedModel, PolarsError> {
+        if self.manifest.format_version < 4
+            && self.manifest.tables.iter().any(|t| t.spline.is_some())
+        {
+            return Err(PolarsError::ComputeError(
+                "Continuous spline tables require workbook format version 4".into(),
+            ));
+        }
         if self.manifest.format_version > FORMAT_VERSION {
             return Err(PolarsError::ComputeError(
                 format!(
@@ -705,20 +719,47 @@ impl Workbook {
         // structural checks see the dtypes the matcher will.
         let mut decoded = Vec::with_capacity(self.tables.len());
         for (index, frame) in self.tables.iter().enumerate() {
-            decoded.push(self.decode_levels(
-                frame,
-                &self.manifest.tables[index].name,
-                &mut issues,
-            )?);
+            let mut decoded_frame =
+                self.decode_levels(frame, &self.manifest.tables[index].name, &mut issues)?;
+            if self.manifest.tables[index].spline.is_some() {
+                // CSV may spell integral knots as "1". The declared spline
+                // semantics make them continuous coordinates, never category codes.
+                let names: Vec<String> = decoded_frame
+                    .get_column_names()
+                    .iter()
+                    .filter(|n| n.as_str() != factor_column)
+                    .map(|n| n.to_string())
+                    .collect();
+                for name in names {
+                    if self.manifest.encodings.contains_key(&name) {
+                        return Err(PolarsError::ComputeError(
+                            "Spline coordinates cannot use a categorical encoding".into(),
+                        ));
+                    }
+                    let column = decoded_frame.column(&name)?;
+                    if column.dtype().is_primitive_numeric() {
+                        let cast = column.cast(&DataType::Float64)?;
+                        decoded_frame.with_column(cast)?;
+                    }
+                }
+            }
+            decoded.push(decoded_frame);
         }
 
         for (index, frame) in decoded.iter().enumerate() {
-            issues.extend(check_table(
-                frame,
-                &self.manifest.tables[index].name,
-                factor_column,
-                index == 0,
-            ));
+            issues.extend(
+                check_table(
+                    frame,
+                    &self.manifest.tables[index].name,
+                    factor_column,
+                    index == 0,
+                )
+                .into_iter()
+                .filter(|issue| {
+                    self.manifest.tables[index].spline.is_none()
+                        || issue.code != "no_unbounded_band"
+                }),
+            );
         }
 
         if scale == Scale::Relativity {
@@ -775,6 +816,15 @@ impl Workbook {
             data.with_column(Series::new("Rating_Factor".into(), factors))?;
 
             let mut table = RatingTable::new(data, None).with_name(&entry.name);
+
+            if entry.spline.is_some() {
+                if entry.variate.is_some() || entry.monotonicity.is_some() || index == 0 {
+                    return Err(PolarsError::ComputeError(
+                        "A spline cannot be an intercept, variate or monotonic step table".into(),
+                    ));
+                }
+                table = table.as_natural_cubic()?;
+            }
 
             if let Some(direction) = entry.monotonicity {
                 table = table.as_monotone(direction)?;

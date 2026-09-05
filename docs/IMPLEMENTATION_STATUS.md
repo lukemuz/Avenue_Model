@@ -13,14 +13,23 @@ Existing evaluation reports, scripts and recorded runs have been preserved.
   normalized-range curvature penalty. It rejects invalid/nonfinite geometry and inputs.
 - Added interval-local IRLS sufficient-statistic accumulation, transformed to knot
   coordinates without an observation-by-knot matrix. This is numerical groundwork;
-  no public smooth Plan term or fitting/scoring integration is claimed yet.
+  no smooth Plan term or spline fitting is claimed yet.
 - Independent SciPy fixtures cover five geometries and 220 probes, including irregular
   and clustered knots, large offsets, adjacent floats and tails. Values, derivatives,
   basis weights, curvature and dense information/score references agree. C2 joins,
   affine invariance, exact knot interpolation and edit linearity are also tested.
-- All 272 Rust tests pass, with six ignored tests and one ignored doc test. Existing
-  public Python behavior is unchanged. [Implementation notes](SMOOTH_EFFECTS_IMPLEMENTATION.md)
-  identify the remaining Plan, fitting, inference, shared-scoring and workbook gates.
+- Added exact continuous RatingTable scoring, strict/diagnostic FittedModel scoring,
+  explanations, interval-based validation exhibits and composition. Workbook format 4
+  persists canonical editable knots/values and a linear-tail declaration; ordinary
+  and monotonic workbooks retain their earlier format versions.
+- Independent probes now also traverse scalar/batch scoring and JSON/CSV reloads.
+  Python checks cover bundle reloads, change review, offset means, zero exposure and
+  relativity-scale CSV. Unsupported spline fitting is rejected explicitly.
+  [Implementation notes](SMOOTH_EFFECTS_IMPLEMENTATION.md) identify the remaining
+  Plan, fitting, inference and full recovery gates.
+- Verification after scoring integration: 275 Rust tests passed (six ignored and one
+  ignored doc test), release extension rebuilt, and all 118 Python tests passed.
+  This is editable-source evidence, not a refreshed clean-wheel acceptance run.
 
 ## Completed increment: whole-term Wald inference and estimability correction
 

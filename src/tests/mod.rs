@@ -15,6 +15,7 @@ pub mod testing_utils;
 mod validation_tests;
 mod weight_distribution_test;
 mod workbook_tests;
+mod spline_scoring_tests;
 
 use crate::{
     rating_model::{

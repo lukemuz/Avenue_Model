@@ -1,10 +1,9 @@
 # Continuous smooth effects: implementation notes
 
-Status: the numerical natural-cubic kernel is implemented and independently tested.
-There is **no public smooth Plan term yet**. Existing polynomial variates still score
-as step tables; this work does not relabel them as continuous predictors. The
-smooth-effect acceptance requirement remains open until integration and end-to-end
-fit/export checks pass.
+Status: exact natural-cubic scoring and editable workbook persistence are implemented
+and independently tested. There is **no smooth Plan term or spline fitter yet**.
+Existing polynomial variates still score as step tables. The smooth-effect acceptance
+requirement remains open until fitting, inference and end-to-end recovery checks pass.
 
 ## Canonical curve and numerical representation
 
@@ -85,22 +84,65 @@ cargo test --no-default-features --locked spline::tests
    shifts. Weighted-mean normalization must use observed curve contributions, not
    counts of observations exactly at knots. A roughness penalty needs its own
    interpretation and covariance/selection rules.
-3. **Shared scoring.** Extend low-level RatingModel scoring, strict FittedModel scoring,
-   validation, explanations and composition to evaluate the same continuous curve.
-   Integer table-row matches alone do not specify a continuous contribution.
-4. **Inference and support.** Use observation-dependent basis loadings for covariance
-   and joint tests. Show interval support and basis identification; a knot without an
-   observation exactly on it is not automatically an unestimated factor. Do not reuse
-   free-step-table row standard errors.
-5. **Workbooks.** Persist knots, knot values and the tail rule as the canonical editable
-   representation, derive local coefficients on load, and use a new format version
-   so older readers reject rather than step-score the curve. Changes to either knot
-   geometry or values must invalidate derived scoring coefficients. General workbook
-   checks currently expect infinite final band bounds and need subtype-aware handling.
-6. **Acceptance.** Recover known smooth shapes for multiple families; compare means,
+3. **Inference and support.** Use observation-dependent basis loadings for covariance
+   and joint tests. Scoring validation now shows interval support, but fitting must
+   still establish basis identification. A knot without an observation exactly on it
+   is not automatically an unestimated factor. Do not reuse free-step-table errors.
+4. **Acceptance.** Recover known smooth shapes for multiple families; compare means,
    scores and uncertainty with an independent continuous-basis fit. Check raw-quote
    reloads and edits across interior points, knots, adjacent floats and tails. Preserve
    existing step/booster behavior and measure the complete fitting/scoring workflow.
 
 These gates extend Plan/FittedModel/the Rust engine and the rating-table artifact.
 They do not call for a second high-level GLM API or an opaque estimator wrapper.
+
+## Continuous scoring and editable workbooks
+
+A Rust scoring table is declared explicitly:
+
+```rust,ignore
+let curve = RatingTable::new(
+    df!("age" => [20.0, 40.0, 60.0],
+        "Rating_Factor" => [0.0, 0.4, 0.0])?,
+    None,
+).as_natural_cubic()?;
+```
+
+The numeric column contains finite, strictly increasing knots, and `Rating_Factor`
+contains the curve values **on the link scale**. There must be at least two knots.
+The builder rejects categorical columns, null/nonfinite values and combined
+monotonic/variate declarations. Calling the GLM fitter with this table currently
+returns an explicit unsupported error, including when the table is marked fixed.
+Carrying it into a Plan offset is likewise refused until the fitter is integrated.
+
+Workbooks containing a spline write format **4** and table metadata
+`"spline": "natural_cubic_linear_tails"`. Ordinary workbooks still write version 2;
+monotonic step workbooks still write version 3. Earlier readers reject version 4.
+A spline declaration in a workbook labeled with an older version is rejected.
+Knots and knot values are the sole editable authority: coefficients are compiled
+once per scoring batch from the current values, never stored as a second set of
+editable numbers. Integral-looking CSV knots remain continuous numeric coordinates.
+Factor scale preserves knot values; relativity scale writes their exponentials and
+reloads their logarithms **before** constructing the cubic.
+
+Rust RatingModel and Python FittedModel scoring use the continuous curve, including
+both tails. Strict scoring rejects missing/nonfinite quotes; diagnostic scoring
+returns null predictions with row status. Exposure handling is unchanged. Explanations
+use `kind="spline"`, the evaluated contribution, and a null `table_row`, because an
+interpolated value is not the coefficient of one row. Composition retains separate
+spline tables instead of flattening them into bands. Bundle reloads and change review
+use these same scoring/explanation paths. Loaded knot values remain `scoring_only`.
+
+Validation A/E tables show explicit support intervals, with open lower bounds and
+closed finite upper bounds. For knots `k0,...,kM`, groups are `(-inf,k0]`,
+`(k0,k1]`, ..., `(kM-1,inf)`. The last group includes the final knot interval and
+right tail. These groups partition finite quotes; they are not piecewise constant
+rates or knot-parameter support counts. A/E exhibits therefore omit the knot factor
+column and explain this distinction in a finding.
+
+`src/tests/spline_scoring_tests.rs` checks all 220 independent SciPy probes through
+scalar/batch scoring and JSON/CSV reloads, plus known continuous values, explanations,
+A/E, composition, edits and invalid artifacts/quotes. `tests/test_spline_scoring.py`
+checks the public Python bundle/change-review workflow, offset means, zero exposure,
+diagnostic nulls and relativity-scale CSV reloads. These are scoring checks, not
+independent evidence for spline fitting or inference.

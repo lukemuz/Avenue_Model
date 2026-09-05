@@ -295,6 +295,7 @@ pub fn validate(
     let mut unmatched_by_table = vec![0usize; n_tables];
 
     for t in 0..n_tables {
+        let continuous = model.tables[t].continuous_values(df)?;
         for i in 0..n_rows {
             let m = matches[t][i];
             if m == NO_MATCH {
@@ -303,7 +304,10 @@ pub fn validate(
                 }
                 scored[i] = false;
             } else {
-                eta[i] += factors[t][m as usize];
+                eta[i] += continuous
+                    .as_ref()
+                    .map(|v| v[i])
+                    .unwrap_or(factors[t][m as usize]);
             }
         }
     }
@@ -473,6 +477,35 @@ pub fn validate(
             .collect();
 
         let mut data = model.tables[t].data.clone();
+        if model.tables[t].metadata.spline.is_some() {
+            warnings.push(Warning::new(Severity::Low, "spline_support_intervals",
+                format!("{}: A/E rows describe the displayed support intervals, not individual knot parameters. Interval counts do not establish whether a knot value is estimable.", table_label(options, t))));
+            let name = model.tables[t].get_numeric_columns().keys().next().unwrap();
+            let knots: Vec<f64> = data.column(name)?.f64()?.into_no_null_iter().collect();
+            let lower: Vec<f64> = std::iter::once(f64::NEG_INFINITY)
+                .chain(knots[..knots.len() - 1].iter().copied())
+                .collect();
+            let upper: Vec<f64> = knots[..knots.len() - 1]
+                .iter()
+                .copied()
+                .chain(std::iter::once(f64::INFINITY))
+                .collect();
+            // A/E groups describe intervals; a knot factor is not the rate for
+            // every observation in its support group.
+            data = DataFrame::new(vec![
+                Series::new("Spline_Feature".into(), vec![name.as_str(); n_table_rows]).into(),
+                Series::new("Support_Lower".into(), lower).into(),
+                Series::new("Support_Upper".into(), upper).into(),
+                Series::new("Lower_Inclusive".into(), vec![false; n_table_rows]).into(),
+                Series::new(
+                    "Upper_Inclusive".into(),
+                    (0..n_table_rows)
+                        .map(|r| r + 1 < n_table_rows)
+                        .collect::<Vec<_>>(),
+                )
+                .into(),
+            ])?;
+        }
         data.with_column(Series::new("N".into(), row_count))?;
         data.with_column(Series::new("Exposure".into(), row_weight))?;
         data.with_column(Series::new("Actual".into(), row_actual))?;
