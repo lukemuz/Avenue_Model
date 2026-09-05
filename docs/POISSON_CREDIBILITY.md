@@ -58,6 +58,12 @@ inference claim. For comparison, explicitly use `training_status="completed"` wi
 the returned model. The saved posterior stays separate from the workbook; integrity
 checks refuse to attach it to edited scoring/evidence files. Edited workbooks remain
 loadable through `Workbook` for scoring and fresh review.
+The result also captures its original in-memory model, posterior and metadata identity.
+Replacing a factor-edited model or changing the posterior/metadata before `save` raises
+an error rather than generating new hashes that would make stale evidence look current.
+Unchanged reloaded results can be saved again; creation timestamps are excluded from
+the model identity. This guards accidental evidence reassignment, not malicious
+rewriting of both artifacts and their checksums.
 
 Acceptance includes independent integration of prior times likelihood, risk-adjusted
 baseline encodings, both exposure conventions, composition, reload, invalid counts

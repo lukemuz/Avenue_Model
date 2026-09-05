@@ -1,5 +1,5 @@
 """Conditional Poisson–Gamma partial pooling of one categorical relativity."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import math
@@ -22,9 +22,28 @@ class CredibilityResult:
     model: FittedModel
     posterior: pl.DataFrame
     metadata: dict
+    _source_identity: tuple = field(init=False, repr=False)
+
+    def __post_init__(self):
+        self._source_identity = self._identity()
+
+    def _identity(self):
+        with tempfile.TemporaryDirectory(prefix='avenue-credibility-identity-') as directory:
+            path = Path(directory) / 'model.json'
+            self.model.to_workbook(scale='factor').save_json(str(path))
+            model = json.loads(path.read_text())
+        # Workbook creation timestamps change during serialization; scoring
+        # geometry, factors, encodings and response conventions must not change.
+        model['manifest'].pop('created', None)
+        def digest(value):
+            return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        return (digest(model), hashlib.sha256(self.posterior.write_csv().encode()).hexdigest(),
+                digest(self.metadata))
 
     def save(self, directory):
         """Save scoring means with separate, integrity-checked posterior evidence."""
+        if self._identity() != self._source_identity:
+            raise ValueError('Credibility result changed in memory; export the edited model as a Workbook without the original posterior evidence')
         path = Path(directory)
         path.mkdir(parents=True, exist_ok=False)
         self.model.to_workbook(scale='factor').save_json(str(path / 'model.json'))

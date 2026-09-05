@@ -1,0 +1,18 @@
+{
+  "source_parent": "8a513cec8fd1ca7cd32b5d616fc1e35b9d4d6b1b",
+  "source_sha256": {
+    "python/avenue_model/credibility.py": "254c074f310af61c1e61977fbf5328afc3502e66212c9d8642afe39f0d506209",
+    "tests/test_credibility.py": "e9bc8f8b5b891188d4ca231c02cd12a5308d7b21f403f598591e1b1619d0eba9"
+  },
+  "python_tests_passed": 138,
+  "simulation_result_unchanged": true,
+  "artifact_directory": "/tmp/avenue-poisson-credibility-bound",
+  "artifact_sha256": {
+    "result.json": "7a52391f956a7090099d08cec7357c1fc2b6a4fa07808ef89afa15fb9f83b0dd",
+    "future_comparison.csv": "575b71032efd7250dd37eb10661d797d780329e38bb857a30048de8804106840",
+    "credibility/credibility.json": "4048381e60f9fc0e3066542ffb360e7c3955ec335ba28a86d3968eba1f17f13f",
+    "credibility/posterior.csv": "4bc9b327e216d996b1f2c6867743976f9b189eaa6434e05a9060cc5022265d1e",
+    "credibility/model.json": "e7171e2fc1f449c4d13ba1794d18a0c12510868b58ad6244f645f03300b3ac01"
+  },
+  "scope": "In-memory factor/posterior/metadata edits rejected on save; unchanged load/resave supported"
+}

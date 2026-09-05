@@ -1,4 +1,5 @@
 import math
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,11 +8,36 @@ import numpy as np
 import polars as pl
 from scipy.integrate import quad
 
-from avenue_model import (Plan, CredibilityResult, poisson_credibility,
+from avenue_model import (Plan, Workbook, CredibilityResult, poisson_credibility,
                           coefficient_intervals, frequency_severity)
 
 
 class CredibilityTests(unittest.TestCase):
+    def test_in_memory_edits_cannot_rebind_original_posterior_evidence(self):
+        data = pl.DataFrame({'g': ['a', 'b'], 'exposure': [1., 1.], 'n': [0, 4]})
+        for edit in ['model', 'posterior', 'metadata']:
+            result = poisson_credibility(data, self.baseline(), group='g', counts='n', prior_strength=2.)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'original'
+                result.save(path)
+                loaded = CredibilityResult.load(path)
+                # Repeated serialization/reload must not fail on creation timestamps.
+                loaded.save(Path(directory) / 'unchanged')
+                if edit == 'model':
+                    workbook = json.loads((path / 'model.json').read_text())
+                    workbook['tables'][-1][0]['Rating_Factor'] += math.log(1.1)
+                    changed = Path(directory) / 'changed_model.json'
+                    changed.write_text(json.dumps(workbook))
+                    loaded.model = Workbook.load_json(str(changed)).to_model()
+                elif edit == 'posterior':
+                    loaded.posterior = loaded.posterior.with_columns((pl.col('relativity') * 2).alias('relativity'))
+                else:
+                    loaded.metadata['prior_shape'] = 99.
+                destination = Path(directory) / 'edited'
+                with self.assertRaisesRegex(ValueError, 'changed in memory'):
+                    loaded.save(destination)
+                self.assertFalse(destination.exists())
+
     def test_risk_adjusted_baseline_encodings_and_new_quote_exposures_survive(self):
         seed = pl.DataFrame({'risk': ['low', 'high'] * 5, 'exposure': [1., 2.] * 5, 'rate': [1., 2.] * 5})
         baseline = Plan.frequency('exposure').categorical('risk').fit(seed, 'rate')
