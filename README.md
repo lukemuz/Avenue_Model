@@ -3,12 +3,13 @@
 **Models represented as rating tables, from a GLM or from LightGBM.**
 
 The rating table is the model. Avenue fits one — directly on the tables, with no
-dummy-coded design matrix anywhere in the process — or converts a LightGBM booster into
-one, exactly, without changing a single prediction. Either way what comes out is a set of
-CSVs a person can read, edit, file and load back.
+dummy-coded design matrix anywhere in the process — or converts supported LightGBM
+structure into rating tables with optional numerical parity evidence. Either way what
+comes out is a set of CSVs a person can read, edit, file and load back.
 
 - **LightGBM becomes inspectable.** A tree ensemble converts into the same rating tables a
-  GLM produces, with predictions preserved to floating-point noise.
+  GLM produces. `from_booster()` can verify prediction agreement on supplied data;
+  unsupported booster semantics fail explicitly. See [conversion support](docs/CONVERSION.md).
   [Interaction-aware tuning](docs/lightgbm.md) reduces a booster to a handful of readable
   tables for little loss.
 - **The engine is fast.** Avenue fits on rating tables without materializing an
@@ -26,6 +27,14 @@ CSVs a person can read, edit, file and load back.
 The method, the penalties and the case studies are described in
 [*GBMs as Factor Tables: Achieving Both Transparency and Interpretability Without
 Approximation*](https://avenue-analytics.com/research/avenue-analytics-methodology.pdf).
+
+## Complete pricing studies
+
+The [workflow guide and support matrix](docs/WORKFLOW_SUPPORT.md) cover preparation,
+reproducible validation, model comparison, factor explanations and editable delivery.
+Run the [auto study](examples/auto_pricing_study.py) or
+[homeowners attritional-peril study](examples/homeowners_perils.py) for executable
+synthetic examples with quote scoring, export/reload and reviewed factor edits.
 
 ## Installation
 

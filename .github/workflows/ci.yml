@@ -36,3 +36,5 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Run synthetic auto study
         run: python examples/auto_pricing_study.py --output /tmp/avenue-auto-study
+      - name: Run synthetic homeowners study
+        run: python examples/homeowners_perils.py --output /tmp/avenue-homeowners-study

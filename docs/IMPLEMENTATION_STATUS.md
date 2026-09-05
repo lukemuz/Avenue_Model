@@ -220,6 +220,23 @@ called dependable for arbitrary quote inputs.
   Documentation now states the actual normalization and no longer equates its
   tolerance numerically with glum's gradient_tol.
 
+## Completed increment: homeowners workflow and support matrix
+
+- Added an executable synthetic attritional water/theft study with CSV loading,
+  explicit development/trend adjustment totals, grouped home/renewal splits,
+  separately fitted peril models, factor reviews and common loss-cost comparison.
+- Named peril composition saves/reloads raw-quote scoring and reconciles component
+  predictions. A known 5% water factor edit changes the total by precisely 5% of the
+  water contribution; the edited composition receives fresh validation.
+- The study completed on 4,500 policy-year records with a 1,500-row grouped holdout.
+  Holdout A/E is about 0.878 and the paired loss-difference interval includes zero.
+  These findings are retained; no predictive-superiority or production-calibration
+  claim is made for the synthetic exercise.
+- CI now exercises both complete public studies. Added [WORKFLOW_SUPPORT.md](WORKFLOW_SUPPORT.md)
+  and linked it from README, including explicit remaining statistical/delivery limits.
+- All 79 Python tests pass. Example outputs: `/tmp/avenue-homeowners-study`; log:
+  `/tmp/avenue-homeowners-study.log`. No Rust changes in this increment.
+
 ## Next required work
 
 Complete general response-unit semantics and complete preprocessing persistence and evaluate the remaining explicit conversion limitations.
