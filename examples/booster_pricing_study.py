@@ -47,7 +47,8 @@ def run(output, data_path=None):
         folds=[(list(f.train_rows), list(f.validation_rows)) for f in folds],
         tunable=['learning_rate', 'interaction_penalty', 'interaction_complexity'],
         space={'learning_rate': (.05, .2), 'interaction_penalty': (0., .05),
-               'interaction_complexity': (0., .1)})
+               'interaction_complexity': (0., .1)},
+        scoring_data=predictors(train.head(256)))
     (output / 'trials.json').write_text(json.dumps([asdict(t) for t in result.trials], indent=2))
     (output / 'tuning.txt').write_text(result.summary())
     selected = result.best_cv

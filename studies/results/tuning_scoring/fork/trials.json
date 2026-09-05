@@ -1,0 +1,365 @@
+[
+  {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 20,
+      "num_threads": 1,
+      "verbosity": -1,
+      "min_data_in_leaf": 80,
+      "max_depth": 2,
+      "num_leaves": 3,
+      "seed": 47,
+      "learning_rate": 0.06702327078404743,
+      "interaction_penalty": 0.048724154721822836,
+      "interaction_complexity": 0.07287346335011062
+    },
+    "cv_loss": 0.5178725753937242,
+    "tables": 2.0,
+    "num_iterations": 1,
+    "fold_tables": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "fold_complexity": [
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.000854212004924193,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": 7.767699571559206e-05,
+        "scoring_samples_seconds": [
+          0.0003844960010610521,
+          7.767699571559206e-05,
+          5.9942998632323e-05
+        ],
+        "scoring_rows": 256,
+        "scoring_data_fingerprint": "d1b8efbe84185408d8efb2327a657bae605341bcb7604ec5cecd9a41ee3fc689",
+        "scoring_polars_version": "1.31.0",
+        "scoring_feature_names": [
+          "age",
+          "region"
+        ],
+        "scoring_method": "median of three public batch calls, including first call",
+        "scoring_parity": {
+          "status": "passed",
+          "atol": 1e-12,
+          "rtol": 1e-12,
+          "max_absolute_error": 0.0
+        }
+      },
+      {
+        "tables": 2,
+        "total_rows": 7,
+        "largest_table": 6,
+        "largest_interaction_order": 2,
+        "coefficient_cells": 7,
+        "conversion_seconds": 0.0004152129986323416,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": 0.00010253299842588603,
+        "scoring_samples_seconds": [
+          0.00010253299842588603,
+          0.0001893170046969317,
+          6.497299909824505e-05
+        ],
+        "scoring_rows": 256,
+        "scoring_data_fingerprint": "d1b8efbe84185408d8efb2327a657bae605341bcb7604ec5cecd9a41ee3fc689",
+        "scoring_polars_version": "1.31.0",
+        "scoring_feature_names": [
+          "age",
+          "region"
+        ],
+        "scoring_method": "median of three public batch calls, including first call",
+        "scoring_parity": {
+          "status": "passed",
+          "atol": 1e-12,
+          "rtol": 1e-12,
+          "max_absolute_error": 0.0
+        }
+      },
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.00022188800357980654,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": 6.112499977461994e-05,
+        "scoring_samples_seconds": [
+          8.33570011309348e-05,
+          6.112499977461994e-05,
+          4.746900231111795e-05
+        ],
+        "scoring_rows": 256,
+        "scoring_data_fingerprint": "d1b8efbe84185408d8efb2327a657bae605341bcb7604ec5cecd9a41ee3fc689",
+        "scoring_polars_version": "1.31.0",
+        "scoring_feature_names": [
+          "age",
+          "region"
+        ],
+        "scoring_method": "median of three public batch calls, including first call",
+        "scoring_parity": {
+          "status": "passed",
+          "atol": 1e-12,
+          "rtol": 1e-12,
+          "max_absolute_error": 0.0
+        }
+      }
+    ]
+  },
+  {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 20,
+      "num_threads": 1,
+      "verbosity": -1,
+      "min_data_in_leaf": 80,
+      "max_depth": 2,
+      "num_leaves": 3,
+      "seed": 47,
+      "learning_rate": 0.10272017088390523,
+      "interaction_penalty": 0.03538025691295405,
+      "interaction_complexity": 0.07996046016600539
+    },
+    "cv_loss": 0.5178785210638052,
+    "tables": 2.0,
+    "num_iterations": 1,
+    "fold_tables": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "fold_complexity": [
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.0003062679970753379,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": 5.1407005230430514e-05,
+        "scoring_samples_seconds": [
+          0.00010106099944096059,
+          5.1407005230430514e-05,
+          3.7530997360590845e-05
+        ],
+        "scoring_rows": 256,
+        "scoring_data_fingerprint": "d1b8efbe84185408d8efb2327a657bae605341bcb7604ec5cecd9a41ee3fc689",
+        "scoring_polars_version": "1.31.0",
+        "scoring_feature_names": [
+          "age",
+          "region"
+        ],
+        "scoring_method": "median of three public batch calls, including first call",
+        "scoring_parity": {
+          "status": "passed",
+          "atol": 1e-12,
+          "rtol": 1e-12,
+          "max_absolute_error": 0.0
+        }
+      },
+      {
+        "tables": 2,
+        "total_rows": 7,
+        "largest_table": 6,
+        "largest_interaction_order": 2,
+        "coefficient_cells": 7,
+        "conversion_seconds": 0.00021074699907330796,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": 4.7629997425246984e-05,
+        "scoring_samples_seconds": [
+          7.809800445102155e-05,
+          4.7629997425246984e-05,
+          4.0345999877899885e-05
+        ],
+        "scoring_rows": 256,
+        "scoring_data_fingerprint": "d1b8efbe84185408d8efb2327a657bae605341bcb7604ec5cecd9a41ee3fc689",
+        "scoring_polars_version": "1.31.0",
+        "scoring_feature_names": [
+          "age",
+          "region"
+        ],
+        "scoring_method": "median of three public batch calls, including first call",
+        "scoring_parity": {
+          "status": "passed",
+          "atol": 1e-12,
+          "rtol": 1e-12,
+          "max_absolute_error": 0.0
+        }
+      },
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.00015888000052655116,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": 3.976500011049211e-05,
+        "scoring_samples_seconds": [
+          6.24069944024086e-05,
+          3.976500011049211e-05,
+          3.570700209820643e-05
+        ],
+        "scoring_rows": 256,
+        "scoring_data_fingerprint": "d1b8efbe84185408d8efb2327a657bae605341bcb7604ec5cecd9a41ee3fc689",
+        "scoring_polars_version": "1.31.0",
+        "scoring_feature_names": [
+          "age",
+          "region"
+        ],
+        "scoring_method": "median of three public batch calls, including first call",
+        "scoring_parity": {
+          "status": "passed",
+          "atol": 1e-12,
+          "rtol": 1e-12,
+          "max_absolute_error": 0.0
+        }
+      }
+    ]
+  },
+  {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 20,
+      "num_threads": 1,
+      "verbosity": -1,
+      "min_data_in_leaf": 80,
+      "max_depth": 2,
+      "num_leaves": 3,
+      "seed": 47,
+      "learning_rate": 0.1468342781762439,
+      "interaction_penalty": 0.020729980359408318,
+      "interaction_complexity": 0.07060310112730092
+    },
+    "cv_loss": 0.5178895610834358,
+    "tables": 2.0,
+    "num_iterations": 1,
+    "fold_tables": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "fold_complexity": [
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.00021099800505908206,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": 4.653799987863749e-05,
+        "scoring_samples_seconds": [
+          8.659300510771573e-05,
+          4.653799987863749e-05,
+          3.7830999644938856e-05
+        ],
+        "scoring_rows": 256,
+        "scoring_data_fingerprint": "d1b8efbe84185408d8efb2327a657bae605341bcb7604ec5cecd9a41ee3fc689",
+        "scoring_polars_version": "1.31.0",
+        "scoring_feature_names": [
+          "age",
+          "region"
+        ],
+        "scoring_method": "median of three public batch calls, including first call",
+        "scoring_parity": {
+          "status": "passed",
+          "atol": 1e-12,
+          "rtol": 1e-12,
+          "max_absolute_error": 0.0
+        }
+      },
+      {
+        "tables": 2,
+        "total_rows": 7,
+        "largest_table": 6,
+        "largest_interaction_order": 2,
+        "coefficient_cells": 7,
+        "conversion_seconds": 0.00021696900512324646,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": 4.946300032315776e-05,
+        "scoring_samples_seconds": [
+          7.299800199689344e-05,
+          4.946300032315776e-05,
+          3.799200203502551e-05
+        ],
+        "scoring_rows": 256,
+        "scoring_data_fingerprint": "d1b8efbe84185408d8efb2327a657bae605341bcb7604ec5cecd9a41ee3fc689",
+        "scoring_polars_version": "1.31.0",
+        "scoring_feature_names": [
+          "age",
+          "region"
+        ],
+        "scoring_method": "median of three public batch calls, including first call",
+        "scoring_parity": {
+          "status": "passed",
+          "atol": 1e-12,
+          "rtol": 1e-12,
+          "max_absolute_error": 0.0
+        }
+      },
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.0001751200034050271,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": 3.890300286002457e-05,
+        "scoring_samples_seconds": [
+          6.387000030372292e-05,
+          3.890300286002457e-05,
+          3.3643998904153705e-05
+        ],
+        "scoring_rows": 256,
+        "scoring_data_fingerprint": "d1b8efbe84185408d8efb2327a657bae605341bcb7604ec5cecd9a41ee3fc689",
+        "scoring_polars_version": "1.31.0",
+        "scoring_feature_names": [
+          "age",
+          "region"
+        ],
+        "scoring_method": "median of three public batch calls, including first call",
+        "scoring_parity": {
+          "status": "passed",
+          "atol": 1e-12,
+          "rtol": 1e-12,
+          "max_absolute_error": 0.0
+        }
+      }
+    ]
+  }
+]

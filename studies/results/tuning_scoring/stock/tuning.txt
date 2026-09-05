@@ -1,0 +1,4 @@
+  3 trials, 1 on the frontier   metric: poisson   build: lightgbm
+  interaction penalties were NOT tuned - lightgbm does not accept them
+   mean tables   mean rows   largest  order  mean score ms       cv loss   parameters
+          2.00         5.7         6      2          0.109      0.517873   learning_rate=0.067, max_depth=2, min_data_in_leaf=80, num_iterations=20, num_leaves=3

@@ -41,6 +41,10 @@ final table count, total rows and largest table. It records one warm batch timin
 observation, not a speed comparison. CV complexity is computed at the selected boosting
 iteration. `select(max_tables=...)` screens the mean CV proxy; it does not enforce a
 final-artifact limit. Check the actual converted tables for any required resource limit.
+The tutorial also passes the first 256 training predictor rows as a common scoring
+batch to tuning. Every fold retains three public-call timings and selected-prefix
+booster parity; the tuning summary shows the mean of fold median times. These timing
+rows do not change the selection objectives or supply a new validation metric.
 
 Verified on stock 4.7.0 and fork 4.6.0.99: both selected one boosting round, converted to
 two tables with five total rows, and passed 1,000 held-out quote parity checks and workbook
