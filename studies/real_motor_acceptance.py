@@ -196,6 +196,8 @@ def run(args):
        target='avenue_pure_premium', unit='loss/exposure', metric='tweedie', tweedie_power=1.5,
        weight='exposure', segments=['region', 'fuel'], bootstrap=20, seed=20260905)
     comparison.summary.write_csv(out / 'comparison.csv')
+    for name, curve in comparison.discrimination.items():
+        curve.write_csv(out / f'comparison_{name}_concentration.csv')
     for segment, table in comparison.segments.items():
         table.write_csv(out / f'comparison_{segment}.csv')
     edited_path = out / 'edited_premium'

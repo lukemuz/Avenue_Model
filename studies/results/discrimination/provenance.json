@@ -1,0 +1,83 @@
+{
+  "source_parent": "c27462b455dc820f7937f61b2e655ba0de7d465f",
+  "modified_source_sha256": {
+    "python/avenue_model/comparison.py": "290bb4af43ec3ffe588d60f2fda43949a2b87cddcdac2c97e920377dfec2a65e",
+    "studies/real_motor_acceptance.py": "67b311780fed5d684dfb02ff589f2002cdadd8a127cef783f91000055708a047",
+    "tests/test_comparison.py": "e3887dc67707b153f3f0aa7fc3849d31acbe9f54203af9018b03fae3c8e5f4b7"
+  },
+  "full_artifacts": "/tmp/avenue-real-discrimination",
+  "artifact_sha256": {
+    "comparison.csv": "b3b0039e6d351519e5355700ad46386948caed681b73b3f80b51842d4e41251f",
+    "comparison_frequency_severity_concentration.csv": "b8ee47fbd1354e0d9b136e2727f7b9f905bc6c6d458a2e5fa329288babfdd63b",
+    "comparison_fuel.csv": "dab0b17290a7e1ca0b646e20927f78975fe731d79e6da5ff66c6b1dc81ccc939",
+    "comparison_glum_tweedie_concentration.csv": "fbe6c231119af894e8c33395ce51e0afa9facaf98428e4965dd542e9ddc3bf93",
+    "comparison_region.csv": "93f9f87ee2f02971d0b33810569b8ba08c639c0b6f97097dfa669f19b314a4ac",
+    "comparison_tweedie_concentration.csv": "3ccacaa3422a111e9d5c3698cf911d2b87eccac29abc26198954e06393539f5e",
+    "edit_totals.csv": "7f97cff3c273393e40fe69cac106065a849c505f19283feb5de160191148c19b",
+    "edited_report.md": "80344b176856d39442a18bd7226d64c6fc93575d8ccde4c1a414d392b6099e09",
+    "excluded_rows.csv": "245cbf36c9a7443718f59e4caeba4d5e43545e2c9c5e88f81f56c4b32ab81765",
+    "frequency_age_intervals.csv": "6188314cd026c997713b566e150fdd3ad93ae1dc475f6e8ad2036fe4ecaab9c7",
+    "frequency_bonus_intervals.csv": "c2d3d4c16c36251f114b363cb3cbba57db443d53e4c94045462d17daf75f27e9",
+    "frequency_explanations.csv": "9a0150fdea465fe26dae743597783f4d6542d8170f070f89c4e15d89051f2cd0",
+    "frequency_fuel_intervals.csv": "8558c569947e0ce087253e02156ecfc626b0005bc6aa210df020134a0cf2c182",
+    "frequency_intercept_intervals.csv": "d94afad05dc281780600653e29a20d05b7a4cb6b530c2f0f74f8690b592caba2",
+    "frequency_parity.json": "64806790c8d437c53ee80c1daa2eb846d70d7a97afdb4ce0805e1721c17f1b55",
+    "frequency_region_intervals.csv": "2903c25f02204e306d785e9d6de805b3865fbf4c5d85170ddfd0c279ac4091f1",
+    "frequency_report.md": "7f500e61bd7a4244b66ebc6e741af7f27b046b1eb6c8b8d3d12dd91d7d20d64f",
+    "frequency_scoring.json": "d4831de24c52bafe251be9c90edecc6496d8ded8144fe774901edf1a40855cc2",
+    "frequency_term_tests.json": "f9493418d3e099de299583ab74ee7ede10b4d2bd0dd221179f527b655ddf6d41",
+    "frequency_vehicle_age_intervals.csv": "0259dd913967bfd2672fe39ac8542c99e0c08d5edf13f54693ba1b2abf7d1e19",
+    "largest_changes.csv": "da6600e4b644a197005a1c5fdf25035ebd5e4af9e4959453e9d0f14abb8ecc0f",
+    "models.json": "09e656c4530c78caa20cad5d6e1de6897d525be1c148273302bf512093c8ffe2",
+    "orphan_severity_records.csv": "49ca07bf6214c097bc41ed42934ff9d536a1adc7e8d98be48a797e091b76a31a",
+    "populations.csv": "b110f1b3c71a9ba352d9704cdaddae5dae7a34225260e09505c8cb5c7a3bd14c",
+    "premium_age_intervals.csv": "230013a9f215d20cb6da463e1b4c64e36f41fd4049badd2009c84325f439c6b7",
+    "premium_bonus_intervals.csv": "1460de94d380f429b66e7cbc0155ee038d8c5680ff33f7f2d8205a9591bfb7a5",
+    "premium_explanations.csv": "12829727a2bdf3437ad87c3c2be62c8fe198362e0afe5cc410edcff294c02a34",
+    "premium_fuel_intervals.csv": "9c52bf5140d993de54525872680abeb71cbf2c0e83cd9ae5c698e198cbde428c",
+    "premium_intercept_intervals.csv": "1463dc7c6b494d62718cfbf617e7d2a7a00cc03745cde12c31340bb07c8fce8b",
+    "premium_parity.json": "7f89407f5c441acf962dbb2d21f9e92231051a87c4dd9baf1d7b88b29fc611ba",
+    "premium_region_intervals.csv": "704f0f45398895f7915e504dd3e6311a30dbb928eebfa962cedc331ed2c910f4",
+    "premium_report.md": "fffa3a3b9c26da8d45f0676c151d87049d02e9bc5a9a4fe69e16303b61ebeb85",
+    "premium_scoring.json": "8e5570219e7f4171bd4a982c20f95583ad3293dd78bc19c942de7f8665b40464",
+    "premium_term_tests.json": "ada38d0952d305d4bbf11b0ba45619a52b106aea5d554a7ddc9005b91f83b637",
+    "premium_vehicle_age_intervals.csv": "f6bd9e23735bca84522bc99dc8b323d5ac6691e6317d6b4e98833fc84e943004",
+    "region_experience.csv": "3bb4dc829bf02a2eb76319bde1a0ccde22548a8f8129499a069226a0818cf550",
+    "run.json": "adff2bf9f7a0cffb515710e610bf3bba51d65490341d61b0c1f77f4c30dc3a55",
+    "severity_age_intervals.csv": "1abeba18b42dee0c0ea22aa0b28637a423ca48f383ef363e276b02eaf3ac7da1",
+    "severity_bonus_intervals.csv": "e9e0fdb8397e73cce88a2aa72c576bd4427df08fcafdcc4bbdfaef930cd5ca6e",
+    "severity_explanations.csv": "90717186450ce55ff4a84a19b9e0d1085915f691d61707cb7a8a694f3f502dca",
+    "severity_fuel_intervals.csv": "369b87725745fb2ad0a56b0f88a50b857b07b1378eb276d03e7128d89768bb47",
+    "severity_intercept_intervals.csv": "491313a2f9a19a32f6fb310a08161d16ecc68ca1419466ff575ce183a460b1da",
+    "severity_parity.json": "103048910aae1619dadfc6c8f5154012be31c732265101f5434c284053c3f336",
+    "severity_region_intervals.csv": "c6322b4c28c1a11879b3273bd7495726a1c859cf9c7ff9440e0c3782dd35ed82",
+    "severity_report.md": "e0c101aaf174b235b0561906dade0d1b738eae6da999368d9a5d57986e3a9f1b",
+    "severity_scoring.json": "f35f87cf38223f74dfc1a3debd35d549d2fe8f3e1e66e0d18a12f51f3de90671",
+    "severity_term_tests.json": "bdb9c89e1b4272efee0cda23026a9d01af13518c3d844b825c0d92bb8ce3fdd3",
+    "severity_vehicle_age_intervals.csv": "be34898a692fe3aeddb846f2f917a0dba1e9a0b2fa88fab9ef3a7b289f0e4084",
+    "source_audit.json": "f8bc1452b211abe236bd1c7c50e76baebf269877ba075f85c694a762708ab344",
+    "split.json": "1154267c719539752b27e70e22217d5c11582ca0613d1a9dbda691cd69850791"
+  },
+  "curve_checks": [
+    {
+      "candidate": "frequency_severity",
+      "curve_points": 81216,
+      "curve_gini": 0.48171451762517914,
+      "totals_reconcile": true
+    },
+    {
+      "candidate": "tweedie",
+      "curve_points": 81216,
+      "curve_gini": 0.48828270990416056,
+      "totals_reconcile": true
+    },
+    {
+      "candidate": "glum_tweedie",
+      "curve_points": 81216,
+      "curve_gini": 0.48828270990416056,
+      "totals_reconcile": true
+    }
+  ],
+  "threads": 4,
+  "python_tests_passed": 129
+}

@@ -14,6 +14,7 @@ comparison = compare_models(
     bootstrap=500, bootstrap_group="policy_id", seed=42,
 )
 print(comparison.summary)
+print(comparison.discrimination["avenue"])  # use a candidate name from your comparison
 print(comparison.segments["region"])
 print(comparison.recommended)
 ```
@@ -45,6 +46,31 @@ A/E and mean weighted loss. A/E is null for zero expected totals. Each segment e
 reconciles to the common portfolio; null segment labels remain an explicit group.
 `predictions` preserves row positions, actuals and weights alongside named predictions.
 Metadata records the population fingerprint, unit, metric, evaluation power and seed.
+
+The summary also reports `gini`, `normalized_gini` and `discrimination_status`.
+`discrimination[candidate]` contains a concentration curve ordered by ascending
+predicted response mean. Its `score`, `rows`, `weight` and `actual` columns describe
+each tied-score group; `weight_share` and `actual_share` are cumulative portfolio
+shares. The first row is the origin with a null score and zero support. Zero-weight
+observations remain in the common prediction population but contribute no rank support.
+
+Gini is one minus twice the area under this curve, integrating linearly between
+tied-score groups. Positive values indicate that higher predicted means concentrate
+more observed loss; reversed rankings can produce negative values. Normalized Gini
+divides by the same statistic obtained by ranking on the observed target. This oracle
+is descriptive and uses the evaluation outcomes; it is never a fitted candidate.
+The weights are exactly the comparison weights, so loss-cost targets with exposure
+weights rank loss cost against cumulative exposure and cumulative observed loss.
+Ties are aggregated before integration, preventing arbitrary row order from affecting
+the result. Constant predictions have zero discrimination. Multiplying predictions
+by a positive constant leaves ranking unchanged but can worsen calibration and loss.
+
+Negative targets on positive-weight rows and zero total actuals make these measures
+unavailable (`negative_target` or `zero_actual`); their curves are omitted. Constant
+supported targets yield Gini zero and normalized Gini null (`constant_target`). Failed
+candidates have null measures and `scoring_failed` status. These cases do not disable
+otherwise valid loss comparisons. Discrimination is an empirical diagnostic with no
+intervals here; it does not change convergence eligibility or loss-based recommendation.
 
 Optional 95% paired percentile bootstrap intervals describe loss differences relative
 to the first named candidate. Negative differences favor the candidate. Row resampling

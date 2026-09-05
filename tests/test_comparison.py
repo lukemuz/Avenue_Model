@@ -5,6 +5,54 @@ from avenue_model import Candidate, Plan, compare_models
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_discrimination_matches_pairwise_reference_and_reconciles(self):
+        y, w = [0., 1., 4., 8., 100.], [.5, 2., 1., 3., 0.]
+        data = pl.DataFrame({'y': y, 'w': w})
+        vectors = {'tied': [1., 1., 3., 2., 99.], 'oracle': y,
+                   'reverse': [-v for v in y], 'constant': [1.] * len(y)}
+        result = compare_models(data, {k: Candidate(v, 'rate', True) for k, v in vectors.items()},
+                                target='y', weight='w', unit='rate', metric='squared_error')
+        def reference(scores):
+            return sum(w[i] * w[j] * (y[i] - y[j]) * ((scores[i] > scores[j]) - (scores[i] < scores[j]))
+                       for i in range(len(y)) for j in range(len(y))) / (2 * sum(w) * sum(a*b for a,b in zip(y,w)))
+        for row in result.summary.to_dicts():
+            name = row['candidate']
+            self.assertAlmostEqual(row['gini'], reference(vectors[name]))
+            self.assertAlmostEqual(row['normalized_gini'], reference(vectors[name]) / reference(y))
+            curve = result.discrimination[name]
+            self.assertEqual(curve['rows'].sum(), 4)
+            self.assertAlmostEqual(curve['weight'].sum(), row['weight'])
+            self.assertAlmostEqual(curve['actual'].sum(), row['actual'])
+            self.assertEqual(curve['weight_share'][0], 0.)
+            self.assertEqual(curve['actual_share'][-1], 1.)
+        self.assertEqual(result.discrimination['tied'].height, 4)  # origin + three supported scores
+        self.assertEqual(result.recommended, 'oracle')
+
+    def test_discrimination_ties_are_order_invariant_and_scaling_does_not_change_ranks(self):
+        data = pl.DataFrame({'y': [0., 5., 2., 8.], 'w': [1., 2., 3., 1.], 'score': [1., 1., 3., 4.]})
+        results = []
+        for frame in [data, data.reverse()]:
+            results.append(compare_models(frame, {'base': Candidate(frame['score'], 'rate', True),
+                                                  'scaled': Candidate(frame['score'] * 10., 'rate', True)},
+                                          target='y', weight='w', unit='rate', metric='poisson'))
+        for result in results:
+            self.assertAlmostEqual(result.summary['gini'][0], results[0].summary['gini'][0])
+            self.assertAlmostEqual(result.summary['normalized_gini'][0], result.summary['normalized_gini'][1])
+            self.assertNotEqual(result.summary['ae_ratio'][0], result.summary['ae_ratio'][1])
+
+    def test_undefined_discrimination_is_explicit_and_does_not_disable_loss_comparison(self):
+        for y, status in [([0., 0.], 'zero_actual'), ([-1., 2.], 'negative_target'), ([2., 2.], 'constant_target')]:
+            result = compare_models(pl.DataFrame({'y': y}),
+                                    {'valid': Candidate([1., 3.], 'mean', True), 'failed': Candidate([None, 1.], 'mean')},
+                                    target='y', unit='mean', metric='squared_error')
+            row = result.summary.row(0, named=True)
+            self.assertEqual(row['discrimination_status'], status)
+            self.assertIsNone(row['normalized_gini'])
+            self.assertEqual(row['gini'], 0. if status == 'constant_target' else None)
+            self.assertEqual(result.recommended, 'valid')
+            self.assertEqual(result.summary['discrimination_status'][1], 'scoring_failed')
+            self.assertNotIn('failed', result.discrimination)
+
     def setUp(self):
         self.data = pl.DataFrame({'y': [0., 1., 2., 5.], 'w': [.5, 1., 2., 1.],
                                   'region': ['a', 'a', 'b', 'b'], 'policy': [1, 1, 2, 2]})

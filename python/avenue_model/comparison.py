@@ -1,7 +1,7 @@
 """Compare response means on one explicit population, unit and evaluation loss."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import random
 from typing import Any
@@ -34,6 +34,27 @@ class Comparison:
     segments: dict[str, pl.DataFrame]
     metadata: dict
     recommended: str | None
+    discrimination: dict[str, pl.DataFrame] = field(default_factory=dict)
+
+
+def _concentration(y, w, scores):
+    """Ascending-score concentration curve; aggregate ties before integration."""
+    curve = (pl.DataFrame({'score': scores, 'weight': w,
+                           'actual': [a * b for a, b in zip(y, w)]})
+             .filter(pl.col('weight') > 0)
+             .group_by('score').agg(pl.len().alias('rows'), pl.col('weight').sum(),
+                                    pl.col('actual').sum())
+             .sort('score')
+             .with_columns((pl.col('weight').cum_sum() / pl.col('weight').sum()).alias('weight_share'),
+                           (pl.col('actual').cum_sum() / pl.col('actual').sum()).alias('actual_share')))
+    # The area under the piecewise-linear curve treats equal scores as one block,
+    # so row order cannot award discrimination for arbitrary ordering within ties.
+    twice_area = curve.select(((pl.col('actual_share') + pl.col('actual_share').shift(1).fill_null(0))
+                               * (pl.col('weight_share') - pl.col('weight_share').shift(1).fill_null(0)))
+                              .sum()).item()
+    origin = pl.DataFrame({'score': [None], 'rows': [0], 'weight': [0.], 'actual': [0.],
+                           'weight_share': [0.], 'actual_share': [0.]}, schema=curve.schema)
+    return 1. - twice_area, pl.concat([origin, curve])
 
 
 def _numbers(values, name, n):
@@ -77,6 +98,11 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
     summary; they cannot be recommended. Recommendation requires known convergence.
     Bootstrap intervals are paired differences from the first candidate, with fixed
     predictions (no refitting). Set bootstrap_group for cluster resampling.
+    Discrimination uses ascending predicted means and the same weights: Gini is
+    one minus twice the area under the concentration curve, normalized by ordering
+    on the observed target. Ties form one block. Negative supported targets or zero
+    actual totals make it unavailable; constant targets have no normalized Gini.
+    These empirical rank measures do not alter the loss-based recommendation.
     """
     if not isinstance(data, pl.DataFrame) or not data.height:
         raise ValueError('Comparison requires a nonempty Polars DataFrame')
@@ -109,6 +135,12 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
         _loss(value, 1., metric, tweedie_power)
     total_weight = math.fsum(w)
     total_actual = math.fsum(a * b for a, b in zip(y, w))
+    supported_targets = [a for a, b in zip(y, w) if b > 0]
+    discrimination_status = ('negative_target' if min(supported_targets) < 0 else
+                             'zero_actual' if total_actual == 0 else
+                             'constant_target' if min(supported_targets) == max(supported_targets) else 'available')
+    oracle_gini = (_concentration(y, w, y)[0] if discrimination_status == 'available' else None)
+    discrimination = {}
     predictions = {'row': list(range(n)), 'actual': y, 'weight': w}
     records, losses, valid_predictions = [], {}, {}
     for name, candidate in candidates.items():
@@ -117,7 +149,8 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
         record = {'candidate': name, 'status': 'failed', 'converged': convergence,
                   'eligible': False, 'rows': n, 'weight': total_weight,
                   'actual': total_actual, 'expected': None, 'ae_ratio': None,
-                  'mean_loss': None, 'error': None,
+                  'mean_loss': None, 'error': None, 'gini': None, 'normalized_gini': None,
+                  'discrimination_status': 'scoring_failed',
                   'loss_difference_lower': None, 'loss_difference_upper': None}
         try:
             raw = candidate.source.predict(data) if hasattr(candidate.source, 'predict') else candidate.source
@@ -136,6 +169,12 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
             predictions[name] = mu
             valid_predictions[name] = mu
             losses[name] = row_losses
+            record['discrimination_status'] = discrimination_status
+            if discrimination_status in ('available', 'constant_target'):
+                gini, curve = _concentration(y, w, mu)
+                record['gini'] = gini if discrimination_status == 'available' else 0.
+                record['normalized_gini'] = gini / oracle_gini if oracle_gini and oracle_gini > 0 else None
+                discrimination[name] = curve
         except (ValueError, TypeError, OverflowError) as error:
             record['error'] = str(error)
             predictions[name] = [None] * n
@@ -184,6 +223,7 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
     eligible = [r for r in records if r['eligible']]
     recommended = min(eligible, key=lambda r: r['mean_loss'])['candidate'] if eligible else None
     numeric_summary = ('weight', 'actual', 'expected', 'ae_ratio', 'mean_loss',
+                       'gini', 'normalized_gini',
                        'loss_difference_lower', 'loss_difference_upper')
     summary = pl.DataFrame(records, schema_overrides={
         **{name: pl.Float64 for name in numeric_summary}, 'converged': pl.Boolean, 'error': pl.String})
@@ -193,5 +233,10 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
                        'population_fingerprint': _fingerprint(data), 'excluded_rows': 0,
                        'bootstrap': bootstrap, 'effective_bootstrap': effective_bootstrap, 'seed': seed, 'bootstrap_group': bootstrap_group,
                        'difference_baseline': baseline,
+                       'discrimination': {'ranking': 'ascending predicted response mean',
+                           'weight': weight, 'ties': 'aggregate equal scores before trapezoidal integration',
+                           'zero_weight_rows': 'retained in predictions; contribute no rank support',
+                           'oracle_gini': oracle_gini, 'status': discrimination_status,
+                           'uncertainty': 'empirical fixed-prediction estimates; no discrimination intervals'},
                        'uncertainty': 'paired percentile intervals; fixed predictions, no refitting'},
-                      recommended)
+                      recommended, discrimination)

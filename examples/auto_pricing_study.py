@@ -103,6 +103,8 @@ def run(output, data_path=None):
         target='avenue_pure_premium', unit='loss_per_exposure', metric='tweedie',
         tweedie_power=1.5, weight='exposure', segments=['region', 'year'], bootstrap=50, seed=47)
     comparison.summary.write_csv(output / 'comparison.csv')
+    for name, curve in comparison.discrimination.items():
+        curve.write_csv(output / f'comparison_{name}_concentration.csv')
     for name, table in comparison.segments.items():
         table.write_csv(output / f'comparison_{name}.csv')
     # A manual factor edit creates a new scoring artifact; its evidence is separate.
