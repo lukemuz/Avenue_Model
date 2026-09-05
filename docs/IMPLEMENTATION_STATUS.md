@@ -6,6 +6,20 @@ The full scope and acceptance criteria remain in [IMPROVEMENT_PLAN.md](IMPROVEME
 This record is a progress log, not a declaration that the plan is complete.
 Existing evaluation reports, scripts and recorded runs have been preserved.
 
+## In progress: monotonic rating effects
+
+The private ordered log-link block solver is implemented and tested. It pools
+Poisson/Gamma/Tweedie sufficient statistics exactly in log space, supports either
+direction and common finite coefficient bounds, and handles zero actuals. An
+independent exhaustive contiguous-partition oracle checks 3,072 loss comparisons;
+additional checks cover unequal weights, extreme statistics and invalid inputs.
+All 261 Rust tests pass (six ignored, plus one ignored doc test).
+
+This does not yet enable monotonic fitting through Plan. Solver integration,
+constrained convergence, empty bands, inference semantics and export acceptance
+remain open. [Implementation notes](MONOTONIC_IMPLEMENTATION.md) give the derivation
+and integration gates. Existing model behavior is unchanged.
+
 ## Completed increment: scoring exposure and intercept-only fitting
 
 - Prediction prepares rating predictors independently of training weights.

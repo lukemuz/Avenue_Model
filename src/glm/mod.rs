@@ -3,6 +3,7 @@
 
 pub mod fitting;
 pub mod inference;
+mod isotonic;
 pub mod loss;
 pub mod matching;
 pub mod penalty;
