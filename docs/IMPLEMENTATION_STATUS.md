@@ -308,3 +308,26 @@ that evidence.
   superiority. Historical evaluation outputs remain untouched.
 - [Semantics and limitations](GLM_SELECTION.md): no adaptive search, warm-start reuse,
   repeated overlapping CV, or post-selection confidence intervals in this increment.
+
+## Completed increment: tuning complexity and executable booster study
+
+- Tuning now measures the same boosting prefix used for the selected CV loss, retains
+  per-fold counts, calls its aggregate a mean, and propagates the supplied CV seed.
+  One-shot fold iterators are materialized for reuse across trials.
+- Constant ensembles correctly estimate one intercept table. Removed the obsolete
+  arbitrary failure-complexity substitution and broad BaseException suppression.
+- Real-booster tests use a full ensemble with more tables than its selected prefix,
+  verify generator-fold reuse, and check constant-ensemble tuning. Both tests pass
+  against stock 4.7.0 and fork 4.6.0.99. All 91 Python tests and 258 Rust tests pass;
+  six Rust tests and one doc test remain ignored. Release extension rebuilt.
+- `examples/booster_pricing_study.py` completes synthetic CSV preparation, time holdout,
+  grouped inner tuning, build metadata, conversion parity, category identity, common
+  GLM comparison, quote explanations, workbook reload and a 5% intercept edit with
+  fresh validation. The stock study is now exercised in CI.
+- Both build runs completed: `/tmp/avenue-stock-booster-study-v2` and
+  `/tmp/avenue-fork-booster-study`. Each selected one round, produced two tables/five
+  rows, and passed parity and raw-label reload on 1,000 holdout quotes at absolute
+  plus relative tolerance 1e-12. This validates mechanics, not predictive superiority.
+- [Study limitations](BOOSTER_STUDY.md) explicitly cover shared LightGBM CV binning,
+  unknown booster GLM-style convergence, post-selection inference, timing scope and
+  CV table screening versus final-artifact resource limits.

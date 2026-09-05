@@ -78,12 +78,14 @@ from avenue_model import tune_lgbm
 result = tune_lgbm(dataset, {"objective": "poisson"}, n_trials=50)
 print(result.summary())
 
-trial = result.select(max_tables=10)     # most accurate model within a budget
-booster = lgb.train({**base, **trial.params}, dataset)
+trial = result.select(max_tables=10)     # screen by mean CV table count
+booster = lgb.train({**trial.params, "num_iterations": trial.num_iterations}, dataset)
 ```
 
 `result.frontier` is sorted by table count, `result.best_cv` ignores size entirely, and
-`select(max_tables=...)` raises rather than quietly returning something over budget. When
+`select(max_tables=...)` screens the mean CV table count at the selected iteration.
+It does not enforce a limit on the final converted artifact. `trial.fold_tables` retains
+the fold distribution; a constant booster is a valid one-table artifact. When
 the LightGBM in play is stock, the two interaction penalties are dropped from the search
 with a warning instead of being tuned silently — LightGBM ignores an unknown parameter
 with only a log line, so a search over one would otherwise spend its whole budget on a
@@ -171,3 +173,5 @@ chosen by hand by nearly 3%.
 The unpenalised refit also carries Wald standard errors and reference levels, which a
 converted model does not. A penalised fit omits the standard errors, so the ridge row
 is the better model and the unpenalised row is the one to quote errors from.
+
+See the [executable stock/fork study](BOOSTER_STUDY.md) for tuning through raw-quote reload and an audited rate change.

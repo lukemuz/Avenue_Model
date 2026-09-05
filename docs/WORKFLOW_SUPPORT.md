@@ -11,6 +11,7 @@ Run these from a source checkout after installation:
 ```sh
 python examples/auto_pricing_study.py --output /tmp/auto-study
 python examples/homeowners_perils.py --output /tmp/homeowners-study
+python examples/booster_pricing_study.py --output /tmp/booster-study
 ```
 
 The auto study also selects penalty and Tweedie power within its training years,
@@ -32,6 +33,9 @@ are one. Selecting those factors and coverage assumptions remains the analyst's 
 The synthetic runs verify mechanics; they do not establish predictive superiority on
 real insurance data. Their bootstrap loss-difference intervals include zero. Review
 held-out calibration as well as loss and fit diagnostics before selecting an artifact.
+
+The [booster study](BOOSTER_STUDY.md) exercises stock/fork CPU tuning, selected-round
+complexity, conversion parity, raw-category reload and a rate edit.
 
 ## Capability matrix
 
