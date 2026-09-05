@@ -1,0 +1,71 @@
+[
+  {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 20,
+      "num_threads": 1,
+      "verbosity": -1,
+      "min_data_in_leaf": 80,
+      "max_depth": 2,
+      "num_leaves": 3,
+      "seed": 47,
+      "learning_rate": 0.06702327078404743,
+      "interaction_penalty": 0.048724154721822836,
+      "interaction_complexity": 0.07287346335011062
+    },
+    "cv_loss": 0.5178725753937242,
+    "tables": 2.0,
+    "num_iterations": 1,
+    "fold_tables": [
+      2.0,
+      2.0,
+      2.0
+    ]
+  },
+  {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 20,
+      "num_threads": 1,
+      "verbosity": -1,
+      "min_data_in_leaf": 80,
+      "max_depth": 2,
+      "num_leaves": 3,
+      "seed": 47,
+      "learning_rate": 0.10272017088390523,
+      "interaction_penalty": 0.03538025691295405,
+      "interaction_complexity": 0.07996046016600539
+    },
+    "cv_loss": 0.5178785210638052,
+    "tables": 2.0,
+    "num_iterations": 1,
+    "fold_tables": [
+      2.0,
+      2.0,
+      2.0
+    ]
+  },
+  {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 20,
+      "num_threads": 1,
+      "verbosity": -1,
+      "min_data_in_leaf": 80,
+      "max_depth": 2,
+      "num_leaves": 3,
+      "seed": 47,
+      "learning_rate": 0.1468342781762439,
+      "interaction_penalty": 0.020729980359408318,
+      "interaction_complexity": 0.07060310112730092
+    },
+    "cv_loss": 0.5178895610834358,
+    "tables": 2.0,
+    "num_iterations": 1,
+    "fold_tables": [
+      2.0,
+      2.0,
+      2.0
+    ]
+  }
+]

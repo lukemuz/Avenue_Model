@@ -22,10 +22,27 @@ print(comparison.recommended)
 External prediction vectors must be in the same row order as `holdout`. For external
 models, supply evidence-backed `converged=True` only after checking their fit; it is
 caller-provided evidence. Avenue models expose their own convergence, and a recorded
-failure cannot be overridden. A candidate with unknown convergence is compared but
+failure cannot be overridden. A candidate with unknown training status is compared but
 is not recommended. The recommendation is the lowest common evaluation loss among
-successfully scored candidates with known convergence, not a complete actuarial
+successfully scored candidates with known convergence or explicitly completed training, not a complete actuarial
 approval or a claim of statistical superiority.
+
+For learners such as finite-schedule boosting, use
+`Candidate(booster_model, unit="rate", training_status="completed")` after verifying
+that the intended training procedure finished. The booster tutorial does this after
+the selected schedule returns and conversion/reload parity checks pass. Completion
+is caller-provided training evidence; successful conversion alone establishes no
+training or generalization claim. It leaves `converged` null instead of inventing a
+GLM convergence certificate. Unknown external predictions remain ineligible by default.
+
+The summary separates scoring `status`, effective `training_status` (`converged`,
+`completed`, `failed`, `unknown`), the caller's `declared_training_status`, and
+`converged`. Set `training_status="failed"` to record a failed training procedure;
+`"unknown"` or `None` supplies no completion evidence. Any model- or caller-reported
+nonconvergence, or an explicit failed training status, defeats completion evidence.
+A scoring failure remains ineligible even if training completed. Existing callers
+using `converged=True` remain supported. Contradictory failure evidence is resolved
+conservatively and retained in the separate columns.
 
 Every candidate explicitly declares a common unit. These declarations are assertions
 by the caller; Avenue does not infer external physical units or perform conversions.

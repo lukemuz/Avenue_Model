@@ -17,14 +17,20 @@ class Candidate:
 
     ``converged`` records caller evidence for external predictions. A model's own
     False convergence status always wins over a caller-supplied value.
+    ``training_status='completed'`` supplies caller evidence that a learner without
+    a convergence certificate completed its intended training procedure. It never
+    overrides reported nonconvergence or an explicit failed training status.
     """
     source: Any
     unit: str
     converged: bool | None = None
+    training_status: str | None = None
 
     def __post_init__(self):
         if self.converged is not None and type(self.converged) is not bool:
             raise ValueError('converged must be True, False or None')
+        if self.training_status not in (None, 'completed', 'failed', 'unknown'):
+            raise ValueError('training_status must be completed, failed, unknown or None')
 
 
 @dataclass
@@ -100,7 +106,8 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
     """Compare Candidate models/vectors using the same rows, weights and explicit loss.
 
     No rows are silently excluded. Candidate scoring failures are retained in the
-    summary; they cannot be recommended. Recommendation requires known convergence.
+    summary; they cannot be recommended. Recommendation requires known convergence
+    or explicitly completed training, with any reported failure taking precedence.
     Bootstrap intervals are paired differences from the first candidate, with fixed
     predictions (no refitting). Set bootstrap_group for cluster resampling.
     Discrimination uses ascending predicted means and the same weights: Gini is
@@ -151,7 +158,16 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
     for name, candidate in candidates.items():
         own_convergence = getattr(candidate.source, 'converged', None)
         convergence = own_convergence if own_convergence is not None else candidate.converged
+        if own_convergence is False or candidate.converged is False or candidate.training_status == 'failed':
+            training_status = 'failed'
+        elif convergence is True:
+            training_status = 'converged'
+        elif candidate.training_status == 'completed':
+            training_status = 'completed'
+        else:
+            training_status = 'unknown'
         record = {'candidate': name, 'status': 'failed', 'converged': convergence,
+                  'training_status': training_status, 'declared_training_status': candidate.training_status,
                   'eligible': False, 'rows': n, 'weight': total_weight,
                   'actual': total_actual, 'expected': None, 'ae_ratio': None,
                   'mean_loss': None, 'error': None, 'gini': None, 'normalized_gini': None,
@@ -169,7 +185,7 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
                 raise ValueError('Evaluation loss is nonfinite')
             expected = math.fsum(a * b for a, b in zip(mu, w))
             loss = math.fsum(a * b for a, b in zip(row_losses, w)) / total_weight
-            record.update(status='scored', eligible=convergence is True, expected=expected,
+            record.update(status='scored', eligible=training_status in ('converged', 'completed'), expected=expected,
                           ae_ratio=total_actual / expected if expected else None, mean_loss=loss)
             predictions[name] = mu
             valid_predictions[name] = mu
@@ -231,13 +247,15 @@ def compare_models(data, candidates, *, target, unit, metric, weight=None,
                        'gini', 'normalized_gini',
                        'loss_difference_lower', 'loss_difference_upper')
     summary = pl.DataFrame(records, schema_overrides={
-        **{name: pl.Float64 for name in numeric_summary}, 'converged': pl.Boolean, 'error': pl.String})
+        **{name: pl.Float64 for name in numeric_summary}, 'converged': pl.Boolean, 'error': pl.String,
+        'declared_training_status': pl.String})
     return Comparison(summary, pl.DataFrame(predictions), exhibits,
                       {'unit': unit, 'target': target, 'weight': weight, 'metric': metric,
                        'tweedie_power': tweedie_power if metric == 'tweedie' else None,
                        'population_fingerprint': _fingerprint(data), 'excluded_rows': 0,
                        'bootstrap': bootstrap, 'effective_bootstrap': effective_bootstrap, 'seed': seed, 'bootstrap_group': bootstrap_group,
                        'difference_baseline': baseline,
+                       'recommendation_rule': 'lowest common loss among scored candidates with converged or completed training; reported failures take precedence',
                        'discrimination': {'ranking': 'ascending predicted response mean',
                            'weight': weight, 'ties': 'aggregate equal scores before trapezoidal integration',
                            'zero_weight_rows': 'retained in predictions; contribute no rank support',

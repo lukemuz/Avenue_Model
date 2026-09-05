@@ -1,0 +1,61 @@
+{
+  "stock": {
+    "artifact_directory": "/tmp/avenue-booster-status-stock",
+    "files": {
+      "booster.txt": "9f0b080b08976f2bab18ad63858540f3cc961b9a72837a6d9da38d3efcc0aab2",
+      "booster_review.md": "e525a1eac06afa44c2e196058422aced1e86c2f48ba875a5f0e8228676771b00",
+      "change_contributions.csv": "022366443dbd1fd072232893207c6805a322937c99acd0b23c70b83d98c935f7",
+      "change_totals.csv": "7e9b34e9e38108f5795ff7f352fcdbfa523bd7740a594a37c270260548b39343",
+      "comparison.csv": "ef3e7800db12a80267ffd036f47c4bf112e122b6c79aea17671bd52dab52f304",
+      "complexity.json": "6717049b779dfa4323d2834c1711238919812034d3e24c4455d67a6fcc7c924b",
+      "converted/00_intercept.csv": "ebb1538e562f7b4de4864c5481be440e2d1014dab6255d4b1e62320e610d0e03",
+      "converted/01_table_1.csv": "66ffeab8666cc412ce64578bc52af8689f28bd875c1d9a51574346fd96b2bc39",
+      "converted/conversion.json": "7d4d6893723169b949bb41949f09b8abb6182db09f06e3a2bb5a0366772154a3",
+      "converted/manifest.json": "895ab674da9071b2de04b5f51291b629d1f47784a4e73f968d63217d38ee4da6",
+      "cv_splits.json": "d4ed1d8e3a74e53d0bf315b216485049d671134d8ddfad75d158a85956589a83",
+      "edited/00_intercept.csv": "13f6fdcac7eecb26236c816850548ca46a7183dc29d1787203156b3aa5f8aab0",
+      "edited/01_table_1.csv": "66ffeab8666cc412ce64578bc52af8689f28bd875c1d9a51574346fd96b2bc39",
+      "edited/manifest.json": "dfb777e7a141b64014a07373c921cebcaf653f7e9d0843047710523e6c918a5d",
+      "edited_review.md": "dc33211889e0cec4ab3f185c5bdcf6f904b1abd46335abf61840aa5bbd175b3c",
+      "final_split.json": "5265ee125116d7b003686085b6a4288ad0bedc3bd227848dfc2c0c39f449753e",
+      "preparation_audit.csv": "9ce9bee3bfcef4e45c288a0e758a8a675cf4cdc53482fbc9c701977da48e363b",
+      "quote_explanations.csv": "79529006c8c1fc029094e0f9ce36aaf2a72ae566d28ba75f0f46b2cbff95730e",
+      "synthetic_auto.csv": "ab54efd3a80fe9cf0896858bc2eb1e1726b63b394e47bae0aad6afe346d3c3c4",
+      "trials.json": "f9b5d1449a716e22654ff13523f7cad60e8d997e417200a28b142468ed33be6d",
+      "tuning.txt": "671904d9254444eb654e8fe8d9d992aef342f67bc00d8c69d5cda0bf60a0c15f"
+    }
+  },
+  "fork": {
+    "artifact_directory": "/tmp/avenue-booster-status-fork",
+    "files": {
+      "booster.txt": "a6ee894926bc725314840e2be3023c101e2a322bd3296f08ca7e36b7ad0275d5",
+      "booster_review.md": "e525a1eac06afa44c2e196058422aced1e86c2f48ba875a5f0e8228676771b00",
+      "change_contributions.csv": "022366443dbd1fd072232893207c6805a322937c99acd0b23c70b83d98c935f7",
+      "change_totals.csv": "7e9b34e9e38108f5795ff7f352fcdbfa523bd7740a594a37c270260548b39343",
+      "comparison.csv": "ef3e7800db12a80267ffd036f47c4bf112e122b6c79aea17671bd52dab52f304",
+      "complexity.json": "a61a30ce05b4aad3c97a2c27afc933e0d479ff9d10c8fc8dd1a62508853c7144",
+      "converted/00_intercept.csv": "ebb1538e562f7b4de4864c5481be440e2d1014dab6255d4b1e62320e610d0e03",
+      "converted/01_table_1.csv": "66ffeab8666cc412ce64578bc52af8689f28bd875c1d9a51574346fd96b2bc39",
+      "converted/conversion.json": "0ee5b4aff0b005337aa91e07c4ef8225606e7e0c44ccb798734cff69bd3fea03",
+      "converted/manifest.json": "f4e19e87f265339361508526775a7ca628323d53a0a73fb4afd5546a766dea72",
+      "cv_splits.json": "d4ed1d8e3a74e53d0bf315b216485049d671134d8ddfad75d158a85956589a83",
+      "edited/00_intercept.csv": "13f6fdcac7eecb26236c816850548ca46a7183dc29d1787203156b3aa5f8aab0",
+      "edited/01_table_1.csv": "66ffeab8666cc412ce64578bc52af8689f28bd875c1d9a51574346fd96b2bc39",
+      "edited/manifest.json": "bc6fb821f40fbe9ed9b7d6941b50519753cc4c813b7d3f756c9bd6d15e0b1a65",
+      "edited_review.md": "dc33211889e0cec4ab3f185c5bdcf6f904b1abd46335abf61840aa5bbd175b3c",
+      "final_split.json": "5265ee125116d7b003686085b6a4288ad0bedc3bd227848dfc2c0c39f449753e",
+      "preparation_audit.csv": "9ce9bee3bfcef4e45c288a0e758a8a675cf4cdc53482fbc9c701977da48e363b",
+      "quote_explanations.csv": "79529006c8c1fc029094e0f9ce36aaf2a72ae566d28ba75f0f46b2cbff95730e",
+      "synthetic_auto.csv": "ab54efd3a80fe9cf0896858bc2eb1e1726b63b394e47bae0aad6afe346d3c3c4",
+      "trials.json": "13640fb6c9ad7dcf6005ba071fb14b07f3564c58f12d0a65e4b390c0ad5e6901",
+      "tuning.txt": "1a98165d0278bf8f196608305ecb525ccbb1b360f63ef94499446bb42bbb8e5a"
+    }
+  },
+  "source_parent": "88f6c4fa57ad45f64d0714d199d4c0c251002160",
+  "source_sha256": {
+    "python/avenue_model/comparison.py": "fd26d6ee45506a222ebfe130d766f21abb1281fc405e5013dfb98596dae37283",
+    "tests/test_comparison.py": "c240f46712a5ffb854dcc433ffcda1fee7b240dd6f852a1bcd2bcce98928c966",
+    "examples/booster_pricing_study.py": "bbad79dde3fe8fd4de3d2645f03f3faa8442f54f23dec220e5ffcee3347c7dd7"
+  },
+  "python_tests_passed": 132
+}

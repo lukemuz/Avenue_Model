@@ -106,7 +106,7 @@ def run_challenger(train, holdout, baseline, directory):
                         lineage={'conversion': converted.metadata, 'trial': asdict(selected)})
     comparison = compare_models(holdout, {
         'glm_frequency': Candidate(baseline, 'paid_claims/exposure'),
-        'booster_frequency': Candidate(selected_model, 'paid_claims/exposure'),
+        'booster_frequency': Candidate(selected_model, 'paid_claims/exposure', training_status='completed'),
     }, target='avenue_frequency', weight='exposure', unit='paid_claims/exposure', metric='poisson',
        segments=['region', 'fuel'], bootstrap=20, seed=20260905)
     comparison.summary.write_csv(out / 'frequency_comparison.csv')

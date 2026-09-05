@@ -71,11 +71,15 @@ def run(output, data_path=None):
         raise RuntimeError('Baseline GLM did not converge')
     comparison = compare_models(holdout, {
         'glm': Candidate(baseline, 'claims/exposure'),
-        # A finite boosting schedule has no GLM score-convergence certificate.
-        'booster': Candidate(model, 'claims/exposure'),
+        # The selected schedule completed and conversion/reload parity passed above.
+        # This is training evidence, not a GLM score-convergence certificate.
+        'booster': Candidate(model, 'claims/exposure', training_status='completed'),
     }, target='avenue_frequency', unit='claims/exposure', metric='poisson', weight='exposure',
        segments=['region', 'year'], bootstrap=50, seed=47)
     comparison.summary.write_csv(output / 'comparison.csv')
+    booster_status = comparison.summary.filter(pl.col('candidate') == 'booster').row(0, named=True)
+    assert booster_status['training_status'] == 'completed' and booster_status['eligible']
+    assert booster_status['converged'] is None
     tables = model.to_workbook(scale='factor').tables
     started = time.perf_counter()
     loaded.predict(quotes)

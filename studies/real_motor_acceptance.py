@@ -191,7 +191,8 @@ def run(args):
         challenger = run_challenger(train, holdout, models['frequency'], out / 'booster')
         challenger_product = frequency_severity(challenger, models['severity'])
         challenger_product.save(out / 'booster_severity_product')
-        candidates['booster_frequency_glm_severity'] = Candidate(challenger_product, 'loss/exposure')
+        candidates['booster_frequency_glm_severity'] = Candidate(
+            challenger_product, 'loss/exposure', training_status='completed')
     comparison = compare_models(holdout, candidates,
        target='avenue_pure_premium', unit='loss/exposure', metric='tweedie', tweedie_power=1.5,
        weight='exposure', segments=['region', 'fuel'], bootstrap=20, seed=20260905)

@@ -5,6 +5,32 @@ from avenue_model import Candidate, Plan, compare_models
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_completed_training_is_eligible_without_fabricated_convergence(self):
+        result = self.compare({'unknown': Candidate([.01, 1., 2., 5.], 'rate'),
+                               'completed': Candidate([.01, 1., 2., 5.], 'rate', training_status='completed'),
+                               'glm': Candidate([1.] * 4, 'rate', True)})
+        self.assertEqual(result.recommended, 'completed')
+        self.assertEqual(result.summary['training_status'].to_list(), ['unknown', 'completed', 'converged'])
+        self.assertEqual(result.summary['converged'].to_list(), [None, None, True])
+        self.assertEqual(result.summary['eligible'].to_list(), [False, True, True])
+
+    def test_failure_evidence_always_defeats_training_completion(self):
+        class Failed:
+            converged = False
+            def predict(self, data):
+                return [.01, 1., 2., 5.]
+        result = self.compare({
+            'own_failure': Candidate(Failed(), 'rate', True, 'completed'),
+            'caller_failure': Candidate([.01, 1., 2., 5.], 'rate', False, 'completed'),
+            'training_failure': Candidate([.01, 1., 2., 5.], 'rate', True, 'failed'),
+            'scoring_failure': Candidate([None] * 4, 'rate', training_status='completed')})
+        self.assertIsNone(result.recommended)
+        self.assertEqual(result.summary['eligible'].to_list(), [False] * 4)
+        self.assertEqual(result.summary['training_status'].to_list(), ['failed'] * 3 + ['completed'])
+        self.assertEqual(result.summary['status'].to_list(), ['scored'] * 3 + ['failed'])
+        with self.assertRaisesRegex(ValueError, 'training_status'):
+            Candidate([], 'rate', training_status='finished_maybe')
+
     def test_nearly_constant_targets_have_stable_normalized_discrimination(self):
         for epsilon in [1e-12, 1e-14, 1e-15]:
             y = [1., 1. + epsilon, 1. + 2 * epsilon]

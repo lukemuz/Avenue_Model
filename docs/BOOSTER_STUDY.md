@@ -29,9 +29,11 @@ conversion parity evidence, named rating workbooks, a model report, quote explan
 and a common weighted Poisson-loss comparison against a converged GLM. Reloaded raw
 quote predictions must agree with the booster at `atol=rtol=1e-12`. A 5% intercept edit
 produces factor/change exhibits and a fresh validation report. Boosters have no GLM
-convergence certificate or classical coefficient inference; their comparison eligibility
-is therefore unknown rather than silently asserted. Review their predictive evidence
-explicitly. Optional GLM refitting is demonstrated separately in `refit_as_glm.py`;
+convergence certificate or classical coefficient inference. After the selected schedule
+and parity checks finish, the tutorial explicitly supplies `training_status="completed"`
+to comparison. The booster becomes eligible under the same holdout loss criterion while
+its `converged` value stays null. Completion is distinct from predictive quality and
+never overrides a reported failure. Optional GLM refitting is demonstrated separately in `refit_as_glm.py`;
 its data-selected structure does not justify unconditional Wald inference.
 
 The complexity report distinguishes mean CV table count and its fold distribution from
