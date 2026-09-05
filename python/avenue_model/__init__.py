@@ -49,3 +49,5 @@ from .selection import GLMSelection, GLMTrial, select_glm
 __all__ += ['GLMSelection', 'GLMTrial', 'select_glm']
 from .inference import CoefficientIntervals, coefficient_intervals, TermTests, term_tests
 __all__ += ['CoefficientIntervals', 'coefficient_intervals', 'TermTests', 'term_tests']
+from .credibility import CredibilityResult, poisson_credibility
+__all__ += ['CredibilityResult', 'poisson_credibility']

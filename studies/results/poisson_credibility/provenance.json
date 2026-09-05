@@ -1,0 +1,25 @@
+{
+  "source_parent": "66a03b1451e221e5aa3b433d90a0a778f04a2131",
+  "source_sha256": {
+    "python/avenue_model/credibility.py": "0c9bf33f36ab7ba63147f1bdb6df4f10620fe2e55ffac0f1abb0f991bf9e66b3",
+    "python/avenue_model/__init__.py": "c4baf332fb123f46183d075645a704adfc838fefd69094a80a0d14131192f030",
+    "tests/test_credibility.py": "1ce8af66456a6e2d5eb1cdec21e72a59695f8a0819810fb425227898a3c88ab2",
+    "studies/poisson_credibility_acceptance.py": "744347c40446487944b78da7ad555f0682b9286dbe4a66521cadb456a2bc8151",
+    "pyproject.toml": "77797c8ad88c6b43c00102305600d49042a59b3dbda4d5c2e5815a1cfdda62e9"
+  },
+  "artifact_directory": "/tmp/avenue-poisson-credibility-final",
+  "artifact_sha256": {
+    "result.json": "7a52391f956a7090099d08cec7357c1fc2b6a4fa07808ef89afa15fb9f83b0dd",
+    "future_comparison.csv": "575b71032efd7250dd37eb10661d797d780329e38bb857a30048de8804106840",
+    "credibility/credibility.json": "32ca5871a0e31a0a665edb8f9de5303b075276cf38e40bff4d7b7fba432effde",
+    "credibility/posterior.csv": "4bc9b327e216d996b1f2c6867743976f9b189eaa6434e05a9060cc5022265d1e",
+    "credibility/model.json": "731a5f19a43749f627335849172aa127013048f543e8e42b1e8e304a1ddce9de"
+  },
+  "versions": {
+    "numpy": "2.5.2",
+    "scipy": "1.18.1",
+    "polars": "1.31.0"
+  },
+  "python_tests_passed": 137,
+  "reference": "https://statproofbook.github.io/P/poissexp-post.html"
+}

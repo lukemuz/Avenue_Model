@@ -27,6 +27,9 @@ comes out is a set of CSVs a person can read, edit, file and load back.
   with fold-local knots, linear tails and continuous-basis coefficient inference.
   [Whole-term tests](docs/TERM_TESTS.md) assess supported factor contrasts jointly
   using the fit's declared covariance method.
+- **Sparse groups can borrow strength.** [Poisson–Gamma credibility](docs/POISSON_CREDIBILITY.md)
+  pools group frequency relativities around a fixed baseline, with explicit prior
+  strength, conditional posterior intervals and ordinary scoring workbooks.
 - **Problems are found before fitting.** `check()` reports data faults, thin levels,
   unidentified terms and redundant tables together, with actionable messages.
 - **The fitted model is an artifact.** Save it as JSON or readable CSV tables, edit it,

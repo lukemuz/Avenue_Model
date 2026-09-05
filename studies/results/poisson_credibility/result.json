@@ -1,0 +1,35 @@
+{
+  "status": "passed",
+  "seed": 20260905,
+  "groups": 6000,
+  "prior_strength": 2.0,
+  "checks": [
+    {
+      "population": "all",
+      "groups": 6000,
+      "pooled_mse": 0.29038927293462535,
+      "unpooled_mse": 5.8651990671917105,
+      "credible_interval_coverage": 0.9496666666666667
+    },
+    {
+      "population": "sparse",
+      "groups": 2962,
+      "pooled_mse": 0.4640871527316029,
+      "unpooled_mse": 11.650302723473573,
+      "credible_interval_coverage": 0.9449696151249156
+    },
+    {
+      "population": "supported",
+      "groups": 1513,
+      "pooled_mse": 0.0342102490107173,
+      "unpooled_mse": 0.0380057694202849,
+      "credible_interval_coverage": 0.9537343027098479
+    }
+  ],
+  "limitations": [
+    "well-specified prior-predictive simulation",
+    "known fixed baseline; prior strength prespecified",
+    "no hyperparameter or baseline estimation uncertainty",
+    "coverage is averaged over the generating prior, not a frequentist guarantee for every fixed group rate"
+  ]
+}

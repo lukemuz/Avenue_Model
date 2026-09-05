@@ -164,7 +164,7 @@ not evidence that its remote jobs ran successfully.
 | Direct intervals and robust/cluster covariance | Verified for supported fixed unpenalized designs: interval, HC0 and CR0 tests compare independent calculations and cluster definitions; homeowners exports cluster intervals. Small-sample/multiway corrections are not implemented. |
 | Whole-term tests | Open at the audited wheel revision; implemented in the follow-up described above, with [independent tests](../tests/test_term_tests.py). Small-sample and post-selection joint tests remain open. |
 | Regularized uncertainty, simulation checks and post-selection interpretation | Partial: naive unpenalized errors are withheld and conditional limits documented; no fitted-model bootstrap interval API or simulation-based coverage study. |
-| Narrow credibility/partial pooling with sparse-group simulation | Open: generic ridge is not claimed to be a credibility model. |
+| Narrow credibility/partial pooling with sparse-group simulation | Follow-up: [Poisson–Gamma group relativity](POISSON_CREDIBILITY.md) now supplies conditional posterior means/intervals, ordinary scoring workbooks, composition and fixed-prior updates. Independent likelihood quadrature and a 6,000-group prior-predictive simulation verify recovery, sparse-group stability and conditional coverage. Prior strength is prespecified; empirical-prior, baseline-uncertainty and severity-pooling extensions remain open. |
 | Quasi-Poisson and separate negative-binomial evaluation | Partial: quasi-Poisson reference agreement and point-estimate/uncertainty explanation are verified. Negative-binomial estimation remains unimplemented and has no comparative acceptance study. |
 | Booster-derived structure support, simplification proposals and selected penalties | Partial: structure checks/support and general GLM selection exist; no native cell-merging proposal workflow or dedicated post-structure-selection uncertainty. Exact conversion remains distinguished from refitting. |
 
@@ -205,8 +205,8 @@ not evidence that its remote jobs ran successfully.
 
 ## Remaining priorities
 
-1. Establish a narrow credibility workflow and defensible regularized uncertainty before
-   claiming the remaining statistical needs are all specialized.
+1. Establish defensible regularized uncertainty and broaden the initial conditional
+   credibility workflow where baseline/prior estimation affects actuarial decisions.
 2. Improve structure selection and stabilization for sparse spline tails. The completed
    unpenalized spline mechanics and inference do not establish superior held-out models.
 3. Complete final-artifact trial complexity, original large-table scoring profiling,
