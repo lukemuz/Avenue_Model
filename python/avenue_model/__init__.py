@@ -20,7 +20,10 @@ from .tuning import (  # noqa: F401
     tune_lgbm,
 )
 
+from .conversion import ConversionResult, from_booster
+
 __all__ = [
+    "ConversionResult", "from_booster",
     *(getattr(_rust, "__all__", None) or
       [n for n in dir(_rust) if not n.startswith("_")]),
     "TuningResult",

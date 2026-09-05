@@ -1,10 +1,9 @@
 """Tune a LightGBM model for accuracy *and* for how many rating tables it becomes.
 
-A booster converts into rating tables exactly, whatever its shape — but the number of
-tables grows with the number of distinct feature combinations the ensemble uses, and an
-unconstrained booster converts into more tables than anyone will read. That count is a
-modelling choice, not a fact of the data, so it belongs in the search rather than in a
-post-hoc apology.
+Table count is an inexpensive complexity proxy. It grows with the distinct feature
+combinations in an ensemble, but does not describe table rows, support or scoring cost.
+Conversion supports a subset of booster semantics; use `from_booster` with quote data
+to retain numerical parity evidence for the supplied inputs.
 
 `tune_lgbm` runs an Optuna study with two objectives — cross-validated loss and the
 median consolidated table count — and returns the Pareto frontier, so the trade-off is

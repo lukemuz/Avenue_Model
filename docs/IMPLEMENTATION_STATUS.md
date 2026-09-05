@@ -62,10 +62,23 @@ These findings do not establish missing/default-route correctness or support for
 all booster objectives. Those remain correctness gates before conversion can be
 called dependable for arbitrary quote inputs.
 
+## Completed increment: conversion entry point and semantic guards
+
+- Python `from_booster()` returns a model, build/objective metadata, source dump
+  fingerprint and an optional parity report. No-data conversion states not verified.
+- Reports retain failed rows and error/unmatched/nonfinite summaries; saving writes
+  an editable workbook plus separate evidence JSON without training data.
+- Core JSON conversion rejects unsupported objectives, multiclass, averaged ensembles,
+  linear leaves, split operators and non-unit binary sigmoid. Binary objective options
+  no longer accidentally select an identity link.
+- Added failure-report, metadata persistence and binary-link regression checks.
+- Verification: 42 Python tests pass, including the entry point and workbook evidence;
+  the seven conversion tests also run against the installed fork. Usage and remaining
+  missing/default limitations are documented in [CONVERSION.md](CONVERSION.md).
+
 ## Next required work
 
-Complete scoring semantics (explicit units/conversions, schema, consistent exposure checks); complete LightGBM missing/default routing and unsupported-semantics checks, and add
-a Booster entry point with conversion metadata and optional parity evidence.
+Complete scoring semantics (explicit units/conversions, schema, consistent exposure checks); complete LightGBM missing/default routing, constant boosters and preprocessing persistence.
 Then complete the ordinary study workflow, reproducible splits/comparison, named
 review/explanations, composition and analytical preservation, and selected modeling
 extensions from the plan. Run the plan's fresh-user acceptance exercise before making

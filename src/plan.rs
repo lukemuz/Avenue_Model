@@ -1997,7 +1997,7 @@ impl FittedModel {
     /// Convert a LightGBM model into rating tables and hold it as a `FittedModel`.
     ///
     /// `consolidation` is `"max"` for the minimal set of tables or `"analysis"` for
-    /// one per tree node. Predictions match the original model exactly.
+    /// one per tree node. Use Python `from_booster` with data for a numerical parity report.
     pub fn from_lgbm_json(model_json: &str, consolidation: &str) -> Result<Self, PolarsError> {
         let model = RatingModel::from_lgbm_json(model_json, consolidation)?;
         let family = serde_json::from_str::<serde_json::Value>(model_json)

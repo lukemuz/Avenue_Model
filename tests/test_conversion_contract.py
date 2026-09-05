@@ -41,6 +41,8 @@ class ConversionContract(unittest.TestCase):
         raw = [sum(reference(t['tree_structure'], row, names) for t in model_dump['tree_info'])
                for row in frame.to_dicts()]
         expected = [math.exp(v) for v in raw] if model_dump['objective'] == 'poisson' else raw
+        if model_dump['objective'].startswith('binary'):
+            expected = [1 / (1 + math.exp(-v)) for v in raw]
         for mode in ('analysis', 'max'):
             model = FittedModel.from_lgbm_json(json.dumps(model_dump), consolidation=mode)
             with tempfile.TemporaryDirectory() as path:
@@ -50,6 +52,24 @@ class ConversionContract(unittest.TestCase):
                     for row, (a, e) in enumerate(zip(actual, expected)):
                         self.assertTrue(math.isclose(a, e, abs_tol=1e-12, rel_tol=1e-12),
                                         (mode, row, a, e))
+
+    def test_binary_objective_options_keep_logit_link(self):
+        base = dump(split(0, 0., leaf(-2.), leaf(2.)), ['x'])
+        self.check_conversion({**base, 'objective': 'binary sigmoid:1'},
+                              pl.DataFrame({'x': [-1., 1.]}))
+
+    def test_unsupported_semantics_raise(self):
+        base = dump(split(0, 0., leaf(1.), leaf(2.)), ['x'])
+        for update in ({'objective': 'multiclass num_class:3'}, {'objective': 'custom'},
+                       {'objective': 'binary sigmoid:2'}, {'average_output': True},
+                       {'num_tree_per_iteration': 3}):
+            with self.subTest(update=update), self.assertRaisesRegex(ValueError, 'Unsupported'):
+                FittedModel.from_lgbm_json(json.dumps({**base, **update}))
+        with self.assertRaisesRegex(ValueError, 'nonempty array'):
+            FittedModel.from_lgbm_json(json.dumps({**base, 'tree_info': []}))
+        linear = dump(split(0, 0., {**leaf(1.), 'leaf_coeff': [2.]}, leaf(2.)), ['x'])
+        with self.assertRaisesRegex(ValueError, 'linear leaves'):
+            FittedModel.from_lgbm_json(json.dumps(linear))
 
     def test_partial_categorical_wildcards(self):
         tree = split(0, '1', split(1, '2', leaf(3.), leaf(7.), True), leaf(11.), True)
@@ -122,6 +142,31 @@ class BoosterConversionContract(unittest.TestCase):
         expected = booster.predict(points)
         frame = pl.DataFrame({'a': points[:, 0].astype('int32'),
                               'b': points[:, 1].astype('int32'), 'x': points[:, 2]})
+        from avenue_model import from_booster
+        result = from_booster(booster, frame)
+        self.assertEqual(result.parity['status'], 'passed')
+        self.assertEqual(result.parity['failed_rows'], [])
+        self.assertEqual(result.metadata['version'], lgb.__version__)
+        self.assertEqual(from_booster(booster).parity['status'], 'not_verified')
+        class ShiftedReference:
+            params = {}
+            def dump_model(self):
+                return booster.dump_model()
+            def predict(self, values):
+                return booster.predict(values) + 1.
+        failed = from_booster(ShiftedReference(), frame)
+        self.assertEqual(failed.parity['status'], 'failed')
+        self.assertEqual(failed.parity['failed_rows'], list(range(frame.height)))
+        self.assertAlmostEqual(failed.parity['max_absolute_error'], 1.)
+
+        with tempfile.TemporaryDirectory() as path:
+            result.save(path)
+            evidence = json.loads(Path(path, 'conversion.json').read_text())
+            self.assertEqual(evidence['metadata']['dump_sha256'], result.metadata['dump_sha256'])
+            np.testing.assert_allclose(Workbook.load_csv_dir(path).to_model().predict(frame)['predictions'],
+                                       expected, atol=1e-12, rtol=1e-12)
+        with self.assertRaisesRegex(ValueError, 'Missing/default routing'):
+            from_booster(booster, frame.with_columns(pl.lit(float('nan')).alias('x')))
         for mode in ('analysis', 'max'):
             converted = FittedModel.from_lgbm_json(json.dumps(model_dump), consolidation=mode)
             with tempfile.TemporaryDirectory() as path:

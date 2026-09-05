@@ -650,7 +650,7 @@ impl PyFittedModel {
         Ok(list)
     }
 
-    /// Convert a LightGBM model into rating tables. Predictions match it exactly.
+    /// Convert supported LightGBM structure into rating tables. No numerical parity check is performed.
     ///
     /// `consolidation` is `"max"` for the minimal set of tables, `"analysis"` for one
     /// per tree node.
