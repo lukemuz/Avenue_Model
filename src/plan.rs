@@ -2302,12 +2302,48 @@ impl FittedModel {
         })
     }
 
-    /// Fitted means on the response scale.
+    /// Fitted means on the response scale. Unmatched or nonfinite results raise.
     pub fn predict(&self, df: &DataFrame) -> Result<Series, PolarsError> {
-        // Fitting weights are not scoring inputs. Prepare predictors using the
-        // fitted encoding, then apply an offset only for a declared offset mean.
+        let result = self.predict_diagnostics(df)?;
+        let status = result.column("status")?.str()?;
+        if let Some(row) = status.into_iter().position(|s| s != Some("ok")) {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Prediction failed at row {}: {} (tables: {}). Check predictor levels, missing values and table factors; use predict_diagnostics() to inspect all rows.",
+                    row,
+                    result.column("status")?.str()?.get(row).unwrap_or("unknown"),
+                    result.column("unmatched_tables")?.str()?.get(row).unwrap_or("")
+                ).into(),
+            ));
+        }
+        Ok(result.column("predictions")?.as_materialized_series().clone())
+    }
+
+    /// Preserve input row order and return null means for unmatched/nonfinite rows.
+    /// Invalid schemas or exposure values are errors even in diagnostic mode.
+    pub fn predict_diagnostics(&self, df: &DataFrame) -> Result<DataFrame, PolarsError> {
+        use crate::glm::matching::{precompute_all_matches, NO_MATCH};
         let prepared = self.prepare_inputs(df, false)?;
-        let mut eta = self.model.predict_linear(&prepared.df)?;
+        // Require the same predictor schema for fitted and loaded artifacts.
+        for table in &self.model.tables {
+            for (column, _) in table.get_feature_info() {
+                prepared.df.column(&column).map_err(|_| missing_column(&column, df))?;
+            }
+        }
+        let matches = precompute_all_matches(&self.model, &prepared.df)?;
+        let mut eta = vec![0.0; df.height()];
+        let mut unmatched = vec![Vec::<String>::new(); df.height()];
+        for (t, table) in self.model.tables.iter().enumerate() {
+            let factors = table.data.column("Rating_Factor")?.f64()?;
+            for row in 0..df.height() {
+                if matches[t][row] == NO_MATCH {
+                    unmatched[row].push(self.table_names.get(t).cloned().unwrap_or_else(|| format!("table_{}", t)));
+                } else {
+                    eta[row] += factors.get(matches[t][row] as usize).unwrap_or(f64::NAN);
+                }
+            }
+        }
+        let finite_factors: Vec<bool> = eta.iter().map(|v| v.is_finite()).collect();
         if self.exposure_role == Some(ExposureRole::Offset) {
             if let Some(exposure) = &self.exposure {
                 let values = df
@@ -2330,10 +2366,26 @@ impl FittedModel {
                 }
             }
         }
-        Ok(Series::new(
-            "predictions".into(),
-            self.model.apply_link_function(eta),
-        ))
+        let means = self.model.apply_link_function(eta);
+        let mut predictions = Vec::with_capacity(df.height());
+        let mut status = Vec::with_capacity(df.height());
+        for row in 0..df.height() {
+            let reason = if !unmatched[row].is_empty() {
+                "unmatched"
+            } else if !finite_factors[row] || !means[row].is_finite() {
+                "nonfinite"
+            } else {
+                "ok"
+            };
+            status.push(reason);
+            predictions.push(if reason == "ok" { Some(means[row]) } else { None });
+        }
+        DataFrame::new(vec![
+            Series::new("row".into(), (0..df.height() as u64).collect::<Vec<_>>()).into(),
+            Series::new("predictions".into(), predictions).into(),
+            Series::new("status".into(), status).into(),
+            Series::new("unmatched_tables".into(), unmatched.iter().map(|v| v.join(", ")).collect::<Vec<_>>()).into(),
+        ])
     }
 
     /// Validate against data, using the same weight and offset roles the fit used.

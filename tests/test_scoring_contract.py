@@ -39,6 +39,24 @@ class ScoringContract(unittest.TestCase):
         self.assert_predictions(frequency, quotes, [4.] * 6)
         self.assert_predictions(severity, quotes, [100.] * 6)
 
+    def test_unmatched_quotes_raise_or_return_row_diagnostics(self):
+        model = Plan.frequency('exposure').categorical('group').fit(self.df, 'frequency')
+        quotes = pl.DataFrame({'group': ['A', 'unknown', None, 'A']})
+        for artifact in (model, model.to_workbook().to_model(), model + model):
+            with self.assertRaisesRegex(ValueError, 'row 1: unmatched'):
+                artifact.predict(quotes)
+            details = artifact.predict_diagnostics(quotes)
+            self.assertEqual(details['row'].to_list(), [0, 1, 2, 3])
+            self.assertEqual(details['status'].to_list(), ['ok', 'unmatched', 'unmatched', 'ok'])
+            self.assertEqual(details['unmatched_tables'][0], '')
+            self.assertTrue(details['unmatched_tables'][1])
+            self.assertEqual(details['unmatched_tables'][1], details['unmatched_tables'][2])
+            self.assertEqual(details['predictions'].null_count(), 2)
+            expected = artifact.predict(pl.DataFrame({'group': ['A']}))['predictions'][0]
+            self.assertAlmostEqual(details['predictions'][0], expected)
+            with self.assertRaisesRegex(ValueError, 'group'):
+                artifact.predict(pl.DataFrame({'unrelated': [1]}))
+
     def test_intercept_only_is_an_ordinary_model(self):
         model = Plan.frequency('exposure').fit(self.df, 'frequency')
         self.assertTrue(model.converged)

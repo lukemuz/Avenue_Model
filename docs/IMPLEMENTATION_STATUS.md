@@ -21,10 +21,20 @@ Verification on September 5, 2026: 34 Python tests passed; 257 Rust tests passed
 `/tmp/avenue-cargo`, `/tmp/avenue-rustup`, `/tmp/avenue-eval-venv`, and `/tmp/avenue-tools`.
 Build/test output is in `/tmp/avenue-improvement-{build,python,rust}.log`.
 
+## Completed increment: strict scoring and row diagnostics
+
+- `predict()` rejects unmatched rows and nonfinite factors/response means with row context.
+- `predict_diagnostics()` preserves row order, returns null failed means, and names
+  unmatched tables. Schema and invalid exposure failures still raise.
+- Scoring uses the fitting/validation batch matcher, including explicit wildcards.
+- Python coverage checks fitted, workbook-derived and composed models. Rust coverage
+  checks wildcard routing and nonfinite/overflow behavior.
+- Verification: 35 Python tests and 258 Rust tests passed; 6 Rust tests and one doc
+  test remain ignored. Release extension rebuilt successfully.
+
 ## Next required work
 
-Complete scoring semantics (explicit units/conversions, schema, strict/permissive
-unmatched diagnostics, consistent exposure checks); minimize and fix categorical and
+Complete scoring semantics (explicit units/conversions, schema, consistent exposure checks); minimize and fix categorical and
 threshold LightGBM conversion failures across consolidation modes and workbook reload.
 Then complete the ordinary study workflow, reproducible splits/comparison, named
 review/explanations, composition and analytical preservation, and selected modeling

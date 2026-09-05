@@ -777,6 +777,13 @@ impl PyFittedModel {
             .map_err(value_error)
     }
 
+    /// Row-level scoring results: row, predictions, status and unmatched_tables.
+    /// Unmatched/nonfinite means are null. Invalid input schemas/exposures raise.
+    fn predict_diagnostics(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = df.into();
+        self.inner.predict_diagnostics(&df).map(PyDataFrame).map_err(value_error)
+    }
+
     /// Rating tables with `Coefficient`, `Standard_Error`, `Status` and, for log
     /// links, `Relativity`. Categorical codes carry their level text back as a
     /// `<column>_Level` column.

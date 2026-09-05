@@ -31,7 +31,13 @@ Frequency presets retain their existing rate-plus-weight convention; multiply th
 rates by exposure when computing counts. Severity and rate quote frames no longer
 need dummy training-weight columns.
 
-This is the first scoring-contract increment. Explicit rate/count convenience methods,
-response-unit metadata and strict unmatched-row diagnostics remain planned. Training
-and validation exposure checks also need to be unified with scoring. Until those
-changes land, inspect validation findings and avoid scoring unmatched predictors.
+`predict()` now raises on unmatched rows or nonfinite results. For batch review, use
+`predict_diagnostics(frame)`: it returns `row` (zero-based input position),
+`predictions`, `status` (`ok`, `unmatched`, or `nonfinite`) and `unmatched_tables`.
+Failed predictions are Polars nulls, not NaNs or invented neutral factors. Valid
+wildcard table rows remain valid matches. Missing predictor columns and invalid
+exposures raise even in diagnostic mode. Validation continues to report unmatched
+rows and mark the result unusable; it does not silently accept the reduced population.
+
+Explicit rate/count convenience methods and response-unit metadata remain planned.
+Training and validation exposure checks also need to be unified with scoring.
