@@ -35,5 +35,5 @@ its logit link. Inputs for this entry point are numeric booster values/codes;
 Numerical missing/default routes remain an open conversion limitation. The parity
 entry point rejects null/NaN inputs explicitly. This does not make arbitrary converted
 models safe to score on missing quote predictors, and finite-data parity does not
-verify those routes. Constant-only boosters and complete declarative preprocessing
-are also still pending. See IMPLEMENTATION_STATUS.md for the current acceptance record.
+verify those routes. Constant-only boosters produce an intercept artifact in both modes. Complete
+declarative preprocessing remains pending. See IMPLEMENTATION_STATUS.md for the current acceptance record.

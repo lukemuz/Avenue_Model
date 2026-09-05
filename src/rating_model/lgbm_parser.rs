@@ -380,6 +380,17 @@ fn process_tree(
     mean_adjustment: f64,
     model: &Value,
 ) -> Result<Vec<RatingTable>, PolarsError> {
+    if node.get("split_feature").is_none() {
+        if let Some(value) = node.get("leaf_value").and_then(Value::as_f64) {
+            if is_first_tree {
+                return Ok(Vec::new());
+            }
+            return Ok(vec![RatingTable::new(
+                DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![value]).into()])?,
+                None,
+            )]);
+        }
+    }
     let mut tables = Vec::new();
     let mut stack = vec![(node, Vec::new(), true)];
 
@@ -502,6 +513,7 @@ pub fn process_lgbm_trees(model_json: &str) -> Result<Vec<RatingTable>, PolarsEr
             // a Pareto search over that parameter walks straight into it.
             if let Some(mean) = first_tree
                 .get("internal_value")
+                .or_else(|| first_tree.get("leaf_value"))
                 .and_then(|value| value.as_f64())
             {
                 let mean_df =
@@ -548,6 +560,17 @@ fn process_tree_analysis(
     model: &Value,
     parent_value: Option<f64>,
 ) -> Result<Vec<RatingTable>, PolarsError> {
+    if node.get("split_feature").is_none() {
+        if let Some(value) = node.get("leaf_value").and_then(Value::as_f64) {
+            if is_first_tree {
+                return Ok(Vec::new());
+            }
+            return Ok(vec![RatingTable::new(
+                DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![value]).into()])?,
+                None,
+            )]);
+        }
+    }
     let mut tables = Vec::new();
 
     // Extract the internal value for the root node
@@ -732,8 +755,20 @@ pub fn build_consolidated_tablemodel(
     link_function: LinkFunction,
 ) -> super::RatingModel {
     use super::consolidation::combine_all_tables;
-    let mut combined_tables = vec![tables[0].clone()];
-    let consolidated = combine_all_tables(tables[1..].to_vec());
+    let mut base = 0.0;
+    let mut features = Vec::new();
+    for table in tables {
+        if table.get_feature_info().is_empty() {
+            base += table.get_rating_factor(0);
+        } else {
+            features.push(table);
+        }
+    }
+    let mut combined_tables = vec![RatingTable::new(
+        DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![base]).into()]).unwrap(),
+        None,
+    )];
+    let consolidated = combine_all_tables(features);
     combined_tables.extend(consolidated);
     super::RatingModel::new(combined_tables, link_function)
 }
@@ -763,6 +798,7 @@ pub fn build_analysis_tablemodel(
             // a Pareto search over that parameter walks straight into it.
             if let Some(mean) = first_tree
                 .get("internal_value")
+                .or_else(|| first_tree.get("leaf_value"))
                 .and_then(|value| value.as_f64())
             {
                 let mean_df =

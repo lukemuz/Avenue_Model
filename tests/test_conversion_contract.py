@@ -53,6 +53,17 @@ class ConversionContract(unittest.TestCase):
                         self.assertTrue(math.isclose(a, e, abs_tol=1e-12, rel_tol=1e-12),
                                         (mode, row, a, e))
 
+    def test_constant_boosters_and_later_constant_trees(self):
+        constant = {'leaf_value': 2.5, 'leaf_count': 100}
+        base = dump(constant, ['x'])
+        frame = pl.DataFrame({'x': [1., 2., 3.]})
+        self.check_conversion(base, frame)
+        for mode in ('analysis', 'max'):
+            model = FittedModel.from_lgbm_json(json.dumps(base), consolidation=mode)
+            self.assertEqual(len(model.table_names), 1)
+        base['tree_info'].append({'tree_structure': {'leaf_value': .7}})
+        self.check_conversion(base, frame)
+
     def test_binary_objective_options_keep_logit_link(self):
         base = dump(split(0, 0., leaf(-2.), leaf(2.)), ['x'])
         self.check_conversion({**base, 'objective': 'binary sigmoid:1'},
@@ -124,6 +135,16 @@ class BoosterConversionContract(unittest.TestCase):
                              'cat_smooth': 1, 'seed': 31},
                             lgb.Dataset(data, label=target, feature_name=['a', 'b', 'x'],
                                         categorical_feature=['a', 'b']), num_boost_round=5)
+        from avenue_model import from_booster
+        constant = lgb.train({'objective': 'poisson', 'verbosity': -1, 'num_threads': 1,
+                              'min_data_in_leaf': 1000},
+                             lgb.Dataset(data, label=target, feature_name=['a', 'b', 'x']),
+                             num_boost_round=2)
+        constant_frame = pl.DataFrame({'a': data[:, 0], 'b': data[:, 1], 'x': data[:, 2]})
+        for mode in ('analysis', 'max'):
+            constant_result = from_booster(constant, constant_frame, consolidation=mode)
+            self.assertEqual(constant_result.parity['status'], 'passed')
+            self.assertEqual(constant_result.model.table_names, ['intercept'])
         model_dump = booster.dump_model()
         rows = data.tolist()
         def boundaries(node):

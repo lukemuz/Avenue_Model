@@ -153,9 +153,23 @@ called dependable for arbitrary quote inputs.
 - All 64 Python tests, 258 Rust tests, formatting and the extended auto study pass.
   Usage and attribution limits: [EXPLANATIONS.md](EXPLANATIONS.md).
 
+## Completed increment: pandas boundary and constant boosters
+
+- Optional `from_pandas` preserves categorical labels instead of positional codes,
+  nullable numerical/boolean values, and an explicitly requested source index.
+  Ambiguous mixed/object/float-category inputs fail with actionable encoding guidance.
+- Tests demonstrate pandas/Polars prediction and label agreement, unused-level
+  isolation, missing/unseen diagnostics and nonmutation of category order.
+- Constant-only boosters convert to an intercept artifact; later constant tree
+  contributions also consolidate correctly and survive CSV reload in both modes.
+- All 68 Python tests, eight stock/fork conversion tests, 258 Rust tests and
+  formatting pass. Constant-booster parity includes freshly trained stock and fork
+  boosters, not only handcrafted JSON.
+- Declared pandas/test extras. Adapter usage: [PANDAS.md](PANDAS.md).
+
 ## Next required work
 
-Complete general response-unit semantics and complete LightGBM missing/default routing, constant boosters and preprocessing persistence.
+Complete general response-unit semantics and complete LightGBM missing/default routing and preprocessing persistence.
 Then complete the ordinary study workflow, reproducible splits/comparison, named
 review/explanations, composition and analytical preservation, and selected modeling
 extensions from the plan. Run the plan's fresh-user acceptance exercise before making
