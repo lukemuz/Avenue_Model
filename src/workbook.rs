@@ -483,19 +483,24 @@ fn column_list(df: &DataFrame) -> String {
 
 /// The first row whose feature values repeat an earlier row's.
 fn first_duplicate_row(df: &DataFrame, features: &[String]) -> Option<usize> {
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: HashSet<Vec<String>> = HashSet::new();
     for row in 0..df.height() {
         let key = features
             .iter()
             .map(|feature| match df.column(feature) {
                 Ok(column) => match column.get(row) {
+                    // AnyValue's display rounds floats for human readability.
+                    // Row identity must retain every representable threshold.
+                    Ok(AnyValue::Float64(value)) => {
+                        let value = if value == 0.0 { 0.0 } else { value };
+                        value.to_bits().to_string()
+                    }
                     Ok(value) => value.to_string(),
                     Err(_) => String::new(),
                 },
                 Err(_) => String::new(),
             })
-            .collect::<Vec<_>>()
-            .join("\u{1}");
+            .collect::<Vec<_>>();
         if !seen.insert(key) {
             return Some(row);
         }

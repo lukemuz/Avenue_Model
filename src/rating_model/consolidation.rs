@@ -83,6 +83,11 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
         processed_features.insert(first_feature.clone());
     }
 
+    // The Cartesian product over no features has one row: an intercept.
+    if numeric_values.is_empty() && categorical_values.is_empty() {
+        combinations.push(HashMap::new());
+    }
+
     // Add remaining numeric features
     for (feature, values) in numeric_values.iter() {
         if processed_features.contains(feature) {

@@ -32,10 +32,40 @@ Build/test output is in `/tmp/avenue-improvement-{build,python,rust}.log`.
 - Verification: 35 Python tests and 258 Rust tests passed; 6 Rust tests and one doc
   test remain ignored. Release extension rebuilt successfully.
 
+## Completed increment: finite-input conversion parity
+
+Minimized the captured categorical failure and adjacent-threshold failures before
+fixing their causes:
+
+- Matchers now prefer fewer categorical wildcards, including partial wildcard rows.
+- JSON float parsing retains round-trip precision; path construction deduplicates
+  only exactly equal thresholds.
+- Analysis-mode node differences include every tree's root contribution.
+- Consolidation of two intercepts retains one row.
+- Workbook duplicate-row checks use exact floating-point identity instead of rounded
+  display text (and separate field keys instead of a delimiter-joined string).
+
+Verification: all 40 Python tests and 258 Rust tests pass. The five conversion tests
+also pass with fork LightGBM 4.6.0.99; stock tests use LightGBM 4.7.0. Both modes and
+CSV reload are checked against actual boosters, a captured tree, adjacent float
+boundaries and eight deterministic randomized trees. Six Rust tests and a doc test
+remain ignored.
+
+Additional read-only checks of original captured fork boosters passed on finite
+boundary probes: 2,396 numeric rows (max absolute errors 3.89e-16 analysis / 3.33e-16
+max), and 1,901 categorical rows (1.06e-15 analysis / 5.00e-16 max), using absolute
+plus relative tolerances of 1e-12. Historical evaluation outputs were not overwritten.
+The temporary reproduction is `/tmp/avenue-check-captured.py`; output is
+`/tmp/avenue-captured-parity.log`.
+
+These findings do not establish missing/default-route correctness or support for
+all booster objectives. Those remain correctness gates before conversion can be
+called dependable for arbitrary quote inputs.
+
 ## Next required work
 
-Complete scoring semantics (explicit units/conversions, schema, consistent exposure checks); minimize and fix categorical and
-threshold LightGBM conversion failures across consolidation modes and workbook reload.
+Complete scoring semantics (explicit units/conversions, schema, consistent exposure checks); complete LightGBM missing/default routing and unsupported-semantics checks, and add
+a Booster entry point with conversion metadata and optional parity evidence.
 Then complete the ordinary study workflow, reproducible splits/comparison, named
 review/explanations, composition and analytical preservation, and selected modeling
 extensions from the plan. Run the plan's fresh-user acceptance exercise before making

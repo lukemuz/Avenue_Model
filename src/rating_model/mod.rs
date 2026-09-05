@@ -280,11 +280,11 @@ impl RatingTable {
             .collect();
 
         let mut best_row: Option<usize> = None;
-        let mut used_wildcard = false;
+        let mut wildcard_count = usize::MAX;
 
         'row_loop: for i in 0..self.data.height() {
             let mut row_matches = true;
-            let mut this_row_used_wildcard = false;
+            let mut this_row_wildcards = 0usize;
 
             // ⭐ OPTIMIZATION 3: Direct array access instead of HashMap lookups
             // Check categorical features first
@@ -298,7 +298,7 @@ impl RatingTable {
                             break;
                         }
                         if table_cat == -999 {
-                            this_row_used_wildcard = true;
+                            this_row_wildcards += 1;
                         }
                     }
                 }
@@ -323,9 +323,9 @@ impl RatingTable {
 
             // If we get here, we found a match
             // Only update if this is the first match or if we found a more specific match
-            if best_row.is_none() || (used_wildcard && !this_row_used_wildcard) {
+            if best_row.is_none() || (this_row_wildcards < wildcard_count) {
                 best_row = Some(i);
-                used_wildcard = this_row_used_wildcard;
+                wildcard_count = this_row_wildcards;
             }
         }
 

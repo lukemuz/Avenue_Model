@@ -398,15 +398,15 @@ fn pre_resolved_scan(table: &RatingTable, df: &DataFrame, n_rows: usize) -> Opti
 
     let match_row = |i: usize| -> u32 {
         let mut best = NO_MATCH;
-        let mut best_used_wildcard = false;
+        let mut best_wildcards = usize::MAX;
 
         'row: for r in 0..table_rows {
-            let mut used_wildcard = false;
+            let mut wildcards = 0usize;
 
             for (thresholds, values) in &categorical {
                 if let Some(table_cat) = thresholds[r] {
                     if table_cat == -999 {
-                        used_wildcard = true;
+                        wildcards += 1;
                     } else if table_cat != values[i] {
                         continue 'row;
                     }
@@ -421,10 +421,10 @@ fn pre_resolved_scan(table: &RatingTable, df: &DataFrame, n_rows: usize) -> Opti
                 }
             }
 
-            // First match wins, except that an exact match displaces a wildcard one.
-            if best == NO_MATCH || (best_used_wildcard && !used_wildcard) {
+            // Prefer fewer categorical wildcards; preserve row order on ties.
+            if best == NO_MATCH || (wildcards < best_wildcards) {
                 best = r as u32;
-                best_used_wildcard = used_wildcard;
+                best_wildcards = wildcards;
             }
         }
 

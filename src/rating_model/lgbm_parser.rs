@@ -64,9 +64,8 @@ impl PathInfo {
         // Sort and dedupe values
         for values in numeric_values.values_mut() {
             values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
-            values.dedup_by(|a, b| {
-                ((*a) - (*b)).abs() < 1e-10 || ((*a).is_infinite() && (*b).is_infinite())
-            });
+            // Adjacent floating-point thresholds define distinct branches.
+            values.dedup();
         }
         for values in categorical_values.values_mut() {
             values.sort_unstable();
@@ -555,6 +554,15 @@ fn process_tree_analysis(
     let root_internal_value = node["internal_value"]
         .as_f64()
         .ok_or_else(|| PolarsError::ComputeError("Missing internal value in root node".into()))?;
+
+    // Node effects telescope to leaf minus root. Every tree's root must
+    // therefore be included; only the first root is already in the mean table.
+    if !is_first_tree {
+        tables.push(RatingTable::new(
+            DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![root_internal_value]).into()])?,
+            None,
+        ));
+    }
 
     // Stack holds (node, path, parent_value, tree_level)
     // tree_level helps track which level of the tree we're in (0 = root)
