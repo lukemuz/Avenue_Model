@@ -704,15 +704,28 @@ fn encode_categorical(
                 .collect();
             Ok((Series::new(column.into(), codes).into(), Some(map)))
         }
-        DataType::Int32 => Ok((series.clone(), None)),
+        DataType::Int32 => Ok((
+            Series::new(
+                column.into(),
+                series
+                    .i32()?
+                    .into_iter()
+                    .map(|v| v.unwrap_or(UNSEEN_CODE))
+                    .collect::<Vec<_>>(),
+            )
+            .into(),
+            None,
+        )),
         DataType::Int8
         | DataType::Int16
         | DataType::Int64
         | DataType::UInt8
         | DataType::UInt16
         | DataType::UInt32
-        | DataType::UInt64 => Ok((series.cast(&DataType::Int32)?, None)),
-        DataType::Boolean => Ok((series.cast(&DataType::Int32)?, None)),
+        | DataType::UInt64
+        | DataType::Boolean => {
+            encode_categorical(&series.cast(&DataType::Int32)?, column, encoding)
+        }
         other => Err(PolarsError::ComputeError(
             format!(
                 "Column '{}' has dtype {:?} and is used as a categorical factor. Use an \

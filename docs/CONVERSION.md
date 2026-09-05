@@ -32,8 +32,19 @@ split operators are rejected. The binary objective's serialized options preserve
 its logit link. Inputs for this entry point are numeric booster values/codes;
 `with_categories` can attach external labels to the resulting model.
 
-Numerical missing/default routes remain an open conversion limitation. The parity
-entry point rejects null/NaN inputs explicitly. This does not make arbitrary converted
-models safe to score on missing quote predictors, and finite-data parity does not
-verify those routes. Constant-only boosters produce an intercept artifact in both modes. Complete
-declarative preprocessing remains pending. See IMPLEMENTATION_STATUS.md for the current acceptance record.
+Numerical null/NaN routes are represented by explicit missing-only rows, whose numeric
+bound is `NaN`. Finite inputs cannot match those rows. LightGBM `missing_type="NaN"`
+uses its declared default direction; `missing_type="None"` treats missing numerical
+input as zero, as the booster does. Categorical nulls in Int32 input columns follow
+the complement/wildcard route. Integer codes remain the boundary requirement for
+categorical boosters.
+
+`zero_as_missing` is explicitly rejected pending support for its separate near-zero
+routing rule. Constant-only boosters produce an intercept artifact in both modes.
+Complete declarative preprocessing remains pending. See IMPLEMENTATION_STATUS.md
+for the current acceptance record.
+
+New workbooks use format version 2 so older readers cannot silently interpret a
+missing-only bound as an ordinary unconstrained bound. This build continues to read
+version-1 artifacts. JSON encodes the bound as the string `"NaN"`; CSV writes `NaN`.
+These are explicit rating-table matching rows, not nonfinite prediction values.

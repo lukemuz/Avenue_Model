@@ -314,7 +314,7 @@ impl RatingTable {
                     let col_val = unsafe { numeric_columns_vec[idx].get_unchecked(i) };
 
                     if let Some(threshold) = col_val {
-                        if input_val > &threshold {
+                        if input_val.is_nan() != threshold.is_nan() || input_val > &threshold {
                             continue 'row_loop;
                         }
                     }
@@ -482,9 +482,8 @@ impl RatingTable {
             let column = df.column(col_name)?;
             match column.dtype() {
                 DataType::Float64 => {
-                    if let Some(value) = column.f64()?.get(row_idx) {
-                        feature_values.insert(col_name.to_string(), FeatureValue::Numeric(value));
-                    }
+                    let value = column.f64()?.get(row_idx).unwrap_or(f64::NAN);
+                    feature_values.insert(col_name.to_string(), FeatureValue::Numeric(value));
                 }
                 DataType::Int32 => {
                     if let Some(value) = column.i32()?.get(row_idx) {
@@ -850,6 +849,11 @@ impl RatingModel {
             return Err(PolarsError::ComputeError("Unsupported LightGBM semantics: multiclass, averaged ensembles and non-unit binary sigmoid are not supported.".into()));
         }
         fn check_tree(node: &Value) -> Result<(), PolarsError> {
+            if node.get("missing_type").and_then(Value::as_str) == Some("Zero") {
+                return Err(PolarsError::ComputeError(
+                    "LightGBM zero_as_missing routing is not yet supported.".into(),
+                ));
+            }
             if node.get("leaf_coeff").is_some() || node.get("leaf_features").is_some() {
                 return Err(PolarsError::ComputeError(
                     "LightGBM linear leaves are not supported.".into(),

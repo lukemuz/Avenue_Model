@@ -98,6 +98,36 @@ class ScoringContract(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'group'):
                 artifact.predict(pl.DataFrame({'unrelated': [1]}))
 
+    def test_numeric_nan_and_null_are_unmatched_without_explicit_default(self):
+        data = self.df.with_columns(pl.Series('age', [20., 40.] * 3))
+        model = Plan.frequency('exposure').banded('age', breaks=[30.]).fit(data, 'frequency')
+        quotes = pl.DataFrame({'age': [20., float('nan'), None]})
+        for artifact in (model, model.to_workbook().to_model()):
+            self.assertEqual(artifact.predict_diagnostics(quotes)['status'].to_list(),
+                             ['ok', 'unmatched', 'unmatched'])
+            with self.assertRaisesRegex(ValueError, 'row 1: unmatched'):
+                artifact.predict(quotes)
+
+    def test_legacy_workbook_load_and_future_version_rejection(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from avenue_model import Workbook
+        model = Plan.frequency('exposure').categorical('group').fit(self.df, 'frequency')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, 'model.json')
+            model.to_workbook().save_json(str(path))
+            payload = json.loads(path.read_text())
+            self.assertEqual(payload['manifest']['format_version'], 2)
+            payload['manifest']['format_version'] = 1
+            path.write_text(json.dumps(payload))
+            loaded = Workbook.load_json(str(path)).to_model()
+            self.assert_predictions(loaded, self.df.select('group'), [4.] * 6)
+            payload['manifest']['format_version'] = 3
+            path.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(ValueError, 'format version'):
+                Workbook.load_json(str(path)).to_model()
+
     def test_intercept_only_is_an_ordinary_model(self):
         model = Plan.frequency('exposure').fit(self.df, 'frequency')
         self.assertTrue(model.converged)

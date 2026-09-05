@@ -167,9 +167,27 @@ called dependable for arbitrary quote inputs.
   boosters, not only handcrafted JSON.
 - Declared pandas/test extras. Adapter usage: [PANDAS.md](PANDAS.md).
 
+## Completed increment: explicit missing/default routing
+
+- Numeric null/NaN values no longer silently select the first ordinary GLM band.
+  Tables without a missing-only row report them as unmatched.
+- Converted numeric tables carry explicit NaN bounds for missing-only rows, preserving
+  LightGBM NaN defaults and None-type missing-to-zero decisions through path parsing,
+  consolidation and CSV/JSON reload. Categorical integer nulls use complement routes.
+- `zero_as_missing` is explicitly rejected pending its separate near-zero semantics.
+- Workbook format 2 identifies the new matching contract and blocks older readers;
+  version-1 normal artifacts still load, and future versions fail explicitly.
+- Tests cover both default directions, repeated splits, null/NaN inputs, numerical
+  and categorical routes, fresh stock/fork boosters, and workbook version migration.
+- Verification: 72 Python tests, 10 fork conversion tests, 258 Rust tests and formatting
+  pass. Original captured fork boosters also pass 2,401 numeric and 1,904 categorical
+  boundary/missing probes in both modes at atol=rtol=1e-12 (max absolute error 1.06e-15).
+  Read-only reproduction: `/tmp/avenue-check-captured-missing.py`; output is in
+  `/tmp/avenue-captured-missing-parity.log`. Historical evaluation evidence is intact.
+
 ## Next required work
 
-Complete general response-unit semantics and complete LightGBM missing/default routing and preprocessing persistence.
+Complete general response-unit semantics and complete preprocessing persistence and evaluate the remaining explicit conversion limitations.
 Then complete the ordinary study workflow, reproducible splits/comparison, named
 review/explanations, composition and analytical preservation, and selected modeling
 extensions from the plan. Run the plan's fresh-user acceptance exercise before making

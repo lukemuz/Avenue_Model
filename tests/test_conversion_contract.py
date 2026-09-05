@@ -30,6 +30,12 @@ def reference(node, row, names):
     if 'leaf_value' in node:
         return node['leaf_value']
     value = row[names[node['split_feature']]]
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        if node['decision_type'] == '==':
+            return reference(node['right_child'], row, names)
+        if node.get('missing_type') == 'NaN':
+            return reference(node['left_child'] if node['default_left'] else node['right_child'], row, names)
+        value = 0.
     go_left = (value in [int(v) for v in str(node['threshold']).split('||')]
                if node['decision_type'] == '==' else value <= node['threshold'])
     return reference(node['left_child'] if go_left else node['right_child'], row, names)
@@ -47,11 +53,25 @@ class ConversionContract(unittest.TestCase):
             model = FittedModel.from_lgbm_json(json.dumps(model_dump), consolidation=mode)
             with tempfile.TemporaryDirectory() as path:
                 model.to_workbook().save_csv_dir(path)
-                for artifact in (model, Workbook.load_csv_dir(path).to_model()):
+                json_path = str(Path(path, 'model.json'))
+                model.to_workbook().save_json(json_path)
+                for artifact in (model, Workbook.load_csv_dir(path).to_model(), Workbook.load_json(json_path).to_model()):
                     actual = artifact.predict(frame)['predictions'].to_list()
                     for row, (a, e) in enumerate(zip(actual, expected)):
                         self.assertTrue(math.isclose(a, e, abs_tol=1e-12, rel_tol=1e-12),
                                         (mode, row, a, e))
+
+    def test_numeric_missing_routes_and_nulls_survive_exports(self):
+        for missing_type in ('None', 'NaN'):
+            for default_left in (False, True):
+                root = split(0, -1., leaf(3.), split(0, 1., leaf(7.), leaf(11.)))
+                root.update(missing_type=missing_type, default_left=default_left)
+                root['right_child'].update(missing_type='NaN', default_left=not default_left)
+                self.check_conversion(dump(root, ['x']), pl.DataFrame({'x': [None, math.nan, -2., 0., 2.]}))
+        root = split(0, 0., leaf(3.), leaf(7.))
+        root['missing_type'] = 'Zero'
+        with self.assertRaisesRegex(ValueError, 'zero_as_missing'):
+            FittedModel.from_lgbm_json(json.dumps(dump(root, ['x'])))
 
     def test_constant_boosters_and_later_constant_trees(self):
         constant = {'leaf_value': 2.5, 'leaf_count': 100}
@@ -81,6 +101,13 @@ class ConversionContract(unittest.TestCase):
         linear = dump(split(0, 0., {**leaf(1.), 'leaf_coeff': [2.]}, leaf(2.)), ['x'])
         with self.assertRaisesRegex(ValueError, 'linear leaves'):
             FittedModel.from_lgbm_json(json.dumps(linear))
+
+    def test_categorical_nulls_follow_complement_route(self):
+        tree = split(0, '1', split(1, '2', leaf(3.), leaf(7.), True), leaf(11.), True)
+        frame = pl.DataFrame({'a': pl.Series([None, 1, 1, -1], dtype=pl.Int32),
+                              'b': pl.Series([2, None, 2, None], dtype=pl.Int32)})
+        self.check_conversion(dump(tree, ['a', 'b']), frame)
+        self.check_conversion(dump(tree, ['a', 'b']), frame.cast(pl.Int64))
 
     def test_partial_categorical_wildcards(self):
         tree = split(0, '1', split(1, '2', leaf(3.), leaf(7.), True), leaf(11.), True)
@@ -145,6 +172,21 @@ class BoosterConversionContract(unittest.TestCase):
             constant_result = from_booster(constant, constant_frame, consolidation=mode)
             self.assertEqual(constant_result.parity['status'], 'passed')
             self.assertEqual(constant_result.model.table_names, ['intercept'])
+        missing_data = data.copy()
+        missing_data[::11, 2] = np.nan
+        missing_booster = lgb.train({'objective': 'poisson', 'verbosity': -1, 'num_threads': 1,
+                                     'num_leaves': 12, 'min_data_in_leaf': 5, 'seed': 31},
+                                    lgb.Dataset(missing_data, label=target, feature_name=['a', 'b', 'x'],
+                                                categorical_feature=['a', 'b']), num_boost_round=8)
+        missing_frame = pl.DataFrame({'a': missing_data[:, 0].astype('int32'),
+                                      'b': missing_data[:, 1].astype('int32'), 'x': missing_data[:, 2]})
+        for mode in ('analysis', 'max'):
+            checked = from_booster(missing_booster, missing_frame, consolidation=mode)
+            self.assertEqual(checked.parity['status'], 'passed')
+            with tempfile.TemporaryDirectory() as path:
+                checked.model.to_workbook().save_csv_dir(path)
+                np.testing.assert_allclose(Workbook.load_csv_dir(path).to_model().predict(missing_frame)['predictions'],
+                                           missing_booster.predict(missing_data), atol=1e-12, rtol=1e-12)
         model_dump = booster.dump_model()
         rows = data.tolist()
         def boundaries(node):
@@ -186,8 +228,8 @@ class BoosterConversionContract(unittest.TestCase):
             self.assertEqual(evidence['metadata']['dump_sha256'], result.metadata['dump_sha256'])
             np.testing.assert_allclose(Workbook.load_csv_dir(path).to_model().predict(frame)['predictions'],
                                        expected, atol=1e-12, rtol=1e-12)
-        with self.assertRaisesRegex(ValueError, 'Missing/default routing'):
-            from_booster(booster, frame.with_columns(pl.lit(float('nan')).alias('x')))
+        missing = from_booster(booster, frame.with_columns(pl.lit(float('nan')).alias('x')))
+        self.assertEqual(missing.parity['status'], 'passed')
         for mode in ('analysis', 'max'):
             converted = FittedModel.from_lgbm_json(json.dumps(model_dump), consolidation=mode)
             with tempfile.TemporaryDirectory() as path:

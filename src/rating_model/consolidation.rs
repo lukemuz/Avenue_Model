@@ -45,8 +45,8 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
 
     // Dedupe and sort values
     for values in numeric_values.values_mut() {
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        values.dedup();
+        values.sort_by(f64::total_cmp);
+        values.dedup_by(|a, b| a == b || (a.is_nan() && b.is_nan()));
     }
 
     for values in categorical_values.values_mut() {

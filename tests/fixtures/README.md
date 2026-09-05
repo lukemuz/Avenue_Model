@@ -11,4 +11,5 @@ adjacent-floating-point threshold fixtures, deterministic randomized trees, and 
 small booster trained by the installed LightGBM build. Each checks both consolidation
 modes and a CSV workbook reload at `atol=1e-12, rtol=1e-12`. The handcrafted fixtures
 use distinct leaf values to make incorrect branch membership observable directly.
-These tests cover finite predictor values; missing/default routing remains open work.
+The suite also covers null/NaN routes, both default directions, repeated numerical
+splits and JSON reloads. zero_as_missing remains explicitly unsupported.

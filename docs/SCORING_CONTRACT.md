@@ -68,3 +68,8 @@ current artifact and survives workbook reload.
 Negative, null, NaN and infinite exposure now raise during fitting and validation
 as well as count scoring. Weight-zero rows carry no fitting weight. Offset models
 still require positive training exposure; zero scoring exposure yields zero counts.
+
+Numeric nulls and NaNs no longer silently match the first band. Ordinary GLM tables
+without an explicit missing-only bound report them as unmatched. Converted booster
+tables may contain an explicit `NaN` bound encoding the booster's valid missing
+route. These rows are preserved by format-2 CSV/JSON workbooks.

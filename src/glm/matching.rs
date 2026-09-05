@@ -274,11 +274,10 @@ fn categorical_matches(
 /// The row an observation of `value` falls in, for non-decreasing `thresholds`.
 #[inline]
 fn lower_bound(thresholds: &[f64], value: f64) -> u32 {
-    // The scan skips a row when `value > threshold`, which is false for NaN, so a NaN
-    // observation stops at the first row. Reproduce that rather than letting it reach
-    // the comparison-based search, where it has no defined position.
+    // Missing inputs require an explicit missing row. Such tables use the general
+    // matcher, so a NaN cannot match this finite-bound search.
     if value.is_nan() {
-        return if thresholds.is_empty() { NO_MATCH } else { 0 };
+        return NO_MATCH;
     }
     let idx = thresholds.partition_point(|t| *t < value);
     if idx < thresholds.len() {
@@ -415,7 +414,7 @@ fn pre_resolved_scan(table: &RatingTable, df: &DataFrame, n_rows: usize) -> Opti
 
             for (thresholds, values) in &numeric {
                 if let Some(threshold) = thresholds[r] {
-                    if values[i] > threshold {
+                    if values[i].is_nan() != threshold.is_nan() || values[i] > threshold {
                         continue 'row;
                     }
                 }
@@ -449,9 +448,8 @@ fn extract_row_features(
         let col = df.column(col_name)?;
         match col.dtype() {
             DataType::Float64 => {
-                if let Some(val) = col.f64()?.get(row_idx) {
-                    features.insert(col_name.to_string(), FeatureValue::Numeric(val));
-                }
+                let val = col.f64()?.get(row_idx).unwrap_or(f64::NAN);
+                features.insert(col_name.to_string(), FeatureValue::Numeric(val));
             }
             DataType::Int32 => {
                 if let Some(val) = col.i32()?.get(row_idx) {
@@ -682,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn a_nan_observation_lands_where_the_scan_puts_it() {
+    fn a_nan_observation_is_unmatched_without_a_missing_row() {
         let t = table("x", &[10.0, 20.0, f64::INFINITY]);
         let df = DataFrame::new(vec![Series::new("x".into(), vec![f64::NAN, 5.0]).into()]).unwrap();
         agrees_with_scan(&t, &df);

@@ -45,7 +45,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Bumped when the on-disk shape changes in a way older readers cannot handle.
-pub const FORMAT_VERSION: u32 = 1;
+// Version 2 defines explicit NaN numeric bounds as missing-only rows.
+pub const FORMAT_VERSION: u32 = 2;
 
 /// Factors that lie this far off the variate's own curve are worth remarking on.
 const VARIATE_TOLERANCE: f64 = 1e-6;
@@ -1041,6 +1042,7 @@ pub(crate) fn frame_to_records(
                     Some(v) if v.is_infinite() => {
                         serde_json::Value::String(if v > 0.0 { "inf" } else { "-inf" }.to_string())
                     }
+                    Some(v) if v.is_nan() => serde_json::Value::String("NaN".into()),
                     Some(v) => serde_json::json!(v),
                     None => serde_json::Value::Null,
                 },
