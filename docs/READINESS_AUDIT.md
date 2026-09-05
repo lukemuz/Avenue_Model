@@ -50,6 +50,13 @@ empty support groups and quasi-Poisson scaling. The rebuilt editable-source suit
 pass 278 Rust and 126 Python tests. This does not establish penalized inference,
 simultaneous curve bands, post-selection coverage or large-portfolio performance.
 
+The [real continuous-spline study](REAL_SPLINE_ACCEPTANCE.md) now passes the same
+motor-portfolio prediction/delivery checks after tightening Avenue convergence to
+1e-11. A fresh identical-split banded baseline has lower holdout loss; the spline
+Tweedie fit also shows an important runtime gap and sparse-tail uncertainty. These
+findings keep model-selection, stabilization and performance work open. They do not
+replace the historical installed-wheel evidence below.
+
 ## Fresh installed-wheel evidence
 
 [The runner](../studies/readiness_acceptance.py) verifies every installed package payload

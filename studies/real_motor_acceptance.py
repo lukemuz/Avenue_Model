@@ -29,26 +29,49 @@ def write(path, obj):
     path.write_text(json.dumps(obj, indent=2, allow_nan=False) + '\n')
 
 
-def shape(plan):
+def shape(plan, smooth=False):
     for name, breaks in BANDS.items():
-        plan = plan.banded(name, breaks=breaks)
+        plan = plan.spline(name, quantile=5) if smooth else plan.banded(name, breaks=breaks)
     return plan.categorical('region', base='first').categorical('fuel', base='first')
 
 
-def native_frame(data, levels=None):
-    values = {name: np.searchsorted(breaks, data[name].to_numpy(), side='left').astype(str)
-              for name, breaks in BANDS.items()}
-    values.update({name: data[name].to_numpy() for name in ('region', 'fuel')})
+def resolved_knots(model):
+    return {term['name']: term['knots'] for term in model.resolved if term.get('knots') is not None} or None
+
+
+def native_frame(data, levels=None, knots=None):
+    # The reference independently evaluates a SciPy cardinal basis on the resolved
+    # training knots. Drop its first column: glum's intercept represents the constant.
+    numeric = {}
+    categories = {name: data[name].to_numpy() for name in ('region', 'fuel')}
+    if knots is None:
+        categories = {**{name: np.searchsorted(breaks, data[name].to_numpy(), side='left').astype(str)
+                         for name, breaks in BANDS.items()}, **categories}
+    else:
+        from scipy.interpolate import CubicSpline
+        for name, locations in knots.items():
+            locations = np.asarray(locations)
+            x = data[name].to_numpy()
+            identity = np.eye(len(locations))
+            curve = CubicSpline(locations, identity, bc_type='natural')
+            basis = curve(np.clip(x, locations[0], locations[-1]))
+            for mask, knot, row in [(x < locations[0], locations[0], 0),
+                                    (x > locations[-1], locations[-1], -1)]:
+                basis[mask] = identity[row] + (x[mask]-knot)[:, None]*curve(knot, 1)
+            for j in range(1, len(locations)):
+                numeric[f'{name}__spline_{j}'] = basis[:, j]
     if levels is None:
-        levels = {name: sorted(set(column)) for name, column in values.items()}
-    return pd.DataFrame({name: pd.Categorical(column, categories=levels[name])
-                         for name, column in values.items()}), levels
+        levels = {name: sorted(set(column)) for name, column in categories.items()}
+    return pd.DataFrame({**numeric, **{name: pd.Categorical(column, categories=levels[name])
+                                     for name, column in categories.items()}}), levels
 
 
 def run(args):
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=False)
     begin = time.perf_counter()
+    smooth = getattr(args, "smooth", False)
+    fit_tolerance = getattr(args, "fit_tolerance", 1e-9)
     policies = pl.read_parquet(args.frequency).with_columns(pl.col('IDpol').cast(pl.Int64))
     losses = pl.read_parquet(args.severity).with_columns(pl.col('IDpol').cast(pl.Int64))
     if policies['IDpol'].n_unique() != policies.height:
@@ -94,18 +117,20 @@ def run(args):
              ('premium', Plan.pure_premium('exposure'), 'avenue_pure_premium', 'exposure', train, holdout, TweedieDistribution(1.5))]
     for name, plan, target, weight, training, validation, family in specs:
         started = time.perf_counter()
-        model = shape(plan).fit(training, target, GLMOptions(max_iterations=1000, tolerance=1e-9))
+        model = shape(plan, smooth=smooth).fit(training, target, GLMOptions(max_iterations=1000, tolerance=fit_tolerance))
         fit_seconds = time.perf_counter() - started
         (out / f'{name}_report.md').write_text(model.report(validation).markdown)
         if model.converged is not True:
             raise RuntimeError(f'{name} did not converge; see retained report')
         if not models:
             first_model_seconds = time.perf_counter() - begin
+        model.to_workbook(scale='factor').save_json(str(out / f'{name}_scoring.json'))
         joint = term_tests(model)
         write(out / f'{name}_term_tests.json', {'table': joint.table.to_dicts(), 'metadata': joint.metadata})
         started = time.perf_counter()
-        x, levels = native_frame(training)
-        xt, _ = native_frame(validation, levels)
+        knots = resolved_knots(model)
+        x, levels = native_frame(training, knots=knots)
+        xt, _ = native_frame(validation, levels, knots=knots)
         reference_prepare_seconds = time.perf_counter() - started
         reference = GeneralizedLinearRegressor(family=family, alpha=0, drop_first=True,
                                                gradient_tol=1e-9, max_iter=1000)
@@ -120,12 +145,22 @@ def run(args):
         started = time.perf_counter()
         mu = model.predict(validation.select(PREDICTORS)).to_series().to_numpy()
         score_seconds = time.perf_counter() - started
+        errors = np.abs(mu-mu_reference)
+        failed = errors > 1e-6 + 2e-6*np.abs(mu_reference)
+        write(out / f'{name}_parity.json', {'atol': 1e-6, 'rtol': 2e-6,
+            'failed_rows': int(failed.sum()), 'holdout_rows': len(mu),
+            'max_relative_difference': float(np.max(errors/np.abs(mu_reference))),
+            'fit_tolerance': fit_tolerance, 'reference_gradient_tolerance': 1e-9})
+        if failed.any():
+            validation.select('policy_id', *PREDICTORS).with_columns(
+                pl.Series('avenue', mu), pl.Series('reference', mu_reference)
+            ).filter(pl.Series(failed)).write_csv(out / f'{name}_parity_failures.csv')
         np.testing.assert_allclose(mu, mu_reference, atol=1e-6, rtol=2e-6)
         intervals = coefficient_intervals(model)
         for term, table in intervals.tables.items():
             table.write_csv(out / f'{name}_{term}_intervals.csv')
         bundle = save_bundle(model, out / f'{name}_bundle', validation_data=validation,
-                             fit_options={'max_iterations': 1000, 'tolerance': 1e-9},
+                             fit_options={'max_iterations': 1000, 'tolerance': fit_tolerance},
                              training_id=fold.split_id + ':' + name,
                              validation_id=fold.split_id + ':holdout',
                              unit={'frequency': 'paid_claims/exposure', 'severity': 'loss/paid_claim', 'premium': 'loss/exposure'}[name])
@@ -137,11 +172,14 @@ def run(args):
                         'reference_native_category_prepare_seconds': reference_prepare_seconds,
                         'reference_fit_seconds': reference_fit_seconds, 'reference_iterations': int(reference.n_iter_),
                         'max_relative_difference': float(np.max(np.abs(mu / mu_reference - 1))),
-                        'parameters': model.report().fit_summary['n_parameters'], 'converged': model.converged})
+                        'parameters': model.report().fit_summary['n_parameters'], 'converged': model.converged,
+                        'resolved_knots': knots, 'iterations': model.report().fit_summary['iterations'],
+                        'covariance_method': model.inference_summary['covariance_method']})
         write(out / 'models.json', records)
     product = frequency_severity(models['frequency'], models['severity'])
     product.save(out / 'product')
-    xholdout, _ = native_frame(holdout, native_frame(train)[1])
+    premium_knots = resolved_knots(models['premium'])
+    xholdout, _ = native_frame(holdout, native_frame(train, knots=premium_knots)[1], knots=premium_knots)
     reference_premium = references['premium'].predict(xholdout)
     candidates = {
         'frequency_severity': Candidate(product, 'loss/exposure'),
@@ -170,7 +208,9 @@ def run(args):
     changes.policies.sort('weighted_change', descending=True).head(20).write_csv(out / 'largest_changes.csv')
     (out / 'edited_report.md').write_text(edited.report(holdout).markdown)
     np.testing.assert_allclose(edited.predict(holdout).to_series(), models['premium'].predict(holdout).to_series() * 1.05, rtol=1e-12)
-    write(out / 'run.json', {'status': 'passed', 'preparation_seconds': preparation_seconds,
+    write(out / 'run.json', {'status': 'passed', 'numeric_effects': 'natural_cubic_quantile_5' if smooth else 'prespecified_bands',
+          'fit_tolerance': fit_tolerance,
+          'script_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'preparation_seconds': preparation_seconds,
           'time_to_first_valid_model_seconds': first_model_seconds,
           'total_seconds': time.perf_counter() - begin,
           'whole_process_peak_rss_kib': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
@@ -189,5 +229,7 @@ if __name__ == '__main__':
     parser.add_argument('--frequency', required=True)
     parser.add_argument('--severity', required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--fit-tolerance', type=float, default=1e-9, help='Avenue relative-score tolerance; reference and parity tolerances stay fixed')
+    parser.add_argument('--smooth', action='store_true', help='Use exact natural cubics with five training-quantile knots for numeric effects')
     parser.add_argument('--booster', action='store_true', help='Tune and verify the installed stock/fork challenger on the same holdout')
     run(parser.parse_args())

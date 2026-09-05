@@ -1,0 +1,79 @@
+{
+  "table": [
+    {
+      "term": "age",
+      "table_index": 1,
+      "df": 4,
+      "null_hypothesis": "all knot values are equal (constant spline), conditional on other terms",
+      "excluded_rows": [],
+      "statistic": 21.914707031607037,
+      "status": "available",
+      "note": null,
+      "p_value": 0.00020840920697684905
+    },
+    {
+      "term": "vehicle_age",
+      "table_index": 2,
+      "df": 4,
+      "null_hypothesis": "all knot values are equal (constant spline), conditional on other terms",
+      "excluded_rows": [],
+      "statistic": 6.958430704810999,
+      "status": "available",
+      "note": null,
+      "p_value": 0.1381013468539327
+    },
+    {
+      "term": "bonus",
+      "table_index": 3,
+      "df": 2,
+      "null_hypothesis": "all knot values are equal (constant spline), conditional on other terms",
+      "excluded_rows": [],
+      "statistic": 90.90156206555652,
+      "status": "available",
+      "note": null,
+      "p_value": 1.8237974295111472e-20
+    },
+    {
+      "term": "region",
+      "table_index": 4,
+      "df": 21,
+      "null_hypothesis": "all supported levels have equal factors, conditional on other terms",
+      "excluded_rows": [],
+      "statistic": 24.510171520271225,
+      "status": "available",
+      "note": null,
+      "p_value": 0.269001300311211
+    },
+    {
+      "term": "fuel",
+      "table_index": 5,
+      "df": 1,
+      "null_hypothesis": "all supported levels have equal factors, conditional on other terms",
+      "excluded_rows": [],
+      "statistic": 4.342396405167559,
+      "status": "available",
+      "note": null,
+      "p_value": 0.03717456502941826
+    }
+  ],
+  "metadata": {
+    "method": "joint Wald chi-square",
+    "covariance_method": "model_based",
+    "dispersion_method": "model",
+    "covariance_multiplier": 1.0,
+    "cluster_column": null,
+    "n_clusters": null,
+    "interpretation": "conditional on fixed structure and other terms; asymptotic; no selection, multiplicity or small-sample correction",
+    "source_inference": {
+      "dispersion": 6966.067007519736,
+      "covariance_method": "model_based",
+      "cluster_column": null,
+      "n_clusters": null,
+      "pearson_chi2": 3542077887.7156053,
+      "df_residual": 508476.0,
+      "n_parameters": 33,
+      "effective_parameters": 33.0,
+      "standard_errors_note": null
+    }
+  }
+}

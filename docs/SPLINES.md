@@ -130,3 +130,12 @@ inference is **conditional on the fixed prior**: it does not propagate uncertain
 from the earlier spline fit. The prior's knot values remain locked and are not
 reported as newly estimated parameters. An update that also estimates a new spline uses its continuous basis in the
 new fit covariance; uncertainty in the fixed prior still is not propagated.
+
+## Real-portfolio evidence
+
+The [real motor acceptance study](REAL_SPLINE_ACCEPTANCE.md) passes independent
+prediction and delivery checks for frequency, severity and pure premium. The tested
+five-quantile-knot specifications have worse holdout loss than the banded baseline,
+wide uncertainty at a sparse boundary, and slower fitting. That evidence limits the
+current performance and modeling-quality claims; it does not justify replacing the
+banded specification automatically.

@@ -16,7 +16,9 @@ comes out is a set of CSVs a person can read, edit, file and load back.
   observation-by-parameter matrix — fastest in five of the six scenarios where every
   engine returned a comparable solution, against glum, scikit-learn and H2O across three
   families and three penalty settings
-  ([methodology](src/glm/README.md#the-rest-of-the-field)).
+  ([methodology](src/glm/README.md#the-rest-of-the-field)). These timings cover banded
+  models; the [real spline study](docs/REAL_SPLINE_ACCEPTANCE.md) identifies a substantial
+  fitting-time gap that still needs work.
 - **The plan is data.** Levels, bands, interactions, reference levels and exposure
   treatment are explicit, serializable and reproducible.
   [Monotonic banded effects](docs/MONOTONIC_EFFECTS.md) retain a declared increasing

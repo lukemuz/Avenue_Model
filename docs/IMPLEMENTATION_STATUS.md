@@ -90,6 +90,18 @@ Existing evaluation reports, scripts and recorded runs have been preserved.
   The smooth pricing example reruns successfully with five identified parameters,
   model-based covariance and reserved-holdout bundle reload parity.
 
+## Real continuous-spline acceptance follow-up
+
+- Added a `--smooth` option to the real motor study, with independent SciPy basis/glum
+  references, explicit fit tolerance, retained parity diagnostics and resolved knots.
+- Real frequency, severity and Tweedie workflows pass reference and delivery checks
+  at relative-score tolerance 1e-11. The initial 1e-9 Tweedie parity failure is retained;
+  neither the reference tolerance nor the acceptance threshold was relaxed.
+- A fresh same-split banded run confirms worse held-out loss for these spline
+  specifications. Sparse-boundary uncertainty and fitting time remain material gaps.
+  [Detailed evidence](REAL_SPLINE_ACCEPTANCE.md) preserves outcomes and limitations;
+  these are editable-source runs, not refreshed installed-wheel acceptance.
+
 ## Completed increment: whole-term Wald inference and estimability correction
 
 - Added `term_tests(model, dispersion=...)` with named joint statistics, chi-square
