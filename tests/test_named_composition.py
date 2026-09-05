@@ -21,7 +21,7 @@ class NamedCompositionTests(unittest.TestCase):
         expected = (self.frequency.predict(quotes).to_series() * self.severity.predict(quotes).to_series()
                     + self.premium.predict(quotes).to_series())
         self.assertIsNone(total.family)
-        self.assertEqual(total.converged, all(m.converged for m in (self.frequency, self.severity, self.premium)))
+        self.assertTrue(total.converged)
         self.assertEqual(total.unit, 'loss_per_exposure')
         self.assertEqual(total.predict_components(quotes).columns, ['collision', 'other'])
         with tempfile.TemporaryDirectory() as directory:

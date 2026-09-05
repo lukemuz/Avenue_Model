@@ -193,7 +193,13 @@ whole fit.
 ## Convergence
 
 The fit stops when the largest scaled absolute score reaches `tolerance` (default
-`1e-9`). This tests the parameters directly and is comparable to glum's `gradient_tol`.
+`1e-9`). The numerator is the largest absolute free-parameter score (or penalized KKT
+residual). The denominator sums, per observation, the larger absolute magnitude of
+the residual score and the mean score contribution (the score evaluated at response
+zero). This avoids dividing rounding noise by itself on exact cell fits and retains
+response-unit scaling. It is not the same numerical normalization as glum's
+weight-normalized `gradient_tol`. Compare fitted means and explicit score residuals
+rather than assuming identical tolerance settings mean identical stopping accuracy.
 Deviance alone is insufficient near the optimum because it is quadratic in parameter
 error and reaches its floating-point floor early.
 

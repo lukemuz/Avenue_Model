@@ -203,6 +203,23 @@ called dependable for arbitrary quote inputs.
   stopping rule on these fixtures; do not treat successful scoring as convergence.
 - Usage and limits: [COMPOSITION.md](COMPOSITION.md).
 
+## Completed increment: exact-fit convergence
+
+- Diagnosed the exact-cell failure as residual-only score normalization: numerator
+  and denominator both became rounding noise, leaving a nonzero ratio indefinitely.
+- The denominator now sums per-row reference score magnitudes, taking the larger of
+  residual magnitude and mean-score magnitude. The free-parameter/KKT score remains
+  the stopping criterion; deviance-only convergence was not introduced.
+- Exact weighted cells converge across Gaussian/Poisson/Gamma/Tweedie and response
+  scales 1e-6, 1 and 1e6. Noisy weighted cells match independent closed-form cell
+  means; exact offset counts reconcile; a one-iteration unfinished fit still fails.
+- Updated the existing Rust regression that deliberately asserted the historical
+  false nonconvergence and its downstream false validation alarm.
+- All 79 Python tests, 258 Rust tests, formatting and the auto study pass. Existing
+  independent family/offset references and difficult convergence tests remain green.
+  Documentation now states the actual normalization and no longer equates its
+  tolerance numerically with glum's gradient_tol.
+
 ## Next required work
 
 Complete general response-unit semantics and complete preprocessing persistence and evaluate the remaining explicit conversion limitations.

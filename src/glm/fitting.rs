@@ -60,12 +60,11 @@ impl Default for GLMSolver {
 pub struct GLMOptions {
     pub solver: GLMSolver,
     pub max_iterations: usize,
-    /// Convergence threshold on the largest absolute score component, scaled by the
-    /// total prior weight.
-    ///
-    /// At the optimum every free parameter's score is zero, so this measures how far
-    /// the fitted factors still have to move. It is the same criterion glum applies
-    /// (`gradient_tol`), on the same scale, so the two are comparable.
+    /// Convergence threshold on the largest absolute free-parameter score, divided
+    /// by the sum of per-row reference score magnitudes: the larger of the absolute
+    /// residual score and the absolute mean score contribution (score at y=0).
+    /// This remains defined near exact fits and scales with response units.
+    /// It is not numerically identical to glum's weight-normalized gradient_tol.
     ///
     /// This replaced a test on the relative change in deviance, which was far weaker
     /// than it appeared: deviance is quadratic in the parameter error near the
@@ -2670,7 +2669,7 @@ fn normalize(
 }
 
 /// Scatters one observation's score contribution into every table it touches, and
-/// returns its absolute value for the scaling denominator.
+/// returns a response-scale reference magnitude for the convergence denominator.
 ///
 /// The contribution is the same quantity the IRLS step already uses, `a * w * r`, which
 /// for the log-link families is `a * mu^(1-p) * (y - mu)` — the `A - E` of the exact
@@ -2701,7 +2700,12 @@ fn score_row(
             rows[t][m as usize] += s;
         }
     }
+    // Residual-only normalization degenerates on exact fits: numerator and
+    // denominator both reach rounding noise and their ratio can remain one.
+    // Include the mean's score scale so the criterion remains a relative score
+    // residual at a perfect fit, with the same response-unit equivariance.
     s.abs()
+        .max((a * loss_fn.weighted_link_residual(0.0, means[i])).abs())
 }
 
 /// Relative improvement in the deviance, per sweep, below which a sweep counts as having
@@ -2735,9 +2739,9 @@ const STALL_SWEEPS: usize = 12;
 /// while still visibly wrong. That is not a hypothetical: on the French motor data the
 /// deviance test declared victory 1.1e-04 away from the answer.
 ///
-/// The scaling by total weight matches what glum reports, so the tolerances mean
-/// roughly the same thing in both. Without it the threshold would depend on the number
-/// of observations.
+/// The reference score magnitude removes dependence on observation count and
+/// response-unit scaling. It is not glum's weight-normalized gradient convention;
+/// compare fitted means and explicit score residuals rather than equating tolerances.
 ///
 /// `scratch` is per-table row storage, reused across sweeps.
 #[allow(clippy::too_many_arguments)]
@@ -2895,15 +2899,10 @@ fn max_abs_score(
         }
     }
 
-    // Scale by the total absolute residual, not by the weight. Both make the threshold
-    // independent of the number of observations, but only this one makes it
-    // independent of the units the response is measured in: the score carries the
-    // response's scale, and dividing by a bare weight leaves it there. A Gaussian fit
-    // on currency would otherwise need a different tolerance from one on log-odds.
-    //
-    // Read it as: the fraction of the residual signal still concentrated in the worst
-    // single parameter. At the optimum the signed residuals cancel within every level,
-    // so this goes to zero while the denominator stays put.
+    // Normalize by the sum of max(abs(score residual), abs(mean score scale)).
+    // This is invariant to response-unit scaling for each supported family and
+    // does not collapse to zero as a fit interpolates its observations. It also
+    // retains residual scaling where residuals dominate the mean contribution.
     if total_abs > 0.0 {
         worst / total_abs
     } else {

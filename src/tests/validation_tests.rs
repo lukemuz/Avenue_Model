@@ -741,19 +741,10 @@ mod validation_tests {
         );
     }
 
-    /// Data with no within-group variation makes a saturated fit *exactly* right, and
-    /// that is a degenerate input rather than an ideal one.
-    ///
-    /// The fitter reports convergence as the largest absolute score divided by the
-    /// total absolute score. When the fit is exact both fall to floating-point noise,
-    /// so the ratio is whatever the noise happens to be — here it lands near 2/3
-    /// against a tolerance of 1e-12, and `converged` comes back false for a model that
-    /// reproduces the data to 1e-14. Nothing downstream is wrong, but a caller reading
-    /// `converged` alone would report a false alarm, so this is pinned to keep the
-    /// behaviour visible. The guard in `max_abs_score` tests `total_abs > 0.0`, which
-    /// tiny-but-nonzero noise passes.
+    /// Exact cell means must satisfy the score criterion even when residuals are
+    /// floating-point noise. Previously residual-only normalization hid convergence.
     #[test]
-    fn an_exactly_saturated_fit_is_a_degenerate_case() {
+    fn an_exact_cell_fit_converges_without_a_false_validation_alarm() {
         let n = 400;
         let region: Vec<i32> = (0..n).map(|i| (i % 4) as i32).collect();
         // No within-region variation at all: every row is its group mean.
@@ -782,16 +773,16 @@ mod validation_tests {
             "deviance should be zero, got {}",
             diag.deviance
         );
-        // ... and yet the score is nowhere near the tolerance.
+        // ... and the normalized score now confirms convergence.
         assert!(
-            !diag.converged && diag.max_gradient > 1e-3,
-            "expected the degenerate score, got converged={} score={:e}",
+            diag.converged && diag.max_gradient <= opts().tolerance,
+            "expected convergence, got converged={} score={:e}",
             diag.converged,
             diag.max_gradient
         );
 
         // Validation still measures the model correctly: it is perfectly calibrated,
-        // and the only high-severity finding is the convergence flag it was handed.
+        // without a false nonconvergence finding.
         let v = validate(
             &model,
             &df,
@@ -810,7 +801,7 @@ mod validation_tests {
             .iter()
             .map(|w| w.code.as_str())
             .collect();
-        assert_eq!(high, vec!["not_converged"], "got {:?}", high);
+        assert!(high.is_empty(), "got {:?}", high);
     }
 
     /// A model predicting one number for everyone orders nothing, whatever order the
