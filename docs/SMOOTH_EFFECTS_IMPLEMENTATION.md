@@ -2,10 +2,10 @@
 
 Status: exact natural-cubic scoring and editable workbook persistence are implemented
 and independently tested. Low-level Rust table-sweep fitting now supports unpenalized
-continuous splines. There is **no smooth Plan term or spline inference yet**. Existing
+continuous splines. `Plan.spline` now resolves explicit, quantile or equal-width knots within training
+folds. **Spline inference is not implemented yet**. Existing
 polynomial variates still score as step tables. The smooth-effect acceptance requirement
-remains open until public Plan/fold integration and the remaining inference/recovery
-checks pass.
+remains open until the remaining inference, penalty and workflow acceptance checks pass.
 
 ## Canonical curve and numerical representation
 
@@ -78,9 +78,9 @@ cargo test --no-default-features --locked spline::tests
 
 ## Integration gates still open
 
-1. **Plan and schema.** Add an explicit natural-cubic term with knot resolution inside
-   training folds, a declared tail rule and clear duplicate/missing-input errors.
-   Knots are control locations, not inclusive band bounds.
+1. **Plan extensions.** Public spline terms, fold-local knot resolution, declared
+   linear tails and malformed-input checks are implemented. Carrying prior spline
+   tables through the Given/offset-model interface remains open.
 2. **Fitting extensions.** Unpenalized table sweeps now use continuous updates,
    basis-score convergence and observed-contribution normalization. A roughness penalty
    still needs its own interpretation and covariance/selection rules. Individual locked
@@ -196,3 +196,19 @@ cargo test --no-default-features --locked glm_spline
 The complete Rust suite passes 278 tests (six ignored plus one ignored doc test).
 These tests establish low-level fitting behavior, not a completed public smooth-term
 workflow or spline uncertainty support.
+
+## Public Plan integration
+
+`Plan.spline(column, knots=..., quantile=..., equal_width=...)` now declares the
+continuous term. A dedicated `Knots` enum separates finite spline controls from
+band upper bounds. Automatic resolution includes both training boundaries, uses
+positive-weight training observations, and collapses ties. Explicit knots are never
+repaired silently. Resolved terms expose `knots` separately from `edges`.
+
+Public tests recover SciPy curves in five families, serialize/refit plans and bundles,
+exercise fold-local and zero-weight-outlier knot resolution, GLM selection, and
+malformed inputs. Plan checks avoid treating spline support bins as independent
+coefficients or reporting their discrete-table correlation as spline conditioning.
+The runnable `examples/smooth_pricing_study.py` completes development-fold selection,
+a reserved final holdout, bundle validation/reload and continuous-curve CSV export.
+See [the user guide](SPLINES.md) for API conventions and current statistical limits.

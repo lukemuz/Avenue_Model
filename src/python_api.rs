@@ -12,7 +12,7 @@
 #![cfg(feature = "python")]
 
 use crate::plan::{
-    Base, Breaks, ExposureRole, FittedModel, GivenRole, Plan, PlanCheck, ResolvedTerm, Term,
+    Base, Breaks, ExposureRole, FittedModel, GivenRole, Knots, Plan, PlanCheck, ResolvedTerm, Term,
 };
 use crate::report::{ModelReport, Verdict};
 use crate::validation::{Severity, Validation, ValidationOptions};
@@ -79,6 +79,9 @@ fn resolved_to_dict<'py>(py: Python<'py>, term: &ResolvedTerm) -> PyResult<Bound
     dict.set_item("edges", term.edges.clone())?;
     dict.set_item("base_level", term.base_level.clone())?;
     dict.set_item("variate_values", term.variate_values.clone())?;
+    if let Some(knots) = &term.knots {
+        dict.set_item("knots", knots.clone())?;
+    }
     Ok(dict)
 }
 
@@ -166,6 +169,33 @@ impl PyPlan {
         let breaks = breaks_from(breaks, quantile, equal_width)?;
         Ok(PyPlan {
             inner: self.inner.clone().with(Term::banded(column, breaks)),
+        })
+    }
+
+    /// Exact natural-cubic effect with linear tails. Quantile/equal_width count
+    /// includes both boundary knots; default is five quantile knots, resolved on
+    /// positive-weight training rows. Supports unpenalized fits; inference is unavailable.
+    #[pyo3(signature = (column, knots=None, quantile=None, equal_width=None))]
+    fn spline(
+        &self,
+        column: &str,
+        knots: Option<Vec<f64>>,
+        quantile: Option<usize>,
+        equal_width: Option<usize>,
+    ) -> PyResult<Self> {
+        let spec = match (knots, quantile, equal_width) {
+            (Some(values), None, None) => Knots::Explicit { values },
+            (None, Some(n), None) => Knots::Quantile { n },
+            (None, None, Some(n)) => Knots::EqualWidth { n },
+            (None, None, None) => Knots::Quantile { n: 5 },
+            _ => {
+                return Err(value_error(
+                    "Give only one of knots, quantile or equal_width for a spline",
+                ))
+            }
+        };
+        Ok(Self {
+            inner: self.inner.clone().with(Term::spline(column, spec)),
         })
     }
 

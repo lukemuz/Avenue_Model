@@ -21,6 +21,8 @@ comes out is a set of CSVs a person can read, edit, file and load back.
   treatment are explicit, serializable and reproducible.
   [Monotonic banded effects](docs/MONOTONIC_EFFECTS.md) retain a declared increasing
   or decreasing direction through fitting and export.
+  [Continuous spline effects](docs/SPLINES.md) fit and export exact natural cubics
+  with fold-local knots and linear tails; spline inference remains unavailable.
   [Whole-term tests](docs/TERM_TESTS.md) assess supported factor contrasts jointly
   using the fit's declared covariance method.
 - **Problems are found before fitting.** `check()` reports data faults, thin levels,

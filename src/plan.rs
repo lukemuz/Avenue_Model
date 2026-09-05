@@ -73,6 +73,15 @@ impl Breaks {
     }
 }
 
+/// Natural-cubic control locations, including both finite boundary knots.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Knots {
+    Explicit { values: Vec<f64> },
+    Quantile { n: usize },
+    EqualWidth { n: usize },
+}
+
 /// Which level a categorical factor is anchored on.
 ///
 /// The base level's factor is fixed at zero under the default anchoring, so every
@@ -102,6 +111,8 @@ impl Default for Base {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Term {
+    /// Exact natural-cubic interpolation with linear endpoint-tangent tails.
+    Spline { column: String, knots: Knots },
     /// A numeric driver cut into bands, each band carrying its own free factor.
     Banded { column: String, breaks: Breaks },
     /// Numeric bands whose factors follow a declared direction during fitting.
@@ -175,6 +186,12 @@ impl Default for GivenRole {
 }
 
 impl Term {
+    pub fn spline(column: &str, knots: Knots) -> Self {
+        Self::Spline {
+            column: column.to_string(),
+            knots,
+        }
+    }
     pub fn monotone(column: &str, breaks: Breaks, direction: Monotonicity) -> Self {
         Self::Monotone {
             column: column.to_string(),
@@ -239,6 +256,7 @@ impl Term {
         match self {
             Term::Banded { column, .. }
             | Term::Monotone { column, .. }
+            | Term::Spline { column, .. }
             | Term::Categorical { column, .. }
             | Term::Variate { column, .. } => vec![column.as_str()],
             Term::Interaction { columns, .. } => columns.iter().map(String::as_str).collect(),
@@ -253,6 +271,7 @@ impl Term {
         match self {
             Term::Banded { column, .. }
             | Term::Monotone { column, .. }
+            | Term::Spline { column, .. }
             | Term::Categorical { column, .. }
             | Term::Variate { column, .. } => column.clone(),
             Term::Interaction { columns, .. } => columns.join(" x "),
@@ -515,6 +534,7 @@ impl Plan {
             let numeric_columns: HashSet<&str> = match term {
                 Term::Banded { column, .. }
                 | Term::Monotone { column, .. }
+                | Term::Spline { column, .. }
                 | Term::Variate { column, .. } => [column.as_str()].into_iter().collect(),
                 Term::Categorical { .. } => HashSet::new(),
                 Term::Interaction { columns, breaks } => columns
@@ -781,6 +801,9 @@ pub struct ResolvedTerm {
     /// The values a variate's polynomial is taken over.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variate_values: Option<Vec<f64>>,
+    /// Resolved finite control locations for a spline, never band edges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knots: Option<Vec<f64>>,
 }
 
 /// A plan turned into a model, with what it decided along the way.
@@ -853,6 +876,55 @@ fn band_edges(values: &[f64], breaks: &Breaks, column: &str) -> Result<Vec<f64>,
     // contribute nothing and be dropped from that table's update.
     edges.push(f64::INFINITY);
     Ok(edges)
+}
+
+fn spline_knots(values: &[f64], weights: &[f64], spec: &Knots) -> Result<Vec<f64>, PolarsError> {
+    let error = |message: &str| PolarsError::ComputeError(message.to_string().into());
+    let knots = match spec {
+        Knots::Explicit { values } => values.clone(),
+        Knots::Quantile { n } | Knots::EqualWidth { n } => {
+            if *n < 2 {
+                return Err(error(
+                    "A spline needs at least two knots, including its boundaries",
+                ));
+            }
+            let mut sorted: Vec<f64> = values
+                .iter()
+                .zip(weights)
+                .filter(|(_, w)| **w > 0.)
+                .map(|(v, _)| *v)
+                .collect();
+            sorted.sort_by(f64::total_cmp);
+            if sorted.is_empty() {
+                return Err(error(
+                    "Spline knot resolution needs positive-weight training observations",
+                ));
+            }
+            let lo = sorted[0];
+            let hi = *sorted.last().unwrap();
+            let mut knots: Vec<f64> = (0..*n)
+                .map(|i| {
+                    if i == 0 {
+                        lo
+                    } else if i + 1 == *n {
+                        hi
+                    } else if matches!(spec, Knots::Quantile { .. }) {
+                        let rank =
+                            (i as f64 / (*n - 1) as f64 * sorted.len() as f64).ceil() as usize;
+                        sorted[rank.clamp(1, sorted.len()) - 1]
+                    } else {
+                        lo + (hi - lo) * (i as f64 / (*n - 1) as f64)
+                    }
+                })
+                .collect();
+            knots.dedup();
+            knots
+        }
+    };
+    // Explicit knots are never sorted or silently discarded. Validate with the
+    // same geometry used by scoring, including representable finite spacing.
+    crate::spline::NaturalCubicCurve::new(knots.clone(), vec![0.; knots.len()]).map_err(error)?;
+    Ok(knots)
 }
 
 /// Midpoints for a variate's bands, with the open top band extrapolated.
@@ -1007,6 +1079,7 @@ impl Plan {
             edges: None,
             base_level: None,
             variate_values: None,
+            knots: None,
         }];
 
         for term in &self.terms {
@@ -1115,6 +1188,42 @@ impl Plan {
         encoding: &Encoding,
     ) -> Result<(RatingTable, ResolvedTerm), PolarsError> {
         match term {
+            Term::Spline { column, knots } => {
+                let values = numeric_values(df, column)?;
+                if values.iter().any(|v| !v.is_finite()) {
+                    return Err(PolarsError::ComputeError(
+                        format!(
+                            "Spline column '{}' requires finite, non-null training coordinates",
+                            column
+                        )
+                        .into(),
+                    ));
+                }
+                let knots = spline_knots(&values, weights, knots)?;
+                let rows = knots.len();
+                let table = RatingTable::new(
+                    DataFrame::new(vec![
+                        Series::new(column.into(), knots.clone()).into(),
+                        Series::new("Rating_Factor".into(), vec![0.; rows]).into(),
+                    ])?,
+                    None,
+                )
+                .as_natural_cubic()?;
+                Ok((
+                    table,
+                    ResolvedTerm {
+                        name: column.clone(),
+                        kind: "natural_cubic_spline".into(),
+                        columns: vec![column.clone()],
+                        rows,
+                        parameters: rows - 1,
+                        edges: None,
+                        base_level: Some("first knot".into()),
+                        variate_values: None,
+                        knots: Some(knots),
+                    },
+                ))
+            }
             Term::Monotone {
                 column,
                 breaks,
@@ -1164,6 +1273,7 @@ impl Plan {
                         edges: Some(edges),
                         base_level: Some("lowest band".to_string()),
                         variate_values: None,
+                        knots: None,
                     },
                 ))
             }
@@ -1194,6 +1304,7 @@ impl Plan {
                         edges: None,
                         base_level: Some(base_label),
                         variate_values: None,
+                        knots: None,
                     },
                 ))
             }
@@ -1245,6 +1356,7 @@ impl Plan {
                         edges: Some(edges),
                         base_level: Some("lowest band".to_string()),
                         variate_values: Some(variate_values),
+                        knots: None,
                     },
                 ))
             }
@@ -1306,6 +1418,7 @@ impl Plan {
                             GivenRole::Structure => Some("first row".to_string()),
                         },
                         variate_values: None,
+                        knots: None,
                     },
                 ))
             }
@@ -1432,6 +1545,7 @@ impl Plan {
                         edges: None,
                         base_level: Some("first combination".to_string()),
                         variate_values: None,
+                        knots: None,
                     },
                 ))
             }
@@ -1866,6 +1980,11 @@ impl Plan {
                             ),
                         ));
                     }
+                    if table.metadata.spline.is_some() {
+                        issues.push(Issue::new(Severity::Low, "spline_support", None,
+                            format!("Table '{}' is a continuous spline. Support intervals are not knot-parameter counts; spline inference and full-design conditioning are not yet available.", built.table_names[t])));
+                        continue;
+                    }
                     let empty = row_weight.iter().filter(|w| **w <= 0.0).count();
                     if empty > 0 {
                         issues.push(Issue::new(
@@ -1921,11 +2040,18 @@ impl Plan {
                 .map(|t| {
                     !t.metadata.is_offset
                         && t.variate_values().is_none()
+                        && t.metadata.spline.is_none()
                         && !(0..t.data.height()).any(|r| t.is_row_offset(r))
                 })
                 .collect();
             let pairs = crate::glm::table_correlations(matches, &weights, &shapes, &eligible);
-            if !pairs.is_empty() {
+            if !pairs.is_empty()
+                && !built
+                    .model
+                    .tables
+                    .iter()
+                    .any(|t| t.metadata.spline.is_some())
+            {
                 table_conditioning = Some(crate::glm::collective_strength(&pairs));
             }
             for pair in &pairs {

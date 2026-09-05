@@ -31,6 +31,12 @@ tails. The follow-up passes 278 Rust and 118 Python tests from editable source.
 Public smooth Plan/fold integration, spline inference and roughness penalties remain
 open; the earlier scoring increment alone did not establish fitting behavior.
 
+The public [Plan spline API](SPLINES.md) now resolves knots within folds and survives
+Plan/bundle serialization and refitting. Five-family Python recovery checks and a
+synthetic selection/final-holdout delivery example pass. Current editable-source
+verification is 278 Rust and 121 Python tests; spline inference, penalties and broader
+real-portfolio acceptance remain open.
+
 ## Fresh installed-wheel evidence
 
 [The runner](../studies/readiness_acceptance.py) verifies every installed package payload

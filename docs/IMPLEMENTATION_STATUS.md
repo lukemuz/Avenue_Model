@@ -45,6 +45,22 @@ Existing evaluation reports, scripts and recorded runs have been preserved.
   knots remain open. The complete Rust suite passes 278 tests; the release extension
   was rebuilt and all 118 Python tests passed. This remains editable-source evidence.
 
+## Public spline Plan follow-up
+
+- Added `Plan.spline` with explicit/quantile/equal-width knot specifications, a default
+  of five quantile knots, and a dedicated serializable `Knots` representation.
+  Resolution uses positive-weight training rows and occurs inside ordinary folds.
+- Resolved terms expose finite `knots` separately from band `edges`. Pre-fit support
+  findings do not claim that support-group counts identify knot parameters.
+- Public five-family tests cover Plan/bundle reloads and refits, fold-local knots,
+  zero-weight outliers, ties, GLM selection and malformed geometry/coordinates.
+  The synthetic smooth-pricing example completes selection, reserved-holdout bundle
+  delivery and continuous-quote CSV export. Inference and penalties remain open.
+- Verification: 278 Rust tests and 121 Python tests passed after rebuilding the release
+  extension. The example selected five knots (development CV loss 0.816551 versus
+  0.818604 for eight knots) and verified reserved-holdout bundle parity. These are
+  synthetic/editable-source results, not a real-portfolio or clean-wheel acceptance run.
+
 ## Completed increment: whole-term Wald inference and estimability correction
 
 - Added `term_tests(model, dispersion=...)` with named joint statistics, chi-square
