@@ -234,11 +234,7 @@ impl NaturalCubicBasis {
 
     /// Apply the transposed basis without constructing an information matrix.
     /// Normalization and convergence need only these knot-value loadings.
-    pub(crate) fn loadings(
-        &self,
-        predictors: &[f64],
-        scores: &[f64],
-    ) -> SplineResult<Vec<f64>> {
+    pub(crate) fn loadings(&self, predictors: &[f64], scores: &[f64]) -> SplineResult<Vec<f64>> {
         self.accumulate::<false>(predictors, &[], scores)
             .map(|(_, score)| score)
     }
@@ -249,7 +245,8 @@ impl NaturalCubicBasis {
         curvature: &[f64],
         scores: &[f64],
     ) -> SplineResult<(Vec<f64>, Vec<f64>)> {
-        if (INFORMATION && predictors.len() != curvature.len()) || predictors.len() != scores.len() {
+        if (INFORMATION && predictors.len() != curvature.len()) || predictors.len() != scores.len()
+        {
             return Err("Spline predictors, curvatures and scores must have matching lengths");
         }
         let n = self.columns.len();

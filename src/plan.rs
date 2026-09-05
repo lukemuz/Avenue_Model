@@ -2952,9 +2952,12 @@ impl FittedModel {
                 .collect();
             let label_name = format!("{}_Level", name);
             if frame.column(&label_name).is_ok() {
-                return Err(PolarsError::ComputeError(format!(
+                return Err(PolarsError::ComputeError(
+                    format!(
                     "Derived review column '{label_name}' conflicts with an existing table column"
-                ).into()));
+                )
+                    .into(),
+                ));
             }
             frame.with_column(Series::new(
                 format!("{}_Level", name).as_str().into(),

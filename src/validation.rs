@@ -477,7 +477,9 @@ pub fn validate(
             .collect();
 
         if model.tables[t].metadata.spline.is_none() {
-            model.tables[t].ensure_review_columns_available(&["N", "Exposure", "Actual", "Expected", "AE_Ratio"])?;
+            model.tables[t].ensure_review_columns_available(&[
+                "N", "Exposure", "Actual", "Expected", "AE_Ratio",
+            ])?;
         }
         let mut data = model.tables[t].review_data()?;
         if model.tables[t].metadata.spline.is_some() {

@@ -4,7 +4,10 @@ use polars::prelude::*;
 use std::collections::HashMap;
 
 impl RatingTable {
-    pub(crate) fn ensure_review_columns_available(&self, names: &[&str]) -> Result<(), PolarsError> {
+    pub(crate) fn ensure_review_columns_available(
+        &self,
+        names: &[&str],
+    ) -> Result<(), PolarsError> {
         for name in names {
             if self.data.column(name).is_ok() {
                 return Err(PolarsError::ComputeError(format!(
