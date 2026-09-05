@@ -382,3 +382,25 @@ that evidence.
   reports and explicit remaining gates. Full output: `/tmp/avenue-real-acceptance-v3`.
   Real fork comparison, broader installation/performance checks, statistical extensions
   and full-scope audit remain outstanding; the overall goal is not marked complete.
+
+## Completed increment: independent-observation HC0 covariance
+
+- `GLMOptions(covariance='hc0')` requests an expected-information sandwich on the
+  existing reduced design. Both solvers retain their point estimates/convergence;
+  the default model-based path avoids the extra covariance matrix allocation.
+- HC0 uses squared weighted observation scores, with no second dispersion factor,
+  leverage correction, finite-sample correction or clustering. Penalties, disabled
+  inference and unanchored normalization are rejected for this option.
+- Method identity is exposed in low-level diagnostics, fit/inference summaries,
+  Markdown reports, interval metadata and source bundles. Quasi-Poisson rescaling
+  of HC0 intervals is rejected to prevent double adjustment.
+- Independent dense matrix tests cover all five families, heterogeneous precision
+  weights, both solvers, count offsets, hierarchical contrasts and unchanged means.
+  Weighted-mean tests exposed and fixed an existing intercept-inference defect: its
+  contrast must include table averages shifted into it. The correction applies to
+  classical and HC0 covariance and agrees with an independent contrast calculation.
+- All 99 Python tests and 258 Rust tests pass; six Rust tests and one doc test remain
+  ignored. Release extension rebuilt. [Semantics and examples](ROBUST_INFERENCE.md)
+  state the correctly specified conditional-mean/independent-observation assumptions.
+  Cluster covariance, whole-term tests, finite-sample/coverage studies and
+  post-selection uncertainty remain open.

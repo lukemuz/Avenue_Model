@@ -61,6 +61,7 @@ pub struct FitSummary {
     pub pseudo_r2: f64,
     pub n_parameters: Option<usize>,
     pub dispersion: Option<f64>,
+    pub covariance_method: Option<String>,
     pub aic: Option<f64>,
     pub bic: Option<f64>,
     pub table_conditioning: Option<f64>,
@@ -179,6 +180,7 @@ impl FittedModel {
                 pseudo_r2: diagnostics.pseudo_r2(),
                 n_parameters: inference.map(|i| i.n_parameters),
                 dispersion: inference.map(|i| i.dispersion),
+                covariance_method: inference.map(|i| i.covariance_method.clone()),
                 aic: inference.and_then(|i| i.aic),
                 bic: inference.and_then(|i| i.bic),
                 table_conditioning: diagnostics.table_conditioning,
@@ -364,6 +366,9 @@ impl ModelReport {
             ));
             if let Some(p) = fit.n_parameters {
                 out.push_str(&format!("| Parameters | {} |\n", p));
+            }
+            if let Some(method) = &fit.covariance_method {
+                out.push_str(&format!("| Covariance | {} |\n", method));
             }
             if let Some(d) = fit.dispersion {
                 out.push_str(&format!("| Dispersion | {:.6} |\n", d));

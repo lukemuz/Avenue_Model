@@ -21,7 +21,7 @@ or `unavailable` for an unestimable/no-data/locked factor without finite uncerta
 A fixed reference is a coding constraint, not a precisely estimated effect.
 Exponentiation can overflow to infinity for very wide intervals.
 
-The default uses the engine's model-based dispersion: one for Poisson/Binomial,
+For model-based covariance, the default uses the engine's dispersion: one for Poisson/Binomial,
 and estimated dispersion for Gaussian/Gamma/Tweedie. The optional quasi-Poisson
 route estimates
 
@@ -45,7 +45,8 @@ does not diagnose or fix those issues.
 
 These intervals are conditional on the specified structure and use a normal
 approximation. They do not account for tuning, data-selected bands, clustering,
-robust covariance or uncertainty in the dispersion estimate. Penalized fits,
+uncertainty in the dispersion estimate. [HC0 robust covariance](ROBUST_INFERENCE.md)
+can be selected at fitting time; it is labeled separately and is not dispersion-scaled. Penalized fits,
 nonconverged fits, and fits without computed inference are rejected. Loaded/edited
 workbooks cannot acquire the source fit's intervals. The original numerical evidence
 is available as `model.inference_summary` and is preserved in analytical bundles.

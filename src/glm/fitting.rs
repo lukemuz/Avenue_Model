@@ -1,4 +1,4 @@
-use super::inference::{compute_inference_with_locks, solve_spd, GLMInference};
+use super::inference::{compute_inference_with_covariance, solve_spd, GLMInference};
 use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
 use super::penalty::{soft_threshold, PenaltyPlan, TablePenalty, ANCHOR_ROW};
@@ -83,6 +83,8 @@ pub struct GLMOptions {
     /// is the number of free parameters. Negligible for ordinary rating models; turn
     /// it off for models with thousands of levels.
     pub compute_standard_errors: bool,
+    /// Independent-observation HC0 expected-information sandwich; unpenalized only.
+    pub robust_standard_errors: bool,
     /// Accelerate the sweep with SQUAREM extrapolation. See [`squarem_steplength`].
     ///
     /// Costs three parameter vectors of memory and pays for itself many times over on
@@ -138,6 +140,7 @@ impl Default for GLMOptions {
             tweedie_power: 1.5,
             normalization: Normalization::default(),
             compute_standard_errors: true,
+            robust_standard_errors: false,
             accelerate: true,
             solve_aliased_pairs_jointly: true,
             alpha: 0.0,
@@ -607,6 +610,18 @@ pub fn fit_glm_with_diagnostics(
     options: GLMOptions,
 ) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
     validate_inputs(model, df, target_col, weight_col, offset_col)?;
+    if options.robust_standard_errors && (options.alpha != 0.0 || !options.compute_standard_errors)
+    {
+        return Err(PolarsError::ComputeError(
+            "HC0 covariance requires an unpenalized fit with inference enabled".into(),
+        ));
+    }
+
+    if options.robust_standard_errors && options.normalization == Normalization::None {
+        return Err(PolarsError::ComputeError(
+            "HC0 covariance requires base-level or weighted-mean normalization".into(),
+        ));
+    }
 
     // Initialize loss function from required objective
     let mut loss_fn = LossFunction::from_objective(&options.objective);
@@ -1051,7 +1066,7 @@ pub fn fit_glm_with_diagnostics(
     // rather than allowed to discard the fit the caller asked for.
     let mut inference_error: Option<String> = None;
     let inference = if options.compute_standard_errors {
-        match compute_inference_with_locks(
+        match compute_inference_with_covariance(
             &loss_fn,
             &target,
             &weights,
@@ -1072,6 +1087,7 @@ pub fn fit_glm_with_diagnostics(
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>(),
+            options.robust_standard_errors,
         ) {
             Ok(inf) => Some(inf),
             Err(e) => {
@@ -1691,7 +1707,7 @@ fn fit_global_irls(
 
     let mut inference_error = None;
     let inference = if options.compute_standard_errors {
-        match compute_inference_with_locks(
+        match compute_inference_with_covariance(
             &loss_fn,
             &target,
             &weights,
@@ -1712,6 +1728,7 @@ fn fit_global_irls(
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>(),
+            options.robust_standard_errors,
         ) {
             Ok(value) => Some(value),
             Err(error) => {

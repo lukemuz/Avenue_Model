@@ -612,6 +612,7 @@ impl PyFittedModel {
             .and_then(|d| d.inference.as_ref())
         {
             out.set_item("dispersion", info.dispersion)?;
+            out.set_item("covariance_method", &info.covariance_method)?;
             out.set_item("pearson_chi2", info.pearson_chi2)?;
             out.set_item("df_residual", info.df_residual)?;
             out.set_item("n_parameters", info.n_parameters)?;
@@ -1052,6 +1053,7 @@ impl PyModelReport {
         dict.set_item("pseudo_r2", fit.pseudo_r2)?;
         dict.set_item("n_parameters", fit.n_parameters)?;
         dict.set_item("dispersion", fit.dispersion)?;
+        dict.set_item("covariance_method", &fit.covariance_method)?;
         dict.set_item("aic", fit.aic)?;
         dict.set_item("bic", fit.bic)?;
         dict.set_item("table_conditioning", fit.table_conditioning)?;

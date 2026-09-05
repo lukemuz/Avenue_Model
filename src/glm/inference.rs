@@ -69,6 +69,8 @@ pub struct GLMInference {
     /// Estimated dispersion. Fixed at 1 for Poisson and Binomial; Pearson chi-squared
     /// over residual degrees of freedom for Gaussian, Gamma and Tweedie.
     pub dispersion: f64,
+    /// Covariance used for standard errors, independently of likelihood dispersion.
+    pub covariance_method: String,
     /// Free parameters in the reduced basis, i.e. the model's rank.
     pub n_parameters: usize,
     /// Effective parameters actually spent, which is what `aic`, `bic` and
@@ -227,6 +229,40 @@ pub fn compute_inference_with_locks(
     penalty: Option<&PenaltyPlan>,
     locked_rows: &[Vec<bool>],
 ) -> Result<GLMInference, PolarsError> {
+    compute_inference_with_covariance(
+        loss_fn,
+        target,
+        weights,
+        means,
+        matches,
+        factors,
+        row_exposure,
+        updatable,
+        variate_values,
+        normalization,
+        penalty,
+        locked_rows,
+        false,
+    )
+}
+
+/// Expected-information sandwich covariance when HC0 is requested.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_inference_with_covariance(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    factors: &[Vec<f64>],
+    row_exposure: &[Vec<f64>],
+    updatable: &[bool],
+    variate_values: &[Option<(Vec<f64>, usize)>],
+    normalization: Normalization,
+    penalty: Option<&PenaltyPlan>,
+    locked_rows: &[Vec<bool>],
+    hc0: bool,
+) -> Result<GLMInference, PolarsError> {
     let n_obs = target.len();
     let n_tables = factors.len();
 
@@ -359,7 +395,17 @@ pub fn compute_inference_with_locks(
     // Every row of X is an indicator pattern: a 1 in the intercept column and a 1 in
     // at most one column per table. So the outer product is just a handful of
     // increments, and the whole accumulation is O(n * tables^2).
+    if hc0 && penalty.is_some_and(|p| p.is_active()) {
+        return Err(PolarsError::ComputeError(
+            "HC0 covariance is unavailable for penalized fits".into(),
+        ));
+    }
     let mut xtwx = vec![0.0f64; n_params * n_params];
+    let mut meat = if hc0 {
+        vec![0.0; n_params * n_params]
+    } else {
+        Vec::new()
+    };
     let mut pearson_chi2 = 0.0f64;
     let mut active_obs = 0usize;
     let mut cols: Vec<(usize, f64)> = Vec::with_capacity(n_tables + 1);
@@ -394,12 +440,30 @@ pub fn compute_inference_with_locks(
             }
         }
 
+        let score_squared = if hc0 {
+            (a * loss_fn.weighted_link_residual(target[i], mu)).powi(2)
+        } else {
+            0.0
+        };
+        if hc0 && !score_squared.is_finite() {
+            return Err(PolarsError::ComputeError(
+                "HC0 observation score is nonfinite".into(),
+            ));
+        }
         for (a_idx, &(u, cu)) in cols.iter().enumerate() {
             xtwx[u * n_params + u] += w * cu * cu;
+            if hc0 {
+                meat[u * n_params + u] += score_squared * cu * cu;
+            }
             for &(v_col, cv) in cols.iter().skip(a_idx + 1) {
                 let contribution = w * cu * cv;
                 xtwx[u * n_params + v_col] += contribution;
                 xtwx[v_col * n_params + u] += contribution;
+                if hc0 {
+                    let contribution = score_squared * cu * cv;
+                    meat[u * n_params + v_col] += contribution;
+                    meat[v_col * n_params + u] += contribution;
+                }
             }
         }
     }
@@ -449,7 +513,19 @@ pub fn compute_inference_with_locks(
         // unavailable on every penalised fit.
         (None, rank as f64)
     } else {
-        (Some(invert_spd(&compact, k)?), rank as f64)
+        let bread = invert_spd(&compact, k)?;
+        let covariance = if hc0 {
+            let mut compact_meat = vec![0.0; k * k];
+            for (ci, &i) in active.iter().enumerate() {
+                for (cj, &j) in active.iter().enumerate() {
+                    compact_meat[ci * k + cj] = meat[i * n_params + j];
+                }
+            }
+            matmul(&matmul(&bread, &compact_meat, k), &bread, k)
+        } else {
+            bread
+        };
+        (Some(covariance), rank as f64)
     };
 
     // An L1 penalty adds no curvature, so it leaves no trace in the hat matrix above.
@@ -473,6 +549,8 @@ pub fn compute_inference_with_locks(
     } else {
         f64::NAN
     };
+
+    let covariance_scale = if hc0 { 1.0 } else { dispersion };
 
     // Scatter back into full-size coordinates; dropped columns stay zero and are
     // caught by the `compact_of` check when contrasts are formed.
@@ -517,6 +595,31 @@ pub fn compute_inference_with_locks(
                     let mut contrast: Vec<(usize, f64)> = Vec::new();
                     if let ReducedColumn::Loadings(loadings) = &layout[t][r] {
                         contrast.extend_from_slice(loadings);
+                    }
+                    // Weighted-mean anchoring moves each table's weighted average
+                    // into the intercept. Its reported coefficient needs that same
+                    // contrast, not the treatment-coded baseline's standard error.
+                    if t == 0 && normalization == Normalization::WeightedMean {
+                        for source in 1..n_tables {
+                            if !updatable[source] || locked_rows[source].iter().any(|v| *v) {
+                                continue;
+                            }
+                            let total: f64 = row_exposure[source].iter().sum();
+                            if total <= 0.0 {
+                                continue;
+                            }
+                            for (row, support) in row_exposure[source].iter().enumerate() {
+                                if let ReducedColumn::Loadings(loadings) = &layout[source][row] {
+                                    for (column, loading) in loadings {
+                                        let adjustment = support / total * loading;
+                                        match contrast.iter_mut().find(|(c, _)| c == column) {
+                                            Some(entry) => entry.1 += adjustment,
+                                            None => contrast.push((*column, adjustment)),
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     if let Some(p) = &shares {
                         for (s, share) in p.iter().enumerate() {
@@ -572,7 +675,7 @@ pub fn compute_inference_with_locks(
                         }
                     }
                     ses[r] = if quad >= 0.0 {
-                        (dispersion * quad).sqrt()
+                        (covariance_scale * quad).sqrt()
                     } else {
                         f64::NAN
                     };
@@ -677,7 +780,7 @@ pub fn compute_inference_with_locks(
                 if compact_of.get(c).copied().flatten().is_none() {
                     return f64::NAN;
                 }
-                let var = dispersion * cov[c * n_params + c];
+                let var = covariance_scale * cov[c * n_params + c];
                 if var >= 0.0 {
                     var.sqrt()
                 } else {
@@ -699,6 +802,7 @@ pub fn compute_inference_with_locks(
         standard_errors,
         aliased_rows,
         dispersion,
+        covariance_method: if hc0 { "hc0" } else { "model_based" }.to_string(),
         variate_terms,
         n_parameters: rank,
         effective_parameters,

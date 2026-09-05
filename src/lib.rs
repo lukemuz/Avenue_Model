@@ -646,6 +646,9 @@ impl PyGLMOptions {
     ///
     ///         No standard errors are reported under a penalty of either kind.
     ///         See GLMDiagnostics.standard_errors_note.
+    ///     covariance: "model_based" (default) or "hc0" for independent-observation
+    ///         expected-information sandwich covariance. Unpenalized fits only; no
+    ///         leverage, small-sample, cluster or post-selection adjustment.
     ///     solver: "auto" (default) prefers global IRLS and falls back to the
     ///         low-memory table solver for unsupported or very wide models.
     ///         "global" requires the global path; "table" requires table descent.
@@ -662,6 +665,7 @@ impl PyGLMOptions {
         alpha=None,
         l1_ratio=None,
         solver=None,
+        covariance=None,
     ))]
     fn new(
         max_iterations: Option<usize>,
@@ -675,8 +679,19 @@ impl PyGLMOptions {
         alpha: Option<f64>,
         l1_ratio: Option<f64>,
         solver: Option<&str>,
+        covariance: Option<&str>,
     ) -> PyResult<Self> {
         let mut options = glm::GLMOptions::default();
+        options.robust_standard_errors = match covariance.unwrap_or("model_based") {
+            "model_based" => false,
+            "hc0" => true,
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown covariance '{}'; expected model_based or hc0",
+                    other
+                )))
+            }
+        };
 
         if let Some(max_iter) = max_iterations {
             options.max_iterations = max_iter;
@@ -821,6 +836,9 @@ struct PyGLMDiagnostics {
     /// freedom for Gaussian, Gamma and Tweedie.
     #[pyo3(get)]
     dispersion: Option<f64>,
+    /// Covariance estimator used for reported standard errors.
+    #[pyo3(get)]
+    covariance_method: Option<String>,
     /// Free parameters actually estimated, i.e. the model's rank.
     #[pyo3(get)]
     n_parameters: Option<usize>,
@@ -918,6 +936,7 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
             standard_errors_note: inf.as_ref().and_then(|i| i.standard_errors_note.clone()),
             aliased_rows: inf.as_ref().map(|i| i.aliased_rows.clone()),
             dispersion: inf.as_ref().map(|i| i.dispersion),
+            covariance_method: inf.as_ref().map(|i| i.covariance_method.clone()),
             n_parameters: inf.as_ref().map(|i| i.n_parameters),
             effective_parameters: inf.as_ref().map(|i| i.effective_parameters),
             df_residual: inf.as_ref().map(|i| i.df_residual),

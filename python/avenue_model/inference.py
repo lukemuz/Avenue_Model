@@ -31,11 +31,14 @@ def coefficient_intervals(model, *, confidence=.95, dispersion='model'):
         raise ValueError('Inference was not computed for this fit')
     if evidence['standard_errors_note']:
         raise ValueError(evidence['standard_errors_note'])
+    covariance_method = evidence['covariance_method']
     base_dispersion = evidence['dispersion']
-    if not math.isfinite(base_dispersion) or base_dispersion <= 0:
+    if covariance_method == 'model_based' and (not math.isfinite(base_dispersion) or base_dispersion <= 0):
         raise ValueError('Fit dispersion must be finite and positive for Wald intervals')
     scale = base_dispersion
     if dispersion == 'quasi_poisson':
+        if covariance_method != 'model_based':
+            raise ValueError('quasi_poisson cannot rescale HC0 covariance')
         if model.family != 'poisson':
             raise ValueError('quasi_poisson requires a Poisson fit')
         df = evidence['df_residual']
@@ -44,7 +47,7 @@ def coefficient_intervals(model, *, confidence=.95, dispersion='model'):
         scale = evidence['pearson_chi2'] / df
         if not math.isfinite(scale) or scale <= 0:
             raise ValueError('Pearson dispersion must be finite and positive')
-    multiplier = math.sqrt(scale / base_dispersion)
+    multiplier = math.sqrt(scale / base_dispersion) if covariance_method == 'model_based' else 1.
     z = -NormalDist().inv_cdf((1. - confidence) / 2.)
     tables = {}
     for name, table in model.rating_tables_by_name().items():
@@ -76,7 +79,8 @@ def coefficient_intervals(model, *, confidence=.95, dispersion='model'):
         tables[name] = table
     return CoefficientIntervals(tables, {
         'confidence': confidence, 'method': 'normal Wald', 'dispersion_method': dispersion,
-        'dispersion': scale, 'source_inference': evidence,
+        'dispersion': scale if covariance_method == 'model_based' else None,
+        'covariance_method': covariance_method, 'source_inference': evidence,
         'interpretation': 'conditional on the fixed model structure; no selection or cluster adjustment',
         'point_estimates_changed': False,
     })
