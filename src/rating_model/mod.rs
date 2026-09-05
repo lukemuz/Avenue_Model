@@ -11,6 +11,7 @@ use std::sync::Mutex;
 // Internal modules
 mod consolidation;
 mod lgbm_parser;
+mod review;
 
 // Re-export public functions from lgbm_parser
 pub use lgbm_parser::{

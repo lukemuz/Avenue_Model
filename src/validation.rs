@@ -476,7 +476,7 @@ pub fn validate(
             })
             .collect();
 
-        let mut data = model.tables[t].data.clone();
+        let mut data = model.tables[t].review_data()?;
         if model.tables[t].metadata.spline.is_some() {
             warnings.push(Warning::new(Severity::Low, "spline_support_intervals",
                 format!("{}: A/E rows describe the displayed support intervals, not individual knot parameters. Interval counts do not establish whether a knot value is estimable.", table_label(options, t))));

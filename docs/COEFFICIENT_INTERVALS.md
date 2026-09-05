@@ -1,5 +1,8 @@
 # Coefficient intervals and quasi-Poisson uncertainty
 
+Numeric band tables also include [predictor interval bounds](BAND_REVIEW.md), separate
+from the statistical uncertainty bounds on coefficients.
+
 `coefficient_intervals` provides named tables containing coefficients, standard
 errors and direct intervals for an original converged fit:
 

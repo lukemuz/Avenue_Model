@@ -126,7 +126,7 @@ not evidence that its remote jobs ran successfully.
 | Frequency/severity/premium preparation; exclusions, large losses and inconsistent totals | Verified for stated positive-paid-loss population: [preparation tests](../tests/test_preparation.py), real source audits and [preparation guide](PRICING_PREPARATION.md). No implicit caps or development assumptions. |
 | Runnable complete auto study without manual Avenue encoding/index joins | Verified from both clean environments: `examples/auto_pricing_study.py` and real motor arm. Source joins and independent-reference preparation remain explicit study code. |
 | Shared exposure/claims/loss/A-E/factor/support exhibits; exact totals/exclusions | Verified for current exhibits: preparation, comparison and explanation tests; raw/current real artifact hashes retained. |
-| Numeric interval bounds/inclusion rules and optional plotting | Partial: guides explain upper-bound semantics, but estimate tables still expose raw thresholds rather than complete lower/upper interval columns. No unified plotting API. |
+| Numeric interval bounds/inclusion rules and optional plotting | Follow-up: estimates, coefficient intervals and A/E tables share explicit bounds for provably ordered grids, including interactions; irregular/missing-route tables explicitly require matching review. [Guide](BAND_REVIEW.md), Rust lookup checks and Python reload/reconciliation tests verify the semantics. No unified plotting API. |
 | Component contributions, exposure and final mean; reconciled edits and segments | Verified: explanation/composition tests, manual 5% edit assertions in all tutorials and real study. |
 
 ### 3. Validation and selection

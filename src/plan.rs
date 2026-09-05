@@ -2975,7 +2975,7 @@ impl FittedModel {
 
         let mut out = Vec::with_capacity(self.model.tables.len());
         for (t, table) in self.model.tables.iter().enumerate() {
-            let mut data = table.data.clone();
+            let mut data = table.review_data()?;
             let coefficients: Vec<f64> = data
                 .column("Rating_Factor")?
                 .f64()?
