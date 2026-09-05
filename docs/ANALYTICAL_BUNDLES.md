@@ -1,7 +1,7 @@
 # Analytical bundles
 
-`save_bundle` preserves the evidence behind an individual fitted model alongside
-an editable scoring workbook. It writes a new directory and refuses to overwrite
+`save_bundle` preserves the evidence behind an individual fitted model or nested
+composition alongside editable scoring workbooks. It writes a new directory and refuses to overwrite
 an existing one.
 
 ```python
@@ -65,12 +65,63 @@ model on fresh data. Neither loaded scorer inherits the original fit diagnostics
 those remain explicitly named `source_evidence`. Saving an already loaded model
 cannot recreate lost fitting evidence.
 
-Version 1 supports individual `FittedModel` objects. Bundle composition components
-separately; automatic composition-graph evidence, executable preprocessing and exact
-environment reconstruction remain outside this format.
+Version 1 supports individual `FittedModel` objects. Version 2 adds nested analytical
+composition graphs while retaining version-1 bundles at their leaves. Executable
+preprocessing and exact environment reconstruction remain outside these formats.
 
-To refit the source plan with its recorded effective options, use the original
-training population and response definition:
+## Analytical composition graphs
+
+```python
+product = frequency_severity(frequency, severity)
+bundle = save_bundle(
+    product, "frequency_severity_bundle",
+    validation_data=policy_holdout, validation_id="policies-2022",
+    validation_options={"target": "pure_premium", "metric": "tweedie", "weight": "exposure"},
+    component_context={
+        "frequency": {"training_id": "policies-pre-2022", "validation_data": policy_holdout},
+        "severity": {"training_id": "claims-pre-2022", "validation_data": claim_holdout},
+    },
+)
+frequency_evidence = bundle.components["frequency"].source_evidence
+```
+
+Import `frequency_severity` from `avenue_model` for this example. Graph validation
+requires its own explicit target and metric, because composition has no inherited
+likelihood. The root records aggregate comparison summaries, segments and metadata;
+raw input frames, row-level prediction vectors and discrimination-curve points are
+not persisted. Children can use distinct response/weight columns and validation
+populations. Root context is not automatically copied into child evidence.
+
+`component_context` maps existing child names to keyword arguments for `save_bundle`.
+For a nested peril sum, a child's options may themselves contain `component_context`.
+Unknown child names, unsupported leaf types and cyclic graphs are rejected. Shared
+components can occur in more than one branch; each occurrence is stored independently.
+The current graph structure and declared units are checked before saving.
+
+The returned `ComposedBundle` exposes `model`, `source_model`, `source_evidence`,
+named child `components`, `changed_files` and `edited`. Both loaded graphs are
+scoring-only: recorded convergence and inference belong to original child evidence.
+There is **no joint composition covariance or uncertainty interval** implied by
+bundling component standard errors. Saving a loaded scorer again cannot reconstruct
+its original fit evidence; keep the original bundle for that evidence.
+
+Component bundles live under `components/component_N`, recursively. Their `scoring/`
+workbooks remain editable. The parent protects source evidence and child bundle
+manifests; changing them causes an integrity error even if a child's checksums are
+rewritten. Scoring edits instead appear as root-relative `changed_files`. Source
+predictions and the recorded original validation remain accessible separately from
+the changed graph. Root operation/unit/child declarations are source evidence, not an
+editable graph editor. Revalidate the current graph after changes.
+
+Saving uses a temporary staging directory and publishes the new directory only after
+every component is written successfully. A failed child leaves no partial destination.
+As with individual bundles, hashes protect against accidental modification, not an
+attacker who can rewrite the entire root manifest and all its evidence.
+
+To refit an individual model's source plan with its recorded effective options, use
+the original training population and response definition. For a `ComposedBundle`,
+first select the relevant leaf bundle (for example, `bundle.components['frequency']`);
+there is no single fitting Plan for the entire graph:
 
 ```python
 from avenue_model import GLMOptions

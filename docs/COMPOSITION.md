@@ -31,8 +31,10 @@ unknown. Loaded workbook components do not invent fitting diagnostics.
 
 `save` writes a versioned composition manifest and independently editable component
 workbooks. Nested manifests preserve lineage. `load` rejects unsupported future
-versions. This is a scoring composition artifact, not yet the complete analytical
-bundle described in the improvement plan. Revalidate after editing component files.
+versions. Use [save_bundle](ANALYTICAL_BUNDLES.md) for a nested analytical graph that
+also retains each original component's Plan, fitting/inference evidence, identifiers
+and optional validation. Both formats preserve scoring; analytical bundles additionally
+separate original source evidence from edited component workbooks. Revalidate after edits.
 
 Existing `FittedModel +` behavior is unchanged: it adds linear predictors, multiplying
 means under log links. Use the named operations to make multiplication versus

@@ -12,7 +12,7 @@ import random
 
 import polars as pl
 from avenue_model import (GLMOptions, coefficient_intervals, term_tests, Candidate, ComposedModel, Plan, SplitSpec, Workbook,
-                          compare_models, prepare_pricing, sum_loss_costs)
+                          compare_models, prepare_pricing, sum_loss_costs, save_bundle)
 
 
 def synthetic(path):
@@ -44,7 +44,7 @@ def run(output, data_path=None):
         values = raw[column]
         if values.null_count() or not values.is_finite().all() or (values <= 0).any():
             raise ValueError(f'{column} must contain supplied finite positive adjustments')
-    models, baselines, adjustments = {}, {}, []
+    models, baselines, adjustments, bundle_contexts = {}, {}, [], {}
     for peril in ('water', 'theft'):
         developed = f'{peril}_prepared_loss'
         raw = raw.with_columns((pl.col(f'{peril}_loss') * pl.col('development_factor') *
@@ -71,6 +71,9 @@ def run(output, data_path=None):
         if not model.converged or not baseline.converged:
             raise RuntimeError(f'{peril} did not converge')
         models[peril], baselines[peril] = model, baseline
+        bundle_contexts[peril] = {'training_id': f'home-training-{peril}',
+                                 'validation_data': validation.pure_premium,
+                                 'validation_id': f'home-holdout-{peril}'}
         (output / f'{peril}_review.md').write_text(model.report(validation.pure_premium).markdown)
         joint = term_tests(model)
         (output / f'{peril}_term_tests.json').write_text(json.dumps(
@@ -92,12 +95,20 @@ def run(output, data_path=None):
     for name, table in comparison.segments.items():
         table.write_csv(output / f'comparison_{name}.csv')
     total.save(output / 'peril_plan')
+    analytical = save_bundle(total, output / 'peril_bundle', fold=fold,
+        validation_data=holdout, validation_id='home-grouped-holdout',
+        validation_options={'target': 'combined_loss_cost', 'metric': 'tweedie',
+                            'weight': 'exposure', 'segments': ['territory', 'year']},
+        component_context=bundle_contexts,
+        lineage={'adjustment_audit': 'loss_adjustments.csv', 'scope': 'attritional water and theft'})
     reloaded = ComposedModel.load(output / 'peril_plan')
     quotes = holdout.select('territory', 'home_age')
     original = total.predict(quotes).to_series()
     restored = reloaded.predict(quotes).to_series()
     if (original - restored).abs().max() > 1e-8:
         raise RuntimeError('Reload changed composed quote predictions')
+    if (original - analytical.model.predict(quotes).to_series()).abs().max() > 1e-8:
+        raise RuntimeError('Analytical peril bundle changed quote predictions')
     components = reloaded.predict_components(quotes)
     if (components['water'] + components['theft'] - restored).abs().max() > 1e-8:
         raise RuntimeError('Peril contributions do not reconcile')

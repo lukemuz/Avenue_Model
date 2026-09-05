@@ -96,6 +96,19 @@ def run(output, data_path=None):
             raise RuntimeError('Workbook predictions changed')
     product = frequency_severity(frequency, severity)
     product.save(output / 'frequency_severity')
+    product_bundle = save_bundle(product, output / 'frequency_severity_bundle',
+        training_id='auto-component-studies-pre-2022', validation_data=holdout,
+        validation_id='auto-2022',
+        validation_options={'target': 'avenue_pure_premium', 'metric': 'tweedie',
+                            'weight': 'exposure', 'segments': ['region', 'year']},
+        component_context={
+            'frequency': {'training_id': 'auto-policies-pre-2022', 'fold': fold,
+                          'validation_data': holdout, 'validation_id': 'auto-policies-2022'},
+            'severity': {'training_id': 'auto-positive-claims-pre-2022',
+                         'validation_data': prepared.severity.filter(pl.col('year') >= 2022),
+                         'validation_id': 'auto-positive-claims-2022'}})
+    if (product_bundle.model.predict(quotes).to_series() - product.predict(quotes).to_series()).abs().max() > 1e-8:
+        raise RuntimeError('Analytical composition bundle predictions changed')
     comparison = compare_models(
         holdout, {'frequency_times_severity': Candidate(product, 'loss_per_exposure'),
                   'tweedie': Candidate(premium, 'loss_per_exposure'),

@@ -174,7 +174,7 @@ not evidence that its remote jobs ran successfully.
 |---|---|
 | Named frequency×severity and response-scale peril sums; units/components | Verified: [composition tests](../tests/test_named_composition.py), offset-to-rate behavior, nested graph reload and homeowners reconciliation. Legacy `+` remains documented separately. |
 | Versioned Plan/options/schema/maps/preprocessing/IDs/fit/validation/lineage bundle | Verified for individual fits: [bundle](../tests/test_bundle.py) and [provenance](../tests/test_fit_provenance.py) tests; current real bundles reload raw quotes. Caller JSON context never replaces captured fit evidence. |
-| Complete analytical evidence for a composed graph | Partial: component scoring graph persists; caller-supplied lineage exists, but a native analytical graph bundle is not implemented. |
+| Complete analytical evidence for a composed graph | Follow-up: version-2 [analytical graph bundles](ANALYTICAL_BUNDLES.md) retain nested operations/units, independently bound component source evidence and optional aggregate validation at graph and leaf levels. Tests cover count-to-rate composition, nested edits, source preservation, protected child manifests and atomic failure. Joint graph covariance and executable preprocessing are not supplied. |
 | Edited artifact detection, source evidence isolation, semantic impact and fresh validation | Verified: bundle integrity/edit tests and known-factor edit exhibits; loaded factors are `scoring_only`, fixed priors `locked`. Monotonic edit violations reach reports. |
 | Migration, future-version failures, incremental/locked prior updates | Verified on supported fixtures: workbook v1/v2 reading, v3 monotonic export, unknown-version rejection, Rust composition/refit tests and Plan replay. |
 
