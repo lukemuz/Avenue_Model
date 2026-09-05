@@ -221,6 +221,10 @@ fn plan_for(table: &RatingTable, df: &DataFrame) -> MatchPlan {
     }
 
     if categorical.is_empty() && numeric.len() > 1 {
+        // A few quotes cannot amortize sorting and proving the complete grid.
+        if df.height() < 32 {
+            return MatchPlan::General;
+        }
         return numeric_grid_plan(table, df).unwrap_or(MatchPlan::General);
     }
     if !categorical.is_empty() || numeric.len() != 1 {
@@ -552,6 +556,10 @@ fn pre_resolved_scan(table: &RatingTable, df: &DataFrame, n_rows: usize) -> Opti
             if best == NO_MATCH || (wildcards < best_wildcards) {
                 best = r as u32;
                 best_wildcards = wildcards;
+                // No later row can improve on zero wildcards; ties keep this row.
+                if wildcards == 0 {
+                    break;
+                }
             }
         }
 
@@ -937,6 +945,18 @@ mod tests {
         .unwrap();
         agrees_with_scan(&t, &df);
         assert_eq!(precompute_table_matches(&t, &df, 5), vec![0, 1, 2, 3, 0]);
+        for size in [0, 1, 15, 16, 31, 32, 63, 64, 128] {
+            let mut batch = df.clone();
+            while batch.height() < size {
+                batch.vstack_mut(&df).unwrap();
+            }
+            let batch = batch.head(Some(size));
+            assert_eq!(
+                matches!(plan_for(&t, &batch), MatchPlan::NumericGrid { .. }),
+                size >= 32
+            );
+            agrees_with_scan(&t, &batch);
+        }
     }
 
     #[test]

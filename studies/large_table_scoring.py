@@ -26,9 +26,12 @@ def main():
     parser.add_argument('--evaluation', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--repeats', type=int, default=5)
+    parser.add_argument('--quote-rows', type=int, help='Score this many leading holdout rows for a batch-size study')
     args = parser.parse_args()
     if args.repeats < 3:
         parser.error('at least three repeats are required')
+    if args.quote_rows is not None and args.quote_rows < 1:
+        parser.error('--quote-rows must be positive')
     args.output.mkdir(parents=True, exist_ok=False)
     source = args.evaluation / 'fork_results/fork_numeric'
     data_path = args.evaluation / 'data/freMTPL2freq.parquet'
@@ -48,6 +51,10 @@ def main():
     x = np.column_stack([
         pd.Categorical(holdout[n].to_list(), categories=categories[n]).codes
         if n in categories else holdout[n].to_numpy() for n in names]).astype(float)
+    if args.quote_rows is not None:
+        if args.quote_rows > len(x):
+            parser.error('--quote-rows exceeds the holdout population')
+        x = x[:args.quote_rows]
     quotes = pl.DataFrame({n: x[:, i] for i, n in enumerate(names)})
     booster_path = source / 'selected_booster.txt'
     booster = lgb.Booster(model_file=str(booster_path))

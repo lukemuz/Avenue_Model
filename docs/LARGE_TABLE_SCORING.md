@@ -6,6 +6,14 @@ rebuilt for each matching call, so workbook edits cannot leave stale factors or 
 in a persistent cache. Public prediction still prepares inputs and checks unmatched and
 nonfinite results.
 
+For fewer than 32 quote rows, multi-column numeric tables use the direct matcher to
+avoid index construction overhead. That scan stops at the first match using zero
+categorical wildcards: no later row can improve its specificity, and ties preserve
+the first row. Matches using wildcards continue searching for a more specific row.
+Tests compare both sides of the batch-size cutoff with the independent row matcher,
+including empty and chunked frames. The cutoff is a conservative local heuristic,
+not a guarantee of optimal dispatch for every table geometry and machine.
+
 Recognition requires unique complete coordinates, non-null/non-NaN thresholds, and
 row order in which each coordinate's immediate predecessor occurs earlier. Transitivity
 then proves that the coordinate found by binary search precedes every other matching
@@ -64,3 +72,9 @@ The output directory must be new. NumPy, pandas, Polars and LightGBM are require
 this benchmark. The recorded run uses the fork environment; it loads the saved model
 without training. A reusable prepared-scoring API and full stage/memory profiling remain
 separate work.
+
+For small-batch measurements, add `--quote-rows 1 --repeats 21` (or another positive
+batch size). This scores the leading holdout rows with the same training-only category
+maps. It measures repeated public calls on a loaded model, not cold process startup
+or a distribution of randomly sampled individual quotes. The separate
+[small-batch results](../studies/results/small_batch_scoring/) retain these checks.

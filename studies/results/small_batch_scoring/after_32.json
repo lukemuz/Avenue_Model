@@ -1,0 +1,62 @@
+{
+  "source_commit": "39cdb29053b9b0d8aa246049cda70d900ac894a7",
+  "matching_sha256": "9a65ea5f059182e4bb478029e01f8c6e9a088c6ec3bf5db9421ad9cc7c279454",
+  "script_sha256": "4ce30f5bdc748e76712eabf13754b659c4da93ab51afdde4c74521ec16354e6b",
+  "extension_sha256": "458ddd5905f2a53bee5602973dd7da9e63001b1f815b419b0bb295cc0120a92b",
+  "inputs": {
+    "data/freMTPL2freq.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f",
+    "fork_results/fork_numeric/selected_booster.txt": "98cc39b552de9aa00472edbff9b7dce1a11a5abb6834844e68443423bfac6174",
+    "fork_results/fork_numeric/selected/00_intercept.csv": "2bae62fc91a3fb189123aff79ee490ca2db607f9887936d6f0242c1475470c6c",
+    "fork_results/fork_numeric/selected/01_table_1.csv": "ef656ed3c1fc77d1b02535de7cbf1e5817006bd313ebe22bed42dbd68516f5fe",
+    "fork_results/fork_numeric/selected/02_table_2.csv": "35416cffb2ec5f1c67a0dc62be2b43f336f39f3cd7905a55f5d8bd2fb6dd90fe",
+    "fork_results/fork_numeric/selected/03_table_3.csv": "3e47cdd62b21636229d33b0bc839ffea5595bbfc6282cb12f9ee45a58a9af721",
+    "fork_results/fork_numeric/selected/manifest.json": "192fbdf2984b43c0280d4db7b450011d5c917e21d71c3c78d1e2f778dbb967c3"
+  },
+  "versions": {
+    "avenue_model": "0.1.0",
+    "lightgbm": "4.6.0.99",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "polars": "1.31.0"
+  },
+  "threads": {
+    "OMP_NUM_THREADS": "4",
+    "POLARS_MAX_THREADS": "4",
+    "RAYON_NUM_THREADS": "4"
+  },
+  "train_rows": 508509,
+  "quote_rows": 32,
+  "quote_sha256": "cb362851949334a845c6d5700dc27419eace6185ba9bcdce2ceaa08eee00f033",
+  "tables": 4,
+  "table_rows": 19181,
+  "largest_table": 18810,
+  "seconds": [
+    0.0013453370047500357,
+    0.0011162250011693686,
+    0.0009760910033946857,
+    0.0008351750002475455,
+    0.0007096979970810935,
+    0.000791873004345689,
+    0.0007056109971017577,
+    0.0007039679985609837,
+    0.0007007410022197291,
+    0.000676606003253255,
+    0.0006965939974179491,
+    0.0007010319968685508,
+    0.0006735600036336109,
+    0.0007057709954096936,
+    0.0007624580030096695,
+    0.0007487420007237233,
+    0.0007408969977404922,
+    0.000728473998606205,
+    0.0007097679990692995,
+    0.0007110709993867204,
+    0.0007036769966362044
+  ],
+  "median_seconds": 0.0007097679990692995,
+  "max_relative_error": 2.220446049250313e-15,
+  "prediction_sha256": "c57d4c44e7cc19cde85627d67c0113b85dbd3bc2c027f00c119042c031685312",
+  "process_peak_rss_kib": 650204,
+  "interpretation": "Repeated public scoring including frame preparation and matching; no reusable cache. Peak RSS includes inputs, booster and workbook, not isolated scoring memory.",
+  "passed": true
+}
