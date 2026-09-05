@@ -739,6 +739,42 @@ impl PyFittedModel {
         self.inner.converged()
     }
 
+    /// Internal numerical joint tests; the public Python helper adds tail
+    /// probabilities, dispersion conventions and interpretation metadata.
+    fn _term_wald_statistics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let info = self
+            .inner
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.inference.as_ref())
+            .ok_or_else(|| {
+                pyo3::exceptions::PyValueError::new_err("Original fit covariance is unavailable")
+            })?;
+        let out = PyList::empty(py);
+        for term in &info.term_covariances {
+            let record = PyDict::new(py);
+            record.set_item("term", &self.inner.table_names[term.table_index])?;
+            record.set_item("table_index", term.table_index)?;
+            record.set_item("df", term.coefficients.len())?;
+            record.set_item("null_hypothesis", &term.null_hypothesis)?;
+            record.set_item("excluded_rows", &term.excluded_rows)?;
+            match term.wald_statistic() {
+                Ok(statistic) => {
+                    record.set_item("statistic", statistic)?;
+                    record.set_item("status", "available")?;
+                    record.set_item("note", py.None())?;
+                }
+                Err(reason) => {
+                    record.set_item("statistic", py.None())?;
+                    record.set_item("status", "unavailable")?;
+                    record.set_item("note", reason)?;
+                }
+            }
+            out.append(record)?;
+        }
+        Ok(out)
+    }
+
     /// True when this model was fitted here, rather than loaded or converted.
     #[getter]
     fn was_fitted(&self) -> bool {

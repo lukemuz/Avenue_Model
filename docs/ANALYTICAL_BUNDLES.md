@@ -37,6 +37,12 @@ fit and are also exposed as `model.fit_options` and `model.solver_used`. Loaded 
 converted scorers have empty options and no actual solver record. Earlier version-1
 bundles may lack these additive fields; their absence means unknown.
 
+Bundles also retain [whole-term tests](TERM_TESTS.md) under `term_tests`, including
+their covariance and conditional/asymptotic interpretation. Unavailable models record
+a reason; unavailable individual terms remain in the joint table. These are default
+source-covariance tests, not post-selection evidence. Older version-1 bundles may lack
+this additive field. Edited/loaded scorers do not inherit the ability to run tests.
+
 Dataset identifiers, units, preprocessing descriptions and lineage remain
 **caller-supplied context**. The optional legacy `fit_options=` argument is retained
 under `caller_context` as an annotation; it cannot replace the automatically captured

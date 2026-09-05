@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 from glum import GeneralizedLinearRegressor, TweedieDistribution
-from avenue_model import (Candidate, GLMOptions, Plan, SplitSpec, coefficient_intervals,
+from avenue_model import (Candidate, GLMOptions, Plan, SplitSpec, coefficient_intervals, term_tests,
                           compare_changes, compare_models, frequency_severity,
                           prepare_pricing, save_bundle, Workbook)
 
@@ -101,6 +101,8 @@ def run(args):
             raise RuntimeError(f'{name} did not converge; see retained report')
         if not models:
             first_model_seconds = time.perf_counter() - begin
+        joint = term_tests(model)
+        write(out / f'{name}_term_tests.json', {'table': joint.table.to_dicts(), 'metadata': joint.metadata})
         started = time.perf_counter()
         x, levels = native_frame(training)
         xt, _ = native_frame(validation, levels)

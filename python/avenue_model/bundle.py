@@ -74,6 +74,12 @@ def save_bundle(model, directory, *, fit_options=None, training_id=None, fold=No
         validation_evidence['calibration'] = validation.calibration.to_dicts()
         validation_evidence['actual_vs_expected'] = {
             name: frame.to_dicts() for name, frame in zip(model.table_names, validation.actual_vs_expected)}
+    from .inference import term_tests
+    try:
+        joint = term_tests(model)
+        joint_evidence = {'status': 'recorded', 'table': joint.table.to_dicts(), 'metadata': joint.metadata}
+    except ValueError as error:
+        joint_evidence = {'status': 'unavailable', 'reason': str(error)}
     evidence = _evidence({
         'schema_version': 1,
         'created_at': datetime.now(timezone.utc).isoformat(),
@@ -83,6 +89,7 @@ def save_bundle(model, directory, *, fit_options=None, training_id=None, fold=No
         'effective_fit_options': model.fit_options,
         'solver_used': model.solver_used,
         'inference_summary': model.inference_summary,
+        'term_tests': joint_evidence,
         'findings': report.findings,
         'resolved': report.resolved,
         'estimates': {name: frame.to_dicts() for name, frame in model.rating_tables_by_name().items()},

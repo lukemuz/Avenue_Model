@@ -5,11 +5,12 @@ columns. Loss is assumed already developed/trended to the selected cost level; n
 limits, deductibles, trend or development adjustment is inferred here.
 """
 import argparse
+import json
 from pathlib import Path
 import random
 
 import polars as pl
-from avenue_model import coefficient_intervals, GLMTrial, select_glm, save_bundle, Candidate, Plan, SplitSpec, Workbook, compare_models, prepare_pricing, compare_changes, frequency_severity
+from avenue_model import coefficient_intervals, term_tests, GLMTrial, select_glm, save_bundle, Candidate, Plan, SplitSpec, Workbook, compare_models, prepare_pricing, compare_changes, frequency_severity
 
 
 def synthetic(path):
@@ -77,6 +78,9 @@ def run(output, data_path=None):
         for table_name, table in model.rating_tables_by_name().items():
             table.write_csv(output / f'{name}_{table_name}_estimates.csv')
         intervals = coefficient_intervals(model)
+        joint = term_tests(model)
+        (output / f'{name}_term_tests.json').write_text(json.dumps(
+            {'table': joint.table.to_dicts(), 'metadata': joint.metadata}, indent=2, allow_nan=False))
         for table_name, table in intervals.tables.items():
             table.write_csv(output / f'{name}_{table_name}_intervals.csv')
         if name == 'frequency':

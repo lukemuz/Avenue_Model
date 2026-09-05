@@ -6,11 +6,12 @@ factors are applied and audited; coverage is assumed to be at a common limit and
 deductible basis. No catastrophe, limit, deductible or inflation model is inferred.
 """
 import argparse
+import json
 from pathlib import Path
 import random
 
 import polars as pl
-from avenue_model import (GLMOptions, coefficient_intervals, Candidate, ComposedModel, Plan, SplitSpec, Workbook,
+from avenue_model import (GLMOptions, coefficient_intervals, term_tests, Candidate, ComposedModel, Plan, SplitSpec, Workbook,
                           compare_models, prepare_pricing, sum_loss_costs)
 
 
@@ -71,6 +72,9 @@ def run(output, data_path=None):
             raise RuntimeError(f'{peril} did not converge')
         models[peril], baselines[peril] = model, baseline
         (output / f'{peril}_review.md').write_text(model.report(validation.pure_premium).markdown)
+        joint = term_tests(model)
+        (output / f'{peril}_term_tests.json').write_text(json.dumps(
+            {'table': joint.table.to_dicts(), 'metadata': joint.metadata}, indent=2, allow_nan=False))
         for name, table in coefficient_intervals(model).tables.items():
             table.write_csv(output / f'{peril}_{name}_cluster_intervals.csv')
         for name, table in model.rating_tables_by_name().items():

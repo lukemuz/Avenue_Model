@@ -47,5 +47,5 @@ from .bundle import ModelBundle, load_bundle, save_bundle
 __all__ += ['ModelBundle', 'load_bundle', 'save_bundle']
 from .selection import GLMSelection, GLMTrial, select_glm
 __all__ += ['GLMSelection', 'GLMTrial', 'select_glm']
-from .inference import CoefficientIntervals, coefficient_intervals
-__all__ += ['CoefficientIntervals', 'coefficient_intervals']
+from .inference import CoefficientIntervals, coefficient_intervals, TermTests, term_tests
+__all__ += ['CoefficientIntervals', 'coefficient_intervals', 'TermTests', 'term_tests']

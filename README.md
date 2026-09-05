@@ -21,6 +21,8 @@ comes out is a set of CSVs a person can read, edit, file and load back.
   treatment are explicit, serializable and reproducible.
   [Monotonic banded effects](docs/MONOTONIC_EFFECTS.md) retain a declared increasing
   or decreasing direction through fitting and export.
+  [Whole-term tests](docs/TERM_TESTS.md) assess supported factor contrasts jointly
+  using the fit's declared covariance method.
 - **Problems are found before fitting.** `check()` reports data faults, thin levels,
   unidentified terms and redundant tables together, with actionable messages.
 - **The fitted model is an artifact.** Save it as JSON or readable CSV tables, edit it,

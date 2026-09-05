@@ -14,6 +14,9 @@
 //! table row is the standard error of the contrast that row actually represents under
 //! the model's anchoring.
 //!
+//! Joint term covariance is retained for lazy Wald tests. A full null-space check
+//! prevents retained-but-confounded columns receiving individual or joint inference.
+//!
 //! Under [`Normalization::BaseLevel`](super::Normalization::BaseLevel) that contrast is
 //! simply the reduced parameter itself, so the numbers line up directly with what a
 //! treatment-coded GLM reports.
@@ -34,6 +37,10 @@ const MAX_PARAMETERS: usize = 5000;
 /// Standard errors and fit statistics for a fitted model.
 #[derive(Debug, Clone)]
 pub struct GLMInference {
+    /// Within-term reduced coefficient covariance, retained for lazy joint tests.
+    /// Cross-term covariance is not retained. No inversion for a joint test is
+    /// performed until it is requested.
+    pub term_covariances: Vec<TermCovariance>,
     /// Standard error of each table's rows, matching the model's table layout.
     ///
     /// A row that is the anchoring reference has a standard error of exactly 0 — it
@@ -111,6 +118,60 @@ pub struct GLMInference {
     pub bic: Option<f64>,
     /// The fitted polynomial behind each variate table, one entry per variate table.
     pub variate_terms: Vec<VariateTerms>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TermCovariance {
+    pub table_index: usize,
+    pub coefficients: Vec<f64>,
+    pub covariance: Vec<f64>,
+    pub null_hypothesis: String,
+    pub excluded_rows: Vec<usize>,
+    pub unavailable_reason: Option<String>,
+}
+
+impl TermCovariance {
+    pub fn wald_statistic(&self) -> Result<f64, String> {
+        if let Some(reason) = &self.unavailable_reason {
+            return Err(reason.clone());
+        }
+        let df = self.coefficients.len();
+        if df == 0 {
+            return Err("No free supported contrasts in this term".to_string());
+        }
+        let solution = solve_spd(&self.covariance, &self.coefficients, df)
+            .ok_or_else(|| "Joint covariance is singular or not positive definite; no reduced-rank test is substituted".to_string())?;
+        let statistic: f64 = self
+            .coefficients
+            .iter()
+            .zip(solution)
+            .map(|(b, x)| b * x)
+            .sum();
+        if !statistic.is_finite() || statistic < 0.0 {
+            return Err("Joint Wald statistic is nonfinite or negative".to_string());
+        }
+        Ok(statistic)
+    }
+}
+
+/// A contrast is estimable only if it is orthogonal to every numerical null
+/// direction, including directions involving columns retained by the rank solver.
+fn contrast_estimable(contrast: &[(usize, f64)], null_relations: &[Vec<(usize, f64)>]) -> bool {
+    let norm = contrast.iter().map(|(_, v)| v * v).sum::<f64>().sqrt();
+    null_relations.iter().all(|relation| {
+        let dot: f64 = contrast
+            .iter()
+            .map(|(column, weight)| {
+                weight
+                    * relation
+                        .iter()
+                        .find(|(c, _)| c == column)
+                        .map_or(0.0, |(_, v)| *v)
+            })
+            .sum();
+        let relation_norm = relation.iter().map(|(_, v)| v * v).sum::<f64>().sqrt();
+        dot.abs() <= 1e-8 * norm * relation_norm
+    })
 }
 
 impl GLMInference {
@@ -602,6 +663,7 @@ pub fn compute_inference_with_clusters(
     // `GLMInference::standard_errors_note`.
     let penalty_active = penalty.is_some_and(|p| p.is_active());
     let ridge_active = p_diag.iter().any(|v| *v > 0.0);
+    let mut null_relations = Vec::new();
     let (compact_cov, spent) = if ridge_active {
         let mut a = compact.clone();
         for (c, &j) in active.iter().enumerate() {
@@ -618,6 +680,20 @@ pub fn compute_inference_with_clusters(
         (None, rank as f64)
     } else {
         let bread = invert_spd(&compact, k)?;
+        for dropped in (0..n_params).filter(|j| aliased[*j]) {
+            let mut relation = vec![(dropped, 1.0)];
+            for (ci, &column) in active.iter().enumerate() {
+                let coefficient: f64 = active
+                    .iter()
+                    .enumerate()
+                    .map(|(cj, &other)| bread[ci * k + cj] * xtwx[other * n_params + dropped])
+                    .sum();
+                if coefficient != 0.0 {
+                    relation.push((column, -coefficient));
+                }
+            }
+            null_relations.push(relation);
+        }
         let covariance = if hc0 {
             let mut compact_meat = vec![0.0; k * k];
             for (ci, &i) in active.iter().enumerate() {
@@ -765,6 +841,7 @@ pub fn compute_inference_with_clusters(
                     if contrast
                         .iter()
                         .any(|(c, w)| *w != 0.0 && compact_of[*c].is_none())
+                        || !contrast_estimable(&contrast, &null_relations)
                     {
                         ses[r] = f64::NAN;
                         aliased_rows.push((t, r));
@@ -883,7 +960,9 @@ pub fn compute_inference_with_clusters(
                     return f64::NAN;
                 }
                 let c = first_col + m;
-                if compact_of.get(c).copied().flatten().is_none() {
+                if compact_of.get(c).copied().flatten().is_none()
+                    || !contrast_estimable(&[(c, 1.0)], &null_relations)
+                {
                     return f64::NAN;
                 }
                 let var = covariance_scale * cov[c * n_params + c];
@@ -904,7 +983,88 @@ pub fn compute_inference_with_clusters(
         });
     }
 
+    let mut term_covariances = Vec::new();
+    for t in 1..n_tables {
+        let mut columns: Vec<usize> = layout[t]
+            .iter()
+            .flat_map(|row| match row {
+                ReducedColumn::Loadings(loadings) => {
+                    loadings.iter().map(|(c, _)| *c).collect::<Vec<_>>()
+                }
+                _ => Vec::new(),
+            })
+            .collect();
+        columns.sort_unstable();
+        columns.dedup();
+        let locked = locked_rows[t].iter().any(|v| *v);
+        let null_hypothesis = if variate_values[t].is_some() {
+            "all nonconstant polynomial coefficients are zero"
+        } else if locked {
+            "all free row factors are zero, conditional on locked rows and other terms"
+        } else {
+            "all supported levels have equal factors, conditional on other terms"
+        }
+        .to_string();
+        let mut coefficients = vec![0.0; columns.len()];
+        if let Some(variate) = variate_terms.iter().find(|v| v.table_index == t) {
+            coefficients.clone_from(&variate.scaled_coefficients);
+        } else if variate_values[t].is_none() {
+            let reference = if locked {
+                0.0
+            } else {
+                reference_row(&row_exposure[t]).map_or(0.0, |r| factors[t][r])
+            };
+            for (r, row) in layout[t].iter().enumerate() {
+                if let ReducedColumn::Loadings(loadings) = row {
+                    for (column, _) in loadings {
+                        coefficients[columns.binary_search(column).unwrap()] =
+                            factors[t][r] - reference;
+                    }
+                }
+            }
+        }
+        let unavailable_reason = if penalty_active {
+            Some("Joint Wald tests are unavailable for penalized fits".to_string())
+        } else if !updatable[t] {
+            Some("This table is fixed, not estimated".to_string())
+        } else if n_clusters.is_some_and(|count| count <= columns.len()) {
+            Some("Too few independent cluster scores for this joint test; no reduced-rank test is substituted".to_string())
+        } else if columns
+            .iter()
+            .any(|column| !contrast_estimable(&[(*column, 1.0)], &null_relations))
+        {
+            Some("The complete term is not separately estimable from the other terms".to_string())
+        } else if variate_values[t].is_some() && !variate_terms.iter().any(|v| v.table_index == t) {
+            Some("Polynomial coefficients could not be recovered".to_string())
+        } else {
+            None
+        };
+        let mut covariance = Vec::new();
+        if unavailable_reason.is_none() {
+            covariance.reserve(columns.len() * columns.len());
+            for &i in &columns {
+                for &j in &columns {
+                    covariance.push(covariance_scale * cov[i * n_params + j]);
+                }
+            }
+        }
+        term_covariances.push(TermCovariance {
+            table_index: t,
+            coefficients,
+            covariance,
+            null_hypothesis,
+            excluded_rows: row_exposure[t]
+                .iter()
+                .enumerate()
+                .filter(|(_, w)| **w <= 0.0)
+                .map(|(r, _)| r)
+                .collect(),
+            unavailable_reason,
+        });
+    }
+
     Ok(GLMInference {
+        term_covariances,
         standard_errors,
         aliased_rows,
         dispersion,
@@ -1012,8 +1172,7 @@ const ALIAS_DESIGN_TOL: f64 = 1e-12;
 ///
 /// `a * b` for two dense `n x n` matrices in row-major order.
 ///
-/// Only reached on a penalised fit, to form the hat matrix whose trace is the effective
-/// parameter count, alongside the `n^3` inversion that was happening anyway.
+/// Used for sandwich covariance and the penalized hat matrix's effective rank.
 fn matmul(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
     let mut out = vec![0.0f64; n * n];
     for i in 0..n {
@@ -1215,6 +1374,50 @@ fn invert_spd(a: &[f64], n: usize) -> Result<Vec<f64>, PolarsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn joint_terms_keep_unrelated_information_when_nuisance_tables_alias() {
+        let first = vec![0, 0, 1, 1, 0, 0, 1, 1];
+        let second = vec![0, 1, 0, 1, 0, 1, 0, 1];
+        let means: Vec<f64> = first
+            .iter()
+            .zip(&second)
+            .map(|(a, b)| (0.2 * (*a as f64) + 0.3 * (*b as f64)).exp())
+            .collect();
+        let info = compute_inference(
+            &LossFunction::Poisson,
+            &means,
+            &[1.0; 8],
+            &means,
+            &[vec![0; 8], first.clone(), first, second],
+            &[vec![0.0], vec![0.0, 0.1], vec![0.0, 0.1], vec![0.0, 0.3]],
+            &[vec![8.0], vec![4.0; 2], vec![4.0; 2], vec![4.0; 2]],
+            &[true; 4],
+            &[None, None, None, None],
+            Normalization::BaseLevel,
+            None,
+        )
+        .unwrap();
+        assert!(info.term_covariances[0].wald_statistic().is_err());
+        assert!(info.term_covariances[1].wald_statistic().is_err());
+        assert!(info.term_covariances[2].wald_statistic().unwrap() > 0.0);
+        assert!(info.standard_errors[1][1].is_nan());
+        assert!(info.standard_errors[2][1].is_nan());
+        assert!(info.standard_errors[3][1].is_finite());
+    }
+
+    #[test]
+    fn singular_joint_covariance_is_not_a_smaller_hypothesis() {
+        let term = TermCovariance {
+            table_index: 1,
+            coefficients: vec![0.2, 0.3],
+            covariance: vec![1.0; 4],
+            null_hypothesis: "both coefficients zero".into(),
+            excluded_rows: Vec::new(),
+            unavailable_reason: None,
+        };
+        assert!(term.wald_statistic().unwrap_err().contains("singular"));
+    }
 
     #[test]
     fn inverts_a_known_matrix() {

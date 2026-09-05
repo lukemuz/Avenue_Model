@@ -12,6 +12,11 @@ reports and their snapshot verifiers remain intact. Those verifiers describe old
 results, including known failures; the current regression suite and acceptance runner
 are the evidence for current behavior.
 
+Subsequent implementation: [whole-term Wald tests](TERM_TESTS.md) now cover supported
+fixed unpenalized designs, with independent covariance checks, explicit unavailable
+cases and source-bundle retention. The follow-up passes 116 Python and 267 Rust tests;
+the clean-wheel manifests below remain evidence for the earlier audited revision.
+
 ## Fresh installed-wheel evidence
 
 [The runner](../studies/readiness_acceptance.py) verifies every installed package payload
@@ -104,7 +109,7 @@ not evidence that its remote jobs ran successfully.
 | Identifiable main effects plus interactions | Verified for two-way treatment contrasts: [tests](../tests/test_hierarchical_interactions.py) compare independent means and contrasts, term order and numeric edges. Higher-order hierarchical contrasts remain open. |
 | Smooth/piecewise smooth plus monotonic effects; recover shapes and export | Partial: monotonic banded terms pass independent constrained fitting and exact export tests. Continuous splines/piecewise smooth predictors and their shape-recovery/export acceptance remain open. Polynomial banded variates are not substitutes for continuous smooth effects. |
 | Direct intervals and robust/cluster covariance | Verified for supported fixed unpenalized designs: interval, HC0 and CR0 tests compare independent calculations and cluster definitions; homeowners exports cluster intervals. Small-sample/multiway corrections are not implemented. |
-| Whole-term tests | Open: no supported public joint-term test API. |
+| Whole-term tests | Open at the audited wheel revision; implemented in the follow-up described above, with [independent tests](../tests/test_term_tests.py). Small-sample and post-selection joint tests remain open. |
 | Regularized uncertainty, simulation checks and post-selection interpretation | Partial: naive unpenalized errors are withheld and conditional limits documented; no fitted-model bootstrap interval API or simulation-based coverage study. |
 | Narrow credibility/partial pooling with sparse-group simulation | Open: generic ridge is not claimed to be a credibility model. |
 | Quasi-Poisson and separate negative-binomial evaluation | Partial: quasi-Poisson reference agreement and point-estimate/uncertainty explanation are verified. Negative-binomial estimation remains unimplemented and has no comparative acceptance study. |

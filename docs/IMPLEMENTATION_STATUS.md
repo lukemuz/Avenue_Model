@@ -6,6 +6,30 @@ The full scope and acceptance criteria remain in [IMPROVEMENT_PLAN.md](IMPROVEME
 This record is a progress log, not a declaration that the plan is complete.
 Existing evaluation reports, scripts and recorded runs have been preserved.
 
+## Completed increment: whole-term Wald inference and estimability correction
+
+- Added `term_tests(model, dispersion=...)` with named joint statistics, chi-square
+  tails, tested dimensions, explicit null hypotheses, unsupported row indexes and
+  unavailable-term reasons. Covers ordinary supported term contrasts, hierarchical
+  interaction free cells, polynomial degrees and model-based/HC0/CR0 covariance;
+  model-based Poisson additionally supports quasi-Poisson rescaling.
+- Within-term reduced covariance is retained during inference; joint solves are lazy.
+  Penalized, constrained, nonconverged or loaded scorers cannot acquire tests. Singular
+  covariance and insufficient cluster rank do not silently yield a smaller hypothesis.
+  Bundles preserve default source tests and interpretation metadata automatically.
+- Corrected a rank-deficiency defect: a column retained by the rank solver can still
+  represent an effect confounded with a dropped column. Null-direction checks now
+  withhold separate errors/tests for both duplicate terms while preserving unrelated
+  estimable terms. Predictions and fitting paths are unchanged.
+- Independent dense calculations cover five families, ordinary/HC0/cluster covariance,
+  both normalizations, interactions, polynomials and Pearson scaling. Tests also cover
+  empty/leading bands, locked priors, aliases, bundle isolation and chi-square tails
+  against SciPy through 5,000 degrees of freedom. All 116 Python and 267 Rust tests
+  pass; six Rust tests and one doc test remain ignored. Release extension rebuilt.
+- Auto, homeowners and real motor workflows pass with joint-test JSON exports.
+  [Usage and limits](TERM_TESTS.md) explicitly exclude post-selection, multiplicity and
+  small-sample corrections. Continuous smooth effects and the broader goal remain open.
+
 ## Completed increment: current-wheel workflow acceptance and full-scope audit
 
 - Added `studies/readiness_acceptance.py`: verifies installed Python/native payloads

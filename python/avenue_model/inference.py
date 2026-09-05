@@ -13,6 +13,84 @@ class CoefficientIntervals:
     metadata: dict
 
 
+@dataclass(frozen=True)
+class TermTests:
+    table: pl.DataFrame
+    metadata: dict
+
+
+def _chi_square_survival(statistic, df):
+    """Chi-square upper tail for positive integer degrees of freedom.
+
+    Gamma's recurrence gives a finite sum for integer/half-integer shape. Evaluate
+    the sum in log space, starting with exp(-x) or erfc(sqrt(x)), to avoid underflow
+    at large df. No optional scientific dependency is needed for inference output.
+    """
+    if not isinstance(df, int) or df <= 0 or not math.isfinite(statistic) or statistic < 0:
+        raise ValueError('Chi-square tails require nonnegative finite statistics and positive integer df')
+    if statistic == 0:
+        return 1.
+    x = statistic / 2.
+    if x == 0.:
+        return 1.
+    logs = []
+    if df % 2:
+        base = math.erfc(math.sqrt(x))
+        if base:
+            logs.append(math.log(base))
+        logs.extend(-x + (k+.5)*math.log(x) - math.lgamma(k+1.5) for k in range(df//2))
+    else:
+        logs.extend(-x + k*math.log(x) - math.lgamma(k+1.) for k in range(df//2))
+    if not logs:
+        return 0.
+    peak = max(logs)
+    return min(1., math.exp(peak) * math.fsum(math.exp(value-peak) for value in logs))
+
+
+def term_tests(model, *, dispersion='model'):
+    """Joint asymptotic Wald tests of each fitted term's supported contrasts.
+
+    Conditional on the other terms and fixed prespecified structure. A main effect
+    in a hierarchical model tests that table's contrasts, not every interaction
+    involving its predictor. No multiplicity, selection or small-sample correction.
+    """
+    if not isinstance(model, FittedModel) or model.converged is not True:
+        raise ValueError('Term tests require an original, converged FittedModel')
+    if dispersion not in ('model', 'quasi_poisson'):
+        raise ValueError('dispersion must be model or quasi_poisson')
+    if model.fit_options.get('alpha', 0.) != 0:
+        raise ValueError('Joint Wald tests are unavailable for penalized fits')
+    evidence = model.inference_summary
+    if not evidence or evidence['covariance_method'] is None:
+        raise ValueError(evidence.get('standard_errors_note') or 'Inference was not computed for this fit')
+    multiplier = 1.
+    if dispersion == 'quasi_poisson':
+        if model.family != 'poisson' or evidence['covariance_method'] != 'model_based':
+            raise ValueError('quasi_poisson requires model-based Poisson covariance; HC0/cluster cannot be rescaled')
+        df = evidence['df_residual']
+        if df <= 0 or not math.isfinite(df):
+            raise ValueError('quasi_poisson requires positive residual degrees of freedom')
+        multiplier = evidence['pearson_chi2'] / df
+        if multiplier <= 0 or not math.isfinite(multiplier):
+            raise ValueError('Pearson dispersion must be finite and positive')
+    records = model._term_wald_statistics()
+    for record in records:
+        record['p_value'] = None
+        if record['statistic'] is not None:
+            record['statistic'] /= multiplier
+            record['p_value'] = _chi_square_survival(record['statistic'], record['df'])
+    schema = {'term': pl.String, 'table_index': pl.UInt64, 'df': pl.UInt64,
+              'null_hypothesis': pl.String, 'excluded_rows': pl.List(pl.UInt64),
+              'statistic': pl.Float64, 'status': pl.String, 'note': pl.String, 'p_value': pl.Float64}
+    return TermTests(pl.DataFrame(records, schema=schema), {
+        'method': 'joint Wald chi-square', 'covariance_method': evidence['covariance_method'],
+        'dispersion_method': dispersion, 'covariance_multiplier': multiplier,
+        'cluster_column': evidence['cluster_column'], 'n_clusters': evidence['n_clusters'],
+        'interpretation': 'conditional on fixed structure and other terms; asymptotic; no selection, multiplicity or small-sample correction',
+        'source_inference': evidence,
+    })
+
+
 def coefficient_intervals(model, *, confidence=.95, dispersion='model'):
     """Normal Wald intervals on the fitted coefficient scale and log-link factors.
 

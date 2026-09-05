@@ -2143,8 +2143,8 @@ mod glm_correctness_tests {
     }
 
     /// Two tables keyed on the same column are perfectly collinear: their effects
-    /// cannot be separated. The second table's levels must come back aliased while
-    /// the first table keeps usable standard errors, and the fit itself is unharmed.
+    /// cannot be separated. Neither table's individual factors have standard errors;
+    /// retaining a column in the rank solver does not identify its separate effect.
     #[test]
     fn collinear_tables_are_reported_as_aliased() {
         use refdata::PoissonTwoFactor as C;
@@ -2192,12 +2192,17 @@ mod glm_correctness_tests {
             "duplicate table should be aliased, got {:?}",
             inf.aliased_rows
         );
-        // The first table is still fully estimable.
+        // Moving a contrast from the first table into the second leaves every mean
+        // unchanged, so the first table's individual factors are not estimable either.
         assert!(
-            inf.standard_errors[1][1].is_finite() && inf.standard_errors[1][2].is_finite(),
-            "first table should keep its standard errors, got {:?}",
+            inf.standard_errors[1][1].is_nan() && inf.standard_errors[1][2].is_nan(),
+            "first table must not acquire false identification, got {:?}",
             inf.standard_errors[1]
         );
+        assert!(inf
+            .term_covariances
+            .iter()
+            .all(|term| term.wald_statistic().is_err()));
         assert_eq!(inf.n_parameters, 3, "intercept plus two estimable levels");
 
         // The fit itself is unharmed.
