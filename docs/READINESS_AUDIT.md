@@ -195,7 +195,7 @@ not evidence that its remote jobs ran successfully.
 
 | Requirement / acceptance gate | Status and authoritative evidence |
 |---|---|
-| Tested published wheel/platform/Python matrix and source prerequisites | Partial: source guide and release matrix exist; this audit verifies local CPython 3.12 Linux x86-64 wheels only. Release jobs build artifacts but do not install/test every platform wheel. Publishing and other platforms are unverified. |
+| Tested published wheel/platform/Python matrix and source prerequisites | Partial: [release wheel-test gate](WHEEL_ACCEPTANCE.md) now installs each of five built platform artifacts on Python 3.12 and 3.13, verifies installed bytes and requires tests/tutorials before publication. The runner passes locally in a fresh CPython 3.12 Linux x86-64 environment; remote matrix execution, publication, sdist installation and other platforms remain unverified. |
 | Accurate extras and dependency ranges | Partial: test/tuning/pandas extras installed successfully at recorded versions; Polars remains pinned. Broad lower/upper dependency-range evidence is absent. |
 | Hosted Python API reference | Open: no built/hosted reference in the inspected source/workflows. |
 | Three data-loading tutorials with definitions, splits, convergence, review, quotes, export/edit | Verified for the current synthetic auto/homeowners/booster paths and real motor/challenger. Optional booster-structure GLM refit is not a complete branch of the public booster tutorial. |

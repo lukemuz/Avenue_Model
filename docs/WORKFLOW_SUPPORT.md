@@ -53,7 +53,7 @@ complexity, conversion parity, raw-category reload and a rate edit.
 | Delivery | CSV/JSON workbooks; source category mappings; versions 1–3 reading, version 2 writing (version 3 for monotonic constraints); edit/change exhibits | [Individual-model analytical bundles](ANALYTICAL_BUNDLES.md) preserve source evidence and effective fit options; edited artifacts require new validation |
 | Booster conversion | Stock/fork finite and missing-route parity fixtures; categorical complements; exact thresholds; constant boosters; optional parity evidence | Multiclass, linear leaves, averaged ensembles, non-unit sigmoid and zero_as_missing explicitly unsupported |
 | Tuning/devices | Existing optional stock/fork LightGBM tuning | Fork penalties require a supporting build; device availability is inherited from the installed LightGBM build; GPU parity not verified here |
-| Installation | Source builds; Python 3.12 exercised locally; wheel build in CI | Published platform-wheel matrix and broader dependency-range validation remain release work |
+| Installation | Source builds; fresh Python 3.12 Linux wheel verified locally; [release wheel-test matrix](WHEEL_ACCEPTANCE.md) gates publication on tests/tutorials for Python 3.12/3.13 across five platforms | Remote matrix execution, publication and broader dependency-range validation remain unverified |
 
 ## API guides
 
