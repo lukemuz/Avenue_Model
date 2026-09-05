@@ -45,3 +45,5 @@ __all__ = [
 
 from .bundle import ModelBundle, load_bundle, save_bundle
 __all__ += ['ModelBundle', 'load_bundle', 'save_bundle']
+from .selection import GLMSelection, GLMTrial, select_glm
+__all__ += ['GLMSelection', 'GLMTrial', 'select_glm']

@@ -9,7 +9,7 @@ from pathlib import Path
 import random
 
 import polars as pl
-from avenue_model import Candidate, Plan, SplitSpec, Workbook, compare_models, prepare_pricing, compare_changes, frequency_severity
+from avenue_model import GLMTrial, select_glm, save_bundle, Candidate, Plan, SplitSpec, Workbook, compare_models, prepare_pricing, compare_changes, frequency_severity
 
 
 def synthetic(path):
@@ -48,6 +48,22 @@ def run(output, data_path=None):
     severity_train = prepared.severity.filter(pl.col('year') < 2022)
     severity = shape(Plan.severity('claims')).fit(severity_train, 'avenue_severity')
     premium = shape(Plan.pure_premium('exposure')).fit(train, 'avenue_pure_premium')
+    # Selection uses only pre-2022 data. Every fitting power is evaluated at the
+    # same prespecified power; the final year is never used to choose this grid.
+    selection = select_glm(train, {
+        f'power={power},alpha={alpha}': GLMTrial(
+            shape(Plan('tweedie', exposure='exposure', exposure_role='weight', tweedie_power=power)),
+            {'alpha': alpha, 'l1_ratio': .5})
+        for power in (1.3, 1.7) for alpha in (0., .01)
+    }, target='avenue_pure_premium', unit='loss_per_exposure', metric='tweedie',
+       tweedie_power=1.5, weight='exposure', split=SplitSpec.grouped('policy_id', 3, seed=47))
+    selection.save(output / 'glm_selection')
+    selected_premium = selection.refit(train)
+    save_bundle(selected_premium, output / 'selected_premium_bundle',
+                fit_options=selection.metadata['trials'][selection.recommended]['options'],
+                training_id='auto-pre-2022', validation_data=holdout, validation_id='auto-2022',
+                unit='loss_per_exposure', lineage={'selection': 'glm_selection/selection.json',
+                                                   'trial': selection.recommended})
     for name, model, validation in (
         ('frequency', frequency, holdout),
         ('severity', severity, prepared.severity.filter(pl.col('year') >= 2022)),
@@ -70,7 +86,8 @@ def run(output, data_path=None):
     product.save(output / 'frequency_severity')
     comparison = compare_models(
         holdout, {'frequency_times_severity': Candidate(product, 'loss_per_exposure'),
-                  'tweedie': Candidate(premium, 'loss_per_exposure')},
+                  'tweedie': Candidate(premium, 'loss_per_exposure'),
+                  'selected_tweedie': Candidate(selected_premium, 'loss_per_exposure')},
         target='avenue_pure_premium', unit='loss_per_exposure', metric='tweedie',
         tweedie_power=1.5, weight='exposure', segments=['region', 'year'], bootstrap=50, seed=47)
     comparison.summary.write_csv(output / 'comparison.csv')

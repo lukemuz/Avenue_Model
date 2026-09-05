@@ -283,3 +283,28 @@ that evidence.
   were required; the previous 258-test Rust verification remains applicable.
 - [Format and scope](ANALYTICAL_BUNDLES.md): composition-graph evidence, automatic
   fitting-option capture and executable preprocessing remain open.
+
+## Completed increment: explicit GLM selection
+
+- `GLMTrial` and `select_glm` evaluate candidate plans and fitting-option grids on
+  identical reproducible fold populations, resolving all learned terms locally.
+- History retains convergence, fit findings, gradient, iterations, parameter count,
+  validation support/loss/A-E and failures. Eligibility requires every fold to
+  converge and score; pooled loss is weighted by validation support.
+- Tweedie fitting powers live on trial plans and share one explicit evaluation
+  power. Ambiguous power overrides in trial options are rejected.
+- Selection artifacts retain declarative trial/fold records. The selected refit
+  checks the original dataset fingerprint and refuses nonconverged results.
+- Tests agree with scikit-learn elastic-net losses and the selected penalty;
+  independent Tweedie calculations verify common evaluation power and unequal
+  support aggregation. Failure/nonconvergence, unseen holdout categories, overlap
+  rejection and refit/save behavior are covered. All 89 Python tests pass.
+- The auto study now selects four penalty/power candidates only within training
+  years, preserves a final-year holdout, compares the selected model, and exports
+  its analytical bundle. Executed successfully at `/tmp/avenue-auto-selection-study`.
+  All four trials converged in all three folds. Final selected loss was 130.966056
+  versus 130.976567 for the fixed Tweedie and 130.970579 for frequency × severity;
+  paired intervals include zero, so this synthetic evidence does not establish
+  superiority. Historical evaluation outputs remain untouched.
+- [Semantics and limitations](GLM_SELECTION.md): no adaptive search, warm-start reuse,
+  repeated overlapping CV, or post-selection confidence intervals in this increment.
