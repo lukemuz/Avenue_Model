@@ -1,0 +1,50 @@
+[
+  {
+    "model": "frequency",
+    "train_rows": 508509,
+    "holdout_rows": 169504,
+    "fit_seconds": 0.2474853149979026,
+    "raw_score_seconds": 0.013860910999937914,
+    "reference_native_category_prepare_seconds": 0.4819144079956459,
+    "reference_fit_seconds": 0.18458381300297333,
+    "reference_iterations": 6,
+    "max_relative_difference": 8.282263763703668e-14,
+    "parameters": 37,
+    "converged": true,
+    "resolved_knots": null,
+    "iterations": 6,
+    "covariance_method": "model_based"
+  },
+  {
+    "model": "severity",
+    "train_rows": 18764,
+    "holdout_rows": 6180,
+    "fit_seconds": 0.02235503600240918,
+    "raw_score_seconds": 0.000867045993800275,
+    "reference_native_category_prepare_seconds": 0.02029029999539489,
+    "reference_fit_seconds": 0.011905211002158467,
+    "reference_iterations": 5,
+    "max_relative_difference": 8.917769633853823e-09,
+    "parameters": 37,
+    "converged": true,
+    "resolved_knots": null,
+    "iterations": 14,
+    "covariance_method": "model_based"
+  },
+  {
+    "model": "premium",
+    "train_rows": 508509,
+    "holdout_rows": 169504,
+    "fit_seconds": 0.36053151299711317,
+    "raw_score_seconds": 0.011673243003315292,
+    "reference_native_category_prepare_seconds": 0.46219607700186316,
+    "reference_fit_seconds": 0.11943513200094458,
+    "reference_iterations": 4,
+    "max_relative_difference": 5.6474006138174104e-08,
+    "parameters": 37,
+    "converged": true,
+    "resolved_knots": null,
+    "iterations": 10,
+    "covariance_method": "model_based"
+  }
+]

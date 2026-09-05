@@ -1,0 +1,28 @@
+{
+  "status": "passed",
+  "numeric_effects": "natural_cubic_quantile_5",
+  "fit_tolerance": 1e-11,
+  "script_sha256": "893bbd46fe8c7993984c4c01a15f772f6fafff9846528db2cee104d038632651",
+  "preparation_seconds": 2.731056983997405,
+  "time_to_first_valid_model_seconds": 6.334273676999146,
+  "total_seconds": 24.911372845999722,
+  "whole_process_peak_rss_kib": 1862248,
+  "versions": {
+    "avenue-model": "0.1.0",
+    "polars": "1.31.0",
+    "glum": "3.4.1",
+    "pandas": "3.0.5",
+    "scikit-learn": "1.9.0"
+  },
+  "input_sha256": {
+    "/home/luke/Projects/avenue_model/evaluation/data/freMTPL2freq.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f",
+    "/tmp/avenue-freMTPL2sev.parquet": "2057f9bac7414f5a528cb3e7b0940826405619174b2a54196748d379fc3cdb11"
+  },
+  "limitations": [
+    "single-run workflow timings, not a controlled speed benchmark",
+    "whole-process RSS is not incremental engine memory",
+    "no temporal variable; grouped random policy holdout",
+    "observed paid-loss cost, not developed prospective ultimate loss cost",
+    "normal intervals conditional on fixed prespecified structure"
+  ]
+}

@@ -6,7 +6,20 @@ motor study and stock/fork challengers. Statistical and review gaps still includ
 ordinary pricing tasks. This audit follows [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md),
 including work not implemented; it does not redefine the goal around passing tests.
 
-Audited implementation: `4e5d79643e2befb4c693bf1ed142718bb5c5e08c`. The acceptance runner
+Latest installed-wheel checkpoint: `7d6d0d8a654d4a0e5cfb90c6109bc472b2b3d496` passes
+133 Python tests without skips, all three public tutorials, the real motor/booster
+study, and the real continuous-spline study in each of two newly created environments.
+The Rust suite passes 282 active tests (six ignored tests and one ignored doctest).
+The [current manifests](../studies/results/readiness_current/README.md) verify the
+installed package bytes against the same wheel for stock LightGBM 4.7.0 and fork
+4.6.0.99. This supersedes the earlier lack of wheel evidence for spline inference,
+shared discrimination, completed-training status and numeric band exhibits. It remains
+local Linux x86-64 / CPython 3.12 evidence; other release platforms are unverified.
+
+The historical checkpoints below record what was known at each revision; completed
+follow-ups are reflected in the requirement tables and remaining priorities.
+
+Original audited implementation: `4e5d79643e2befb4c693bf1ed142718bb5c5e08c`. The acceptance runner
 added with this audit records its own source hash separately. Historical evaluation
 reports and their snapshot verifiers remain intact. Those verifiers describe old
 results, including known failures; the current regression suite and acceptance runner
@@ -147,7 +160,7 @@ not evidence that its remote jobs ran successfully.
 | Capability / acceptance gate | Status and authoritative evidence |
 |---|---|
 | Identifiable main effects plus interactions | Verified for two-way treatment contrasts: [tests](../tests/test_hierarchical_interactions.py) compare independent means and contrasts, term order and numeric edges. Higher-order hierarchical contrasts remain open. |
-| Smooth/piecewise smooth plus monotonic effects; recover shapes and export | Partial: monotonic banded terms pass independent constrained fitting and exact export tests. Continuous splines/piecewise smooth predictors and their shape-recovery/export acceptance remain open. Polynomial banded variates are not substitutes for continuous smooth effects. |
+| Smooth/piecewise smooth plus monotonic effects; recover shapes and export | Verified for unpenalized natural cubic terms and monotonic bands: independent shape recovery, five-family fitting/inference, fold-local knots and exact export checks now pass. The real spline specification has worse holdout loss than bands and uncertain sparse tails; regularized smoothing and broader selection remain open. |
 | Direct intervals and robust/cluster covariance | Verified for supported fixed unpenalized designs: interval, HC0 and CR0 tests compare independent calculations and cluster definitions; homeowners exports cluster intervals. Small-sample/multiway corrections are not implemented. |
 | Whole-term tests | Open at the audited wheel revision; implemented in the follow-up described above, with [independent tests](../tests/test_term_tests.py). Small-sample and post-selection joint tests remain open. |
 | Regularized uncertainty, simulation checks and post-selection interpretation | Partial: naive unpenalized errors are withheld and conditional limits documented; no fitted-model bootstrap interval API or simulation-based coverage study. |
@@ -192,14 +205,15 @@ not evidence that its remote jobs ran successfully.
 
 ## Remaining priorities
 
-1. Finish continuous smooth effects with independent shape-recovery and export evidence;
-   add valid joint-term inference. These remain ordinary modeling requirements.
-2. Close review/selection gaps: numeric interval columns, common discrimination exhibits,
-   and training-status semantics that let completed booster candidates be assessed fairly.
-3. Establish a narrow credibility workflow and defensible regularized uncertainty before
+1. Establish a narrow credibility workflow and defensible regularized uncertainty before
    claiming the remaining statistical needs are all specialized.
-4. Complete final-artifact trial complexity, original large-table scoring profiling,
+2. Improve structure selection and stabilization for sparse spline tails. The completed
+   unpenalized spline mechanics and inference do not establish superior held-out models.
+3. Complete final-artifact trial complexity, original large-table scoring profiling,
    wheel installation tests across the supported matrix, and an executable API reference.
+4. Extend irregular-table review, prepared scoring and conditional/post-selection
+   uncertainty. Ordered-grid interval labels, shared discrimination and explicit
+   completed-training status now close the earlier ordinary comparison/review gaps.
 
 The user allows some plan items to remain unfinished, but that is not evidence that
 these current ordinary-task gaps are acceptable for a first-choice claim. The goal

@@ -1,0 +1,564 @@
+   Compiling avenue_model v0.1.0 (/home/luke/Projects/avenue_model)
+warning: unused import: `PlanCheck`
+  --> src/report.rs:18:32
+   |
+18 | use crate::plan::{FittedModel, PlanCheck, ResolvedTerm};
+   |                                ^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `one_way_analysis_table` and `one_way_analysis`
+ --> src/tests/analysis_tests.rs:1:23
+  |
+1 | use crate::analysis::{one_way_analysis, one_way_analysis_table};
+  |                       ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+  |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+ --> src/tests/mod.rs:1:1
+  |
+1 | mod analysis_tests;
+  | ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `FeatureValue`, `LinkFunction`, `RatingModel`, and `RatingTable`
+ --> src/tests/analysis_tests.rs:2:27
+  |
+2 | use crate::rating_model::{FeatureValue, LinkFunction, RatingModel, RatingTable};
+  |                           ^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^
+  |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+ --> src/tests/mod.rs:1:1
+  |
+1 | mod analysis_tests;
+  | ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `polars::prelude::*`
+ --> src/tests/analysis_tests.rs:3:5
+  |
+3 | use polars::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+ --> src/tests/mod.rs:1:1
+  |
+1 | mod analysis_tests;
+  | ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> src/tests/analysis_tests.rs:4:5
+  |
+4 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+ --> src/tests/mod.rs:1:1
+  |
+1 | mod analysis_tests;
+  | ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> src/tests/analysis_tests.rs:5:5
+  |
+5 | use std::time::Instant;
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+ --> src/tests/mod.rs:1:1
+  |
+1 | mod analysis_tests;
+  | ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+  --> src/tests/model_tests.rs:1:5
+   |
+ 1 | use super::*;
+   |     ^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/tests/mod.rs:11:1
+   |
+11 | mod model_tests;
+   | ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::analysis::one_way_analysis_table`
+  --> src/tests/weight_distribution_test.rs:1:5
+   |
+ 1 | use crate::analysis::one_way_analysis_table;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/tests/mod.rs:16:1
+   |
+16 | mod weight_distribution_test;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `FeatureValue` and `RatingTable`
+  --> src/tests/weight_distribution_test.rs:2:27
+   |
+ 2 | use crate::rating_model::{FeatureValue, RatingTable};
+   |                           ^^^^^^^^^^^^  ^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/tests/mod.rs:16:1
+   |
+16 | mod weight_distribution_test;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `polars::prelude::*`
+  --> src/tests/weight_distribution_test.rs:3:5
+   |
+ 3 | use polars::prelude::*;
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/tests/mod.rs:16:1
+   |
+16 | mod weight_distribution_test;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> src/tests/weight_distribution_test.rs:4:5
+   |
+ 4 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/tests/mod.rs:16:1
+   |
+16 | mod weight_distribution_test;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `FeatureValue`, `LinkFunction`, `RatingModel`, `RatingTable`, `build_analysis_tablemodel`, `build_consolidated_tablemodel`, `combine_all_tables`, `expand_and_combine_tables`, `process_lgbm_trees`, and `table_estimator::estimate_number_of_tables`
+  --> src/tests/mod.rs:22:9
+   |
+22 |         build_analysis_tablemodel, build_consolidated_tablemodel, combine_all_tables,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+23 |         expand_and_combine_tables, process_lgbm_trees, FeatureValue, LinkFunction, RatingModel,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^
+24 |         RatingTable,
+   |         ^^^^^^^^^^^
+25 |     },
+26 |     table_estimator::estimate_number_of_tables,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/lib.rs:12:1
+   |
+12 | pub mod tests;
+   | ^^^^^^^^^^^^^^
+
+warning: unused import: `polars::frame::DataFrame`
+  --> src/tests/mod.rs:28:5
+   |
+28 | use polars::frame::DataFrame;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/lib.rs:12:1
+   |
+12 | pub mod tests;
+   | ^^^^^^^^^^^^^^
+
+warning: unused import: `polars::prelude::*`
+  --> src/tests/mod.rs:29:5
+   |
+29 | use polars::prelude::*;
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/lib.rs:12:1
+   |
+12 | pub mod tests;
+   | ^^^^^^^^^^^^^^
+
+warning: unused imports: `HashMap` and `HashSet`
+  --> src/tests/mod.rs:36:24
+   |
+36 | use std::collections::{HashMap, HashSet};
+   |                        ^^^^^^^  ^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/lib.rs:12:1
+   |
+12 | pub mod tests;
+   | ^^^^^^^^^^^^^^
+
+warning: unused import: `Scale`
+  --> src/tests/composition_tests.rs:14:27
+   |
+14 |     use crate::workbook::{Scale, Workbook};
+   |                           ^^^^^
+
+warning: unnecessary parentheses around closure body
+   --> src/tests/glm_benchmarks.rs:306:49
+    |
+306 |         let x_values: Vec<f64> = (0..n).map(|i| (i as f64 / 100.0)).collect();
+    |                                                 ^                ^
+    |
+    = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+    |
+306 -         let x_values: Vec<f64> = (0..n).map(|i| (i as f64 / 100.0)).collect();
+306 +         let x_values: Vec<f64> = (0..n).map(|i| i as f64 / 100.0).collect();
+    |
+
+warning: unused import: `LinkFunction`
+ --> src/tests/glm_tests.rs:4:31
+  |
+4 |     use crate::rating_model::{LinkFunction, RatingModel};
+  |                               ^^^^^^^^^^^^
+
+warning: unused import: `std::time::Instant`
+ --> src/tests/glm_tests.rs:6:9
+  |
+6 |     use std::time::Instant;
+  |         ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `table_estimator::estimate_number_of_tables`
+  --> src/tests/mod.rs:26:5
+   |
+26 |     table_estimator::estimate_number_of_tables,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `is_left`
+   --> src/rating_model/lgbm_parser.rs:425:41
+    |
+425 |     while let Some((current_node, path, is_left)) = stack.pop() {
+    |                                         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_left`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: enum `FeatureType` is never used
+   --> src/rating_model/mod.rs:164:6
+    |
+164 | enum FeatureType {
+    |      ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `check`
+  --> src/tests/report_tests.rs:71:13
+   |
+71 |         let check = plan.check(&df, "claims").unwrap();
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_check`
+
+warning: unused variable: `check`
+   --> src/tests/report_tests.rs:374:13
+    |
+374 |         let check = plan.check(&df, "claims").unwrap();
+    |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_check`
+
+warning: function `create_benchmark_data` is never used
+   --> src/tests/analysis_tests.rs:259:8
+    |
+259 |     fn create_benchmark_data(num_rows: usize) -> DataFrame {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `benchmark_function` is never used
+   --> src/tests/analysis_tests.rs:272:8
+    |
+272 |     fn benchmark_function<F, T>(name: &str, mut f: F, iterations: usize) -> f64
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: `avenue_model` (lib) generated 17 warnings (run `cargo fix --lib -p avenue_model` to apply 16 suggestions)
+warning: `avenue_model` (lib test) generated 12 warnings (3 duplicates) (run `cargo fix --lib -p avenue_model --tests` to apply 7 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.63s
+     Running unittests src/lib.rs (target/debug/deps/avenue_model-ecd534cc687fb1aa)
+
+running 288 tests
+test glm::fitting::tests::log_link_null_intercept_bottoms_out_on_an_all_zero_response ... ok
+test glm::fitting::tests::gaussian_null_intercept_is_the_weighted_mean ... ok
+test glm::fitting::tests::log_link_null_intercept_is_a_fixed_point ... ok
+test glm::fitting::tests::a_deviance_at_its_rounding_floor_ends_the_fit ... ok
+test glm::fitting::tests::an_oscillating_score_does_not_abandon_a_converging_fit ... ok
+test glm::fitting::tests::apply_row_deltas_keeps_mu_consistent_with_eta ... ok
+test glm::fitting::tests::squarem_declines_a_degenerate_sequence ... ok
+test glm::fitting::tests::squarem_lands_on_the_fixed_point_of_a_single_mode ... ok
+test glm::fitting::tests::poisson_null_intercept_matches_the_closed_form ... ok
+test glm::inference::tests::a_thinly_exposed_level_keeps_its_standard_error ... ok
+test glm::inference::tests::collinear_column_is_detected_as_aliased ... ok
+test glm::inference::tests::a_collapsed_information_column_is_aliased ... ok
+test glm::inference::tests::full_rank_matrix_has_nothing_aliased ... ok
+test glm::inference::tests::inverts_a_known_matrix ... ok
+test glm::inference::tests::inverse_times_original_is_identity ... ok
+test glm::inference::tests::zero_information_column_is_aliased ... ok
+test glm::inference::tests::singular_joint_covariance_is_not_a_smaller_hypothesis ... ok
+test glm::isotonic::tests::cone_score_distinguishes_pooling_from_false_convergence ... ok
+test glm::isotonic::tests::pooled_rates_are_weighted_not_sorted_or_averaged_logs ... ok
+test glm::isotonic::tests::empty_bands_extend_supported_values_without_changing_the_fit ... ok
+test glm::isotonic::tests::stable_with_extreme_offsets_and_zero_actuals ... ok
+test glm::loss::tests::inverse_link_never_overflows ... ok
+test glm::loss::tests::tweedie_half_power_deviance_matches_closed_form ... ok
+test glm::loss::tests::unit_deviance_is_zero_at_perfect_fit ... ok
+test glm::loss::tests::weighted_residual_matches_naive_product ... ok
+test glm::inference::tests::joint_terms_keep_unrelated_information_when_nuisance_tables_alias ... ok
+test glm::penalty::tests::lasso_zeroes_a_coefficient_the_data_barely_supports ... ok
+test glm::penalty::tests::ridge_shrinks_the_step_toward_the_anchor ... ok
+test glm::penalty::tests::the_intercept_and_the_anchor_row_are_never_penalised ... ok
+test glm::penalty::tests::the_anchor_subgradient_vanishes_where_the_anchor_step_does ... ok
+test glm::penalty::tests::the_total_is_measured_against_the_anchor_not_against_zero ... ok
+test glm::penalty::tests::the_total_is_on_the_deviance_scale ... ok
+test glm::penalty::tests::variate_and_single_row_tables_are_skipped ... ok
+test glm::penalty::tests::soft_threshold_holds_at_zero_inside_the_interval ... ok
+test glm::matching::tests::descending_thresholds_fall_back_to_the_scan ... ok
+test glm::penalty::tests::a_tables_penalty_gradients_sum_to_zero ... ok
+test glm::matching::tests::a_missing_feature_column_matches_nothing ... ok
+test glm::matching::tests::a_table_with_no_features_matches_row_zero ... ok
+test glm::matching::tests::a_float_observation_column_falls_back_to_the_scan ... ok
+test glm::matching::tests::a_feature_column_the_matcher_cannot_read_is_rejected ... ok
+test glm::matching::tests::a_null_table_value_falls_back_to_the_scan ... ok
+test glm::penalty::tests::a_zeroed_coefficient_is_a_fixed_point ... ok
+test glm::penalty::tests::alpha_is_scaled_by_the_total_weight_to_match_glum ... ok
+test glm::matching::tests::the_readable_dtypes_and_the_factor_column_are_accepted ... ok
+test glm::redundancy::tests::identical_tables_sit_at_the_table_count ... ok
+test glm::penalty::tests::no_alpha_means_no_plan ... ok
+test glm::penalty::tests::the_anchor_step_minimises_its_objective ... ok
+test glm::penalty::tests::the_subgradient_vanishes_exactly_where_the_step_does ... ok
+test glm::matching::tests::a_mixed_table_agrees_with_the_scan ... ok
+test glm::matching::tests::a_null_observation_in_a_two_way_table_matches_nothing ... ok
+test glm::matching::tests::a_null_in_a_two_way_table_still_agrees_with_the_scan ... ok
+test glm::utils::tests::test_weighted_mean_unequal ... ok
+test glm::utils::tests::test_weighted_mean ... ok
+test glm::penalty::tests::an_unpenalised_solve_is_the_ordinary_newton_step ... ok
+test glm::penalty::tests::the_subgradient_is_the_plain_score_when_nothing_is_penalised ... ok
+test spline::tests::affine_curves_and_two_knot_geometry_have_zero_curvature ... ok
+test glm::redundancy::tests::one_aliased_pair_does_not_look_like_a_shared_driver ... ok
+test glm::matching::tests::a_two_way_numeric_table_agrees_with_the_scan ... ok
+test rating_model::review::tests::interval_labels_cannot_replace_an_existing_predictor ... ok
+test spline::tests::joins_are_c2_and_tail_curvature_is_zero ... ok
+test spline::tests::malformed_and_nonfinite_inputs_fail_without_inventing_values ... ok
+test spline::tests::unit_range_penalty_and_basis_are_affine_invariant_and_edits_are_linear ... ok
+test rating_model::review::tests::irregular_and_missing_route_tables_are_not_assigned_guessed_bounds ... ok
+test glm::redundancy::tests::orthogonal_tables_sit_at_one ... ok
+test rating_model::review::tests::displayed_grid_intervals_match_lookup_at_boundaries_and_tails ... ok
+test glm::redundancy::tests::a_crossed_design_is_uncorrelated ... ok
+test glm::redundancy::tests::a_coarsening_is_perfectly_correlated ... ok
+test glm::redundancy::tests::ineligible_tables_are_skipped ... ok
+test glm::redundancy::tests::a_relabelling_is_perfectly_correlated ... ok
+test glm::redundancy::tests::weights_drive_the_measure ... ok
+test glm::matching::tests::a_nan_observation_is_unmatched_without_a_missing_row ... ok
+test glm::redundancy::tests::partial_overlap_lands_in_between ... ok
+test glm::matching::tests::binary_search_agrees_with_the_scan ... ok
+test glm::matching::tests::repeated_thresholds_pick_the_first_row_like_the_scan ... ok
+test glm::matching::tests::binary_search_agrees_on_a_table_with_no_open_top_band ... ok
+test glm::matching::tests::the_categorical_lookup_agrees_with_the_scan ... ok
+test tests::glm_benchmarks::glm_benchmarks::benchmark_comparison_all_distributions ... ignored
+test tests::glm_benchmarks::glm_benchmarks::benchmark_large_dataset_gamma ... ignored
+test glm::matching::tests::a_second_wildcard_row_is_never_reached ... ok
+test tests::glm_benchmarks::glm_benchmarks::benchmark_logistic_regression ... ignored
+test glm::matching::tests::a_null_categorical_observation_matches_nothing ... ok
+test glm::matching::tests::an_exact_row_beats_an_earlier_wildcard ... ok
+test tests::composition_tests::composition_tests::a_supplied_table_is_checked_as_strictly_as_one_that_is_loaded ... ok
+test tests::glm_benchmarks::glm_benchmarks::benchmark_medium_dataset_poisson ... ignored
+test tests::glm_benchmarks::glm_benchmarks::benchmark_multitable_model ... ignored
+test tests::glm_benchmarks::glm_benchmarks::benchmark_small_dataset_gaussian ... ignored
+test glm::redundancy::tests::a_shared_driver_scales_with_the_number_of_tables ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::empty_level_is_flagged_and_has_no_standard_error ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::gaussian_converges_in_few_sweeps_at_any_scale ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::invalid_degrees_are_rejected ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::invalid_variate_values_are_rejected ... ok
+test spline::tests::agrees_with_independent_scipy_curves_and_integrated_curvature ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::anchoring_never_corrupts_the_linear_predictor ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::intercept_is_fitted_not_frozen ... ok
+test tests::analysis_tests::analysis_tests::test_one_way_analysis_single_table ... ok
+test tests::analysis_tests::analysis_tests::test_categorical_features_with_wildcard ... ok
+test tests::analysis_tests::analysis_tests::test_one_way_analysis_baseline_only_table ... ok
+test tests::analysis_tests::analysis_tests::test_error_reproduction ... ok
+test tests::analysis_tests::analysis_tests::test_one_way_analysis_without_weights ... ok
+test tests::analysis_tests::analysis_tests::test_all_wildcard_categorical ... ok
+test tests::analysis_tests::analysis_tests::test_mixed_categorical_numeric_features ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::matches_statsmodels_binary ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::quadratic_variate_factors_lie_on_a_curve ... ok
+test tests::analysis_tests::analysis_tests::test_one_way_analysis_multiple_tables ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::matches_statsmodels_gamma ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::matches_statsmodels_poisson_with_offset ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::matches_statsmodels_poisson ... ok
+test tests::analysis_tests::analysis_tests::test_join_where_vs_original ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::saturated_gaussian_reproduces_group_means ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::saturated_gamma_reproduces_group_means ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::saturated_tweedie_reproduces_group_means ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::separated_level_is_reported_as_aliased ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::saturated_binary_reproduces_group_rates ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::saturated_gaussian_handles_a_large_response ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::saturated_poisson_reproduces_group_means ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::variate_fills_in_empty_bands ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::matches_statsmodels_tweedie ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::variate_converges_quickly ... ok
+test glm::isotonic::tests::pooled_solution_beats_every_contiguous_partition ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::matches_statsmodels_gaussian ... ok
+test tests::composition_tests::composition_tests::a_supplied_table_can_instead_define_the_shape_and_have_its_numbers_refreshed ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::variate_costs_one_parameter ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::variate_matches_statsmodels ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::top_degree_z_detects_curvature ... ok
+test tests::glm_distribution_tests::distribution_tests::test_logistic_regression ... ok
+test tests::glm_monotonic_tests::incompatible_solver_and_constraint_combinations_fail_before_fitting ... ok
+test tests::glm_distribution_tests::distribution_tests::test_poisson_glm ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::quadratic_variate_matches_statsmodels ... ok
+test tests::glm_distribution_tests::distribution_tests::test_gamma_glm ... ok
+test tests::glm_distribution_tests::distribution_tests::test_tweedie_glm ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::a_dropped_level_is_exactly_the_base_level ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::variate_slope_is_none_above_degree_one ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::normalization_does_not_change_predictions ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::a_nonsense_l1_ratio_is_refused ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::standard_errors_scale_with_weight ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::weights_behave_like_replication ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::a_collapsed_lasso_leaves_the_weighted_mean_in_the_intercept ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::a_lasso_spends_what_it_kept ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::variate_predicts_by_step_lookup ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::alpha_zero_is_bit_for_bit_the_unpenalised_fit ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::variate_factors_lie_on_a_line ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::auto_is_the_default_solver ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::a_penalty_needs_the_base_level_gauge ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::ridge_matches_the_closed_form ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::an_elastic_net_lies_between_ridge_and_lasso ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::lasso_zeroes_exactly_the_levels_the_data_cannot_pay_for ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::global_and_table_solvers_agree_for_every_penalty_kind ... ok
+test tests::composition_tests::composition_tests::a_converted_lightgbm_model_is_a_model_like_any_other ... ok
+test tests::composition_tests::composition_tests::an_offset_spends_no_parameters_and_says_so ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::a_penalised_fit_does_not_depend_on_the_starting_gauge ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::binary_separation_stays_finite ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::a_poisson_table_shrinks_toward_its_base_level ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::a_penalised_fit_reports_no_standard_errors ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::quadratic_coefficients_are_invariant_to_anchoring ... ok
+test tests::glm_spline_tests::spline_fitting_rejects_unidentified_geometry_and_unsupported_options ... ok
+test tests::glm_tests::glm_tests::test_glm_fit_gaussian ... ok
+test tests::glm_tests::glm_tests::test_glm_fit_with_weights ... ok
+test tests::composition_tests::composition_tests::a_loaded_model_can_do_everything_a_fitted_one_can ... ok
+test tests::model_tests::test_add_offset_table_to_model ... ok
+test tests::composition_tests::composition_tests::composition_reconciles_different_encodings_of_the_same_driver ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::polynomial_degree_sets_the_parameter_count ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::ridge_shrinks_more_as_alpha_grows ... ok
+test tests::model_tests::test_analysis_tablemodel_bug ... ok
+test tests::model_tests::test_analysis_vs_consolidated_model_predictions ... ok
+test tests::glm_spline_tests::two_continuous_effects_recover_a_known_curve_without_observations_on_knots ... ok
+test tests::model_tests::test_build_analysis_tablemodel ... ok
+test tests::model_tests::test_combine_all_tables ... ok
+test tests::model_tests::test_basic_filtering ... ok
+test tests::model_tests::test_analysis_vs_consolidated_methods ... ok
+test tests::model_tests::test_consolidate_tables_usage ... ok
+test tests::model_tests::test_consolidate_tables ... ok
+test tests::model_tests::test_expand_and_combine_tables ... ok
+test tests::model_tests::test_internal_node_processing ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::the_effective_parameter_count_is_the_hat_trace ... ok
+test tests::model_tests::test_comparison_of_models ... ok
+test tests::model_tests::test_offset_row_metadata ... ok
+test tests::model_tests::test_leaf_paths ... ok
+test tests::model_tests::test_offset_table_metadata ... ok
+test tests::model_tests::test_offset_table_predictions ... ok
+test tests::model_tests::test_number_of_tables ... ok
+test tests::model_tests::test_overall_mean_table ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::fitted_tables_are_independent_of_starting_values ... ok
+test tests::glm_monotonic_tests::ordered_fits_match_exact_weighted_offset_optima_and_roundtrip ... ok
+test tests::model_tests::test_predict_edge_cases ... ok
+test tests::model_tests::test_rating_table_single_column_comprehensive ... ok
+test tests::model_tests::test_rating_table_two_columns_comprehensive ... ok
+test tests::model_tests::test_predict_and_predict_batch ... ok
+test tests::model_tests::test_realistic_prediction2_3ways ... ok
+test tests::model_tests::test_realistic_prediction2 ... ok
+test tests::composition_tests::composition_tests::an_existing_plan_can_be_held_fixed_while_a_new_factor_is_fitted_on_top ... ok
+test tests::model_tests::test_tweedie_objective ... ok
+test tests::plan_tests::plan_tests::a_plan_round_trips_through_json_unchanged ... ok
+test tests::plan_tests::plan_tests::a_variate_spends_its_degree_and_not_its_rows ... ok
+test tests::plan_tests::plan_tests::a_string_column_is_encoded_and_the_mapping_is_kept ... ok
+test tests::model_tests::test_realistic_prediction ... ok
+test tests::plan_tests::plan_tests::an_intercept_only_plan_builds_and_a_missing_column_explains_itself ... ok
+test tests::plan_tests::plan_tests::banded_terms_end_in_an_unbounded_row ... ok
+test tests::plan_tests::plan_tests::check_rejects_a_variate_degree_the_bands_cannot_identify ... ok
+test tests::plan_tests::plan_tests::check_finds_the_data_problems_a_fit_would_have_hit_one_at_a_time ... ok
+test tests::plan_tests::plan_tests::an_int64_column_is_accepted_where_the_matcher_would_have_refused_it ... ok
+test tests::plan_tests::plan_tests::every_rate_preset_uses_its_denominator_as_a_weight ... ok
+test tests::plan_tests::plan_tests::check_sees_two_tables_describing_the_same_driver ... ok
+test tests::plan_tests::plan_tests::check_reports_what_it_decided_before_anything_is_fitted ... ok
+test tests::plan_tests::plan_tests::the_base_level_is_chosen_stated_and_placed_first ... ok
+test tests::composition_tests::composition_tests::a_model_that_does_not_know_its_response_says_so ... ok
+test tests::plan_tests::plan_tests::an_interaction_crosses_its_axes_in_first_match_order ... ok
+test tests::plan_tests::plan_tests::scoring_preserves_wildcards_and_rejects_nonfinite_factors ... ok
+test tests::model_tests::test_predict_with_infinity ... ok
+test tests::glm_penalty_tests::glm_penalty_tests::a_ridge_spends_less_than_its_parameter_count ... ok
+test tests::plan_tests::plan_tests::two_terms_on_one_column_are_refused_rather_than_silently_aliased ... ok
+test tests::model_tests::test_no_empty_tables_from_lgbm ... ok
+test tests::model_tests::test_from_lgbm_json ... ok
+test tests::plan_tests::plan_tests::scoring_data_with_an_unseen_level_is_reported_rather_than_recoded ... ok
+test tests::report_tests::report_tests::planless_models_fingerprint_their_tables_not_only_their_family ... ok
+test tests::glm_realistic_benchmarks::realistic_benchmarks::bench_realistic_5k ... ok
+test tests::report_tests::report_tests::findings_are_ordered_by_severity_and_never_duplicated_across_stages ... ok
+test tests::report_tests::report_tests::a_broken_model_cannot_produce_a_report_that_reads_as_fine ... ok
+test tests::report_tests::report_tests::the_markdown_carries_the_plan_back_out_so_the_report_is_reproducible ... ok
+test tests::spline_scoring_tests::spline_invalid_quotes_and_malformed_edits_fail_explicitly ... ok
+test glm::redundancy::tests::a_rare_pairing_lost_to_sampling_is_not_reported_as_aliased ... ok
+test tests::report_tests::report_tests::a_sound_model_reports_as_usable_and_carries_its_evidence ... ok
+test tests::model_tests::test_from_lgbm_json_abalone ... ok
+test tests::validation_tests::validation_tests::a_model_worse_than_the_mean_is_called_out ... ok
+test tests::spline_scoring_tests::spline_explanations_validation_edits_and_composition_share_continuous_scores ... ok
+test tests::report_tests::report_tests::a_report_without_data_still_reports_a_failed_fit ... ok
+test tests::validation_tests::validation_tests::bad_inputs_explain_the_repair ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::higher_degree_never_fits_worse ... ok
+test tests::report_tests::report_tests::infinite_band_edges_and_missing_standard_errors_render_readably ... ok
+test tests::validation_tests::validation_tests::a_non_convergent_or_aliased_fit_is_reported_from_the_diagnostics ... ok
+test tests::validation_tests::validation_tests::an_exact_cell_fit_converges_without_a_false_validation_alarm ... ok
+test tests::validation_tests::validation_tests::a_perfectly_calibrated_model_raises_nothing_serious ... ok
+test tests::validation_tests::validation_tests::ties_contribute_no_discrimination ... ok
+test tests::validation_tests::validation_tests::offsets_are_honoured_the_same_way_the_fit_used_them ... ok
+test tests::report_tests::report_tests::the_fingerprint_tracks_the_plan_and_nothing_else ... ok
+test tests::validation_tests::validation_tests::calibration_drift_is_detected_and_graded ... ok
+test tests::validation_tests::validation_tests::warnings_come_back_most_severe_first ... ok
+test tests::weight_distribution_test::weight_distribution_tests::test_find_row_match_individual_cases ... ok
+test tests::validation_tests::validation_tests::pseudo_r2_is_zero_for_an_intercept_only_model_and_positive_for_a_real_one ... ok
+test tests::workbook_tests::workbook_tests::a_dtype_the_matcher_cannot_read_is_refused_by_name ... ok
+test tests::report_tests::report_tests::a_plan_that_cannot_be_fitted_is_refused_with_the_reason ... ok
+test tests::workbook_tests::workbook_tests::a_level_the_encoding_has_never_seen_is_reported_by_name ... ok
+test tests::validation_tests::validation_tests::a_model_that_orders_risk_scores_a_positive_gini_and_a_flat_one_does_not ... ok
+test tests::workbook_tests::workbook_tests::a_missing_unbounded_band_is_refused_instead_of_scoring_nan ... ok
+test tests::workbook_tests::workbook_tests::a_non_positive_relativity_is_refused ... ok
+test tests::workbook_tests::workbook_tests::a_model_survives_json_as_the_model_it_was ... ok
+test tests::workbook_tests::workbook_tests::a_variate_whose_factors_were_edited_off_the_curve_says_so_without_refusing ... ok
+test tests::workbook_tests::workbook_tests::a_workbook_from_the_future_is_refused_rather_than_misread ... ok
+test tests::workbook_tests::workbook_tests::a_csv_directory_round_trips_and_is_readable ... ok
+test tests::workbook_tests::workbook_tests::an_intercept_table_that_is_not_one_row_is_refused ... ok
+test tests::workbook_tests::workbook_tests::duplicate_and_empty_rows_are_refused ... ok
+test tests::report_tests::report_tests::the_markdown_renders_every_section_and_reads_as_a_table ... ok
+test tests::validation_tests::validation_tests::unmatched_observations_are_reported_not_silently_dropped ... ok
+test tests::workbook_tests::workbook_tests::categorical_levels_are_written_by_name_and_read_back_by_name ... ok
+test tests::validation_tests::validation_tests::unseen_levels_are_flagged_as_extrapolation ... ok
+test tests::validation_tests::validation_tests::totals_are_conserved_across_every_exhibit ... ok
+test tests::workbook_tests::workbook_tests::every_fault_is_reported_at_once_not_just_the_first ... ok
+test tests::spline_scoring_tests::spline_scoring_and_both_workbook_formats_match_scipy_at_every_probe ... ok
+test tests::workbook_tests::workbook_tests::raw_codes_are_still_accepted_where_a_name_was_expected ... ok
+test tests::workbook_tests::workbook_tests::relativities_are_refused_where_they_would_mean_nothing ... ok
+test tests::workbook_tests::workbook_tests::out_of_order_bands_are_refused_instead_of_mis_binning ... ok
+test tests::workbook_tests::workbook_tests::the_factor_scale_round_trips_bit_for_bit ... ok
+test tests::workbook_tests::workbook_tests::editing_a_relativity_in_the_file_changes_the_model_by_exactly_that_much ... ok
+test tests::workbook_tests::workbook_tests::offsets_locked_rows_and_variates_all_survive ... ok
+test tests::workbook_tests::workbook_tests::the_manifest_records_its_provenance ... ok
+test tests::workbook_tests::workbook_tests::the_infinite_top_band_survives_both_formats ... ok
+test tests::glm_distribution_tests::distribution_tests::test_large_dataset_performance ... ok
+test tests::workbook_tests::workbook_tests::the_scale_is_declared_so_there_is_never_a_second_column_to_edit_by_mistake ... ok
+test tests::weight_distribution_test::weight_distribution_tests::test_numeric_feature_weight_distribution ... ok
+test tests::validation_tests::validation_tests::calibration_buckets_carry_comparable_exposure ... ok
+test tests::model_tests::test_abalone_predictions ... ok
+test tests::glm_realistic_benchmarks::realistic_benchmarks::bench_realistic_1k ... ok
+test tests::glm_realistic_benchmarks::realistic_benchmarks::bench_realistic_10k ... ok
+test tests::plan_tests::plan_tests::the_family_on_the_plan_overrides_whatever_the_options_say ... ok
+test tests::plan_tests::plan_tests::a_plan_fits_scores_and_validates_from_an_ordinary_dataframe ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::variate_slope_is_invariant_to_anchoring ... ok
+test tests::composition_tests::composition_tests::fit_export_hand_edit_reload_refit ... ok
+test tests::composition_tests::composition_tests::a_plan_carrying_a_supplied_table_still_round_trips_as_json ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::collinear_tables_are_reported_as_aliased ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::acceleration_reaches_the_same_fit_in_fewer_sweeps ... ok
+test tests::model_tests::test_abalone_predictions_debug ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::convergence_is_not_reported_until_the_factors_arrive ... ok
+test tests::glm_correctness_tests::glm_correctness_tests::a_joint_block_matches_the_sequential_fit_in_fewer_sweeps ... ok
+test tests::composition_tests::composition_tests::a_frequency_and_a_severity_model_combine_into_pure_premium ... ok
+test tests::glm_spline_tests::continuous_glms_match_independent_dense_scipy_reference_in_five_families ... ok
+test tests::glm_realistic_benchmarks::realistic_benchmarks::bench_realistic_50k ... ok
+test tests::glm_realistic_benchmarks::realistic_benchmarks::bench_realistic_100k ... ok
+test tests::glm_realistic_benchmarks::realistic_benchmarks::bench_realistic_1m ... ok
+test tests::glm_realistic_benchmarks::realistic_benchmarks::bench_all_sizes_summary ... ok
+
+test result: ok. 282 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 3.12s
+
+   Doc-tests avenue_model
+
+running 1 test
+test src/plan.rs - plan (line 11) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s

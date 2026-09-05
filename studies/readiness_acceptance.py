@@ -109,6 +109,9 @@ def main():
             ('booster', ['examples/booster_pricing_study.py', '--output', str(output / 'booster')]),
             ('real_motor', ['studies/real_motor_acceptance.py', '--frequency', str(frequency),
                             '--severity', str(severity), '--booster', '--output', str(output / 'real_motor')]),
+            ('real_spline', ['studies/real_motor_acceptance.py', '--frequency', str(frequency),
+                             '--severity', str(severity), '--smooth', '--fit-tolerance', '1e-11',
+                             '--output', str(output / 'real_spline')]),
         ]
         for name, arguments in steps:
             command = [sys.executable, *arguments]
