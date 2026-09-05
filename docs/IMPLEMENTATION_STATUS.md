@@ -74,6 +74,22 @@ Existing evaluation reports, scripts and recorded runs have been preserved.
 - Verification: rebuilt release extension, 278 Rust tests and 123 Python tests passed
   from editable source. This does not replace the historical installed-wheel runs.
 
+## Continuous spline inference follow-up
+
+- Extended the existing covariance engine with continuous observation loadings for
+  spline terms. Model-based, HC0 and CR0 matrices use those same loadings, including
+  tails; weighted-mean reporting transforms knot coefficients and the intercept.
+- Whole-term tests assess a constant spline contribution. Full-design aliases retain
+  unavailable SEs/tests, and identified parameter counts no longer use support bins.
+- Independent dense checks cover five families, three covariance methods, both
+  reporting anchors, unanchored joint contrasts, quasi-Poisson scaling and aliases.
+  Marginal knot intervals and bundle evidence work through the existing APIs.
+  Simultaneous curve bands, penalized inference and post-selection coverage remain open.
+- Verification: 278 Rust and 126 Python tests pass from rebuilt editable source.
+  A dedicated empty-support-group check retains all identified knot parameters.
+  The smooth pricing example reruns successfully with five identified parameters,
+  model-based covariance and reserved-holdout bundle reload parity.
+
 ## Completed increment: whole-term Wald inference and estimability correction
 
 - Added `term_tests(model, dispersion=...)` with named joint statistics, chi-square

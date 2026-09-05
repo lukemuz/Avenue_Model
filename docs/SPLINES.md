@@ -47,12 +47,13 @@ Spline terms work in `select_glm` on the same held-out loss as other candidates.
 Changing knot count changes the allowed shape, so compare alternatives on common
 folds. The resolved `parameters` field is the nominal specification dimension after
 an intercept constraint, not a verified effective degrees-of-freedom estimate.
-Inference parameter counts remain unavailable for spline fits.
+The fit reports the identified parameter count from its continuous information
+matrix; aliased coefficients are not assigned finite standard errors.
 
 Validation A/E exhibits describe explicit support intervals rather than assigning
 an observed rate to a knot value. A knot need not coincide with any observation to
-be estimated. The fitter rejects singular within-spline information, while full-design
-basis identification and conditioning exhibits are still being developed.
+be estimated. The fitter rejects singular within-spline information. Post-fit covariance detects
+full-design aliases; pre-fit spline conditioning exhibits are still being developed.
 
 ## Export and editing
 
@@ -74,13 +75,24 @@ Unpenalized Gaussian, Poisson, Gamma, Tweedie and binomial fits use the existing
 solver with safeguarded Fisher scoring. Base-level normalization anchors the first
 knot; weighted-mean normalization centers observed continuous contributions.
 
-Covariance, whole-term tests and inference parameter counts for newly estimated
-splines are unavailable.
-Roughness penalties, ridge/elastic-net options, robust covariance, individual locked
-knots, global solving and spline acceleration are not implemented. Fully fixed
-curves can be carried through `Plan.offset_model`, including Plan/bundle round trips.
-These limits are explicit
-rather than silently substituting step-table inference or a band approximation.
+Unpenalized spline fits support model-based, HC0 and one-way CR0 covariance, using
+the continuous cardinal basis at each observation. `coefficient_intervals(model)`
+reports intervals for the **knot coefficients** (and their exponentiated relativities
+under a log link). These are not simultaneous confidence bands for the entire curve.
+`term_tests(model)` tests whether all knot values are equal, conditional on the other
+terms; that is the null of a constant spline contribution. Model-based Poisson fits
+also support quasi-Poisson rescaling.
+
+Weighted-mean covariance includes the observed-contribution centering in both the
+knot coefficients and intercept. Fully aliased terms receive unavailable joint tests;
+a supported contrast's validity is assessed against the full-design null space.
+Inference parameter counts reflect the identified design rank. Fix knot specifications
+before interpreting conventional intervals/tests; selecting knots on the same data
+does not give post-selection coverage. Use reserved data for final evaluation.
+
+Roughness penalties, ridge/elastic-net options, individual locked knots, global solving
+and spline acceleration are not implemented. Fully fixed curves can be carried
+through `Plan.offset_model`, including Plan/bundle round trips.
 
 Run the complete synthetic pricing example:
 
@@ -116,5 +128,5 @@ survive workbook reloads. New factors receive ordinary model-based, HC0 or clust
 covariance and term tests when their free design is otherwise supported. This
 inference is **conditional on the fixed prior**: it does not propagate uncertainty
 from the earlier spline fit. The prior's knot values remain locked and are not
-reported as newly estimated parameters. If the update also estimates a new spline,
-spline covariance remains unavailable for that fit.
+reported as newly estimated parameters. An update that also estimates a new spline uses its continuous basis in the
+new fit covariance; uncertainty in the fixed prior still is not propagated.

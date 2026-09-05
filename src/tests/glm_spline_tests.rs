@@ -77,8 +77,8 @@ fn continuous_glms_match_independent_dense_scipy_reference_in_five_families() {
             );
             assert_eq!(diag.solver_used, GLMSolver::Table);
             assert_eq!(diag.accelerated_steps, 0);
-            assert!(diag.inference.is_none());
-            assert!(diag.inference_error.unwrap().contains("spline"));
+            assert!(diag.inference.is_some());
+            assert!(diag.inference_error.is_none());
             assert!(diag.table_conditioning.is_none());
             assert!(diag.unfitted_rows.is_empty());
             let eta: Vec<f64> = fitted
@@ -155,10 +155,6 @@ fn spline_fitting_rejects_unidentified_geometry_and_unsupported_options() {
         },
         GLMOptions {
             solver: GLMSolver::Global,
-            ..Default::default()
-        },
-        GLMOptions {
-            robust_standard_errors: true,
             ..Default::default()
         },
     ] {

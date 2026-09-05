@@ -38,7 +38,8 @@ def main():
     print(selection.summary)
     print('Selected:', selection.recommended)
     print('Resolved knots:', model.resolved[1]['knots'])
-    print('Spline inference:', model.inference_summary['standard_errors_note'])
+    print('Covariance:', model.inference_summary['covariance_method'])
+    print('Estimated parameters:', model.inference_summary['n_parameters'])
     print('Bundle and continuous quote curve:', args.output)
 
 

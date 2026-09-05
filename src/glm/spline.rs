@@ -33,6 +33,10 @@ impl SplineBlock {
         })
     }
 
+    pub(super) fn weights_at(&self, row: usize) -> Result<Vec<f64>, PolarsError> {
+        self.basis.weights(self.predictors[row]).map_err(error)
+    }
+
     pub(super) fn evaluate(&self, factors: &[f64]) -> Result<Vec<f64>, PolarsError> {
         let curve = self.basis.curve(factors).map_err(error)?;
         self.predictors

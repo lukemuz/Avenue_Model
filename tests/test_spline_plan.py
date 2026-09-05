@@ -33,8 +33,7 @@ class SplinePlanTests(unittest.TestCase):
             self.assertIsNone(resolved['edges'])
             np.testing.assert_allclose(model.predict(data).to_numpy().reshape(-1), y, rtol=2e-7, atol=2e-8)
             self.assertNotIn('no_data', model.rating_tables_by_name()['x']['Status'].to_list())
-            with self.assertRaisesRegex(ValueError, 'spline'):
-                coefficient_intervals(model)
+            self.assertIsNotNone(coefficient_intervals(model))
             with tempfile.TemporaryDirectory() as tmp:
                 save_bundle(model, Path(tmp)/'bundle', validation_data=data)
                 bundle = load_bundle(Path(tmp)/'bundle')
@@ -62,7 +61,7 @@ class SplinePlanTests(unittest.TestCase):
         result = select_glm(data, {'smooth': GLMTrial(Plan('poisson', exposure='w', exposure_role='weight').spline('x', quantile=4))},
                             target='y', unit='rate', metric='poisson', weight='w', split=[fold])
         self.assertEqual(result.recommended, 'smooth')
-        self.assertEqual(result.history['n_parameters'].null_count(), 1)
+        self.assertEqual(result.history['n_parameters'].to_list(), [4])
 
     def test_invalid_geometry_and_predictors_fail_without_silent_repair(self):
         data = pl.DataFrame({'x': np.linspace(0., 3., 30), 'y': [1.] * 30})

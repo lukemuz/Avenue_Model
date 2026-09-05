@@ -43,6 +43,13 @@ verified against dense model-based/HC0/CR0 Poisson calculations. The correspondi
 editable-source suites pass 278 Rust and 123 Python tests; inference for newly
 estimated splines remains unavailable.
 
+Newly estimated unpenalized splines now support continuous-basis model-based/HC0/CR0
+covariance, marginal knot intervals and constant-effect whole-term tests. Independent
+dense checks cover five families, both reporting anchors, weighted offsets, aliases,
+empty support groups and quasi-Poisson scaling. The rebuilt editable-source suites
+pass 278 Rust and 126 Python tests. This does not establish penalized inference,
+simultaneous curve bands, post-selection coverage or large-portfolio performance.
+
 ## Fresh installed-wheel evidence
 
 [The runner](../studies/readiness_acceptance.py) verifies every installed package payload

@@ -362,8 +362,53 @@ pub fn compute_inference_with_clusters(
     hc0: bool,
     clusters: Option<(&str, &[usize])>,
 ) -> Result<GLMInference, PolarsError> {
+    compute_inference_with_splines(
+        loss_fn,
+        target,
+        weights,
+        means,
+        matches,
+        factors,
+        row_exposure,
+        updatable,
+        variate_values,
+        normalization,
+        penalty,
+        locked_rows,
+        hc0,
+        clusters,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn compute_inference_with_splines(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    factors: &[Vec<f64>],
+    row_exposure: &[Vec<f64>],
+    updatable: &[bool],
+    variate_values: &[Option<(Vec<f64>, usize)>],
+    normalization: Normalization,
+    penalty: Option<&PenaltyPlan>,
+    locked_rows: &[Vec<bool>],
+    hc0: bool,
+    clusters: Option<(&str, &[usize])>,
+    splines: Option<&[Option<super::spline::SplineBlock>]>,
+) -> Result<GLMInference, PolarsError> {
     let n_obs = target.len();
     let n_tables = factors.len();
+    let spline_at = |t: usize| splines.and_then(|tables| tables[t].as_ref());
+    let mut normalization_weights = row_exposure.to_vec();
+    for t in 0..n_tables {
+        if let Some(spline) = spline_at(t) {
+            normalization_weights[t] = spline.loadings(weights)?;
+        }
+    }
+
     let hc0 = hc0 || clusters.is_some();
     if clusters.is_some_and(|(_, ids)| ids.len() != n_obs) {
         return Err(PolarsError::ComputeError(
@@ -395,6 +440,14 @@ pub fn compute_inference_with_clusters(
         } else if !updatable[t] {
             for _ in 0..n_rows {
                 table_layout.push(ReducedColumn::Excluded);
+            }
+        } else if spline_at(t).is_some() {
+            // Knot zero identifies the constant direction. Empty support bins do
+            // not remove knot parameters; identification is assessed from X'WX.
+            table_layout.push(ReducedColumn::Reference);
+            for _ in 1..n_rows {
+                table_layout.push(ReducedColumn::Loadings(vec![(n_params, 1.0)]));
+                n_params += 1;
             }
         } else if let Some((values, degree)) = &variate_values[t] {
             // `degree` shared columns for the whole table. Loadings are the powers of
@@ -497,14 +550,42 @@ pub fn compute_inference_with_clusters(
 
     // ---- 2. Accumulate X'WX ----------------------------------------------------
     //
-    // Every row of X is an indicator pattern: a 1 in the intercept column and a 1 in
-    // at most one column per table. So the outer product is just a handful of
-    // increments, and the whole accumulation is O(n * tables^2).
+    // Ordinary tables contribute sparse row loadings. Continuous splines contribute
+    // cardinal-basis weights at the actual observation, without storing an n-by-p
+    // design matrix. The same loadings form HC0 and cluster score contributions.
     if hc0 && penalty.is_some_and(|p| p.is_active()) {
         return Err(PolarsError::ComputeError(
             "HC0 covariance is unavailable for penalized fits".into(),
         ));
     }
+    let observation_loadings =
+        |i: usize, cols: &mut Vec<(usize, f64)>| -> Result<(), PolarsError> {
+            cols.clear();
+            for t in 0..n_tables {
+                if !updatable[t] {
+                    continue;
+                }
+                if let Some(spline) = spline_at(t) {
+                    for (r, value) in spline.weights_at(i)?.into_iter().enumerate() {
+                        if let ReducedColumn::Loadings(loadings) = &layout[t][r] {
+                            cols.extend(
+                                loadings
+                                    .iter()
+                                    .map(|(column, coefficient)| (*column, coefficient * value)),
+                            );
+                        }
+                    }
+                } else {
+                    let m = matches[t][i];
+                    if m != NO_MATCH {
+                        if let ReducedColumn::Loadings(loadings) = &layout[t][m as usize] {
+                            cols.extend_from_slice(loadings);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        };
     let mut xtwx = vec![0.0f64; n_params * n_params];
     let mut meat = if hc0 {
         vec![0.0; n_params * n_params]
@@ -535,15 +616,7 @@ pub fn compute_inference_with_clusters(
             continue;
         }
 
-        cols.clear();
-        for t in 0..n_tables {
-            let m = matches[t][i];
-            if m != NO_MATCH {
-                if let ReducedColumn::Loadings(loadings) = &layout[t][m as usize] {
-                    cols.extend_from_slice(loadings);
-                }
-            }
-        }
+        observation_loadings(i, &mut cols)?;
 
         let score_squared = if hc0 {
             (a * loss_fn.weighted_link_residual(target[i], mu)).powi(2)
@@ -594,15 +667,9 @@ pub fn compute_inference_with_clusters(
                         "Cluster observation score is nonfinite".into(),
                     ));
                 }
-                for t in 0..n_tables {
-                    let m = matches[t][i];
-                    if m != NO_MATCH {
-                        if let ReducedColumn::Loadings(loadings) = &layout[t][m as usize] {
-                            for (column, loading) in loadings {
-                                cluster_score[*column] += score * loading;
-                            }
-                        }
-                    }
+                observation_loadings(i, &mut cols)?;
+                for (column, loading) in &cols {
+                    cluster_score[*column] += score * loading;
                 }
                 end += 1;
             }
@@ -757,9 +824,9 @@ pub fn compute_inference_with_clusters(
             && normalization == Normalization::WeightedMean
             && !locked_rows[t].iter().any(|locked| *locked)
         {
-            let total: f64 = row_exposure[t].iter().sum();
+            let total: f64 = normalization_weights[t].iter().sum();
             if total > 0.0 {
-                Some(row_exposure[t].iter().map(|e| e / total).collect())
+                Some(normalization_weights[t].iter().map(|e| e / total).collect())
             } else {
                 None
             }
@@ -784,11 +851,11 @@ pub fn compute_inference_with_clusters(
                             if !updatable[source] || locked_rows[source].iter().any(|v| *v) {
                                 continue;
                             }
-                            let total: f64 = row_exposure[source].iter().sum();
+                            let total: f64 = normalization_weights[source].iter().sum();
                             if total <= 0.0 {
                                 continue;
                             }
-                            for (row, support) in row_exposure[source].iter().enumerate() {
+                            for (row, support) in normalization_weights[source].iter().enumerate() {
                                 if let ReducedColumn::Loadings(loadings) = &layout[source][row] {
                                     for (column, loading) in loadings {
                                         let adjustment = support / total * loading;
@@ -1012,7 +1079,11 @@ pub fn compute_inference_with_clusters(
             let reference = if locked {
                 0.0
             } else {
-                reference_row(&row_exposure[t]).map_or(0.0, |r| factors[t][r])
+                if spline_at(t).is_some() {
+                    factors[t][0]
+                } else {
+                    reference_row(&row_exposure[t]).map_or(0.0, |r| factors[t][r])
+                }
             };
             for (r, row) in layout[t].iter().enumerate() {
                 if let ReducedColumn::Loadings(loadings) = row {
@@ -1052,13 +1123,21 @@ pub fn compute_inference_with_clusters(
             table_index: t,
             coefficients,
             covariance,
-            null_hypothesis,
-            excluded_rows: row_exposure[t]
-                .iter()
-                .enumerate()
-                .filter(|(_, w)| **w <= 0.0)
-                .map(|(r, _)| r)
-                .collect(),
+            null_hypothesis: if spline_at(t).is_some() {
+                "all knot values are equal (constant spline), conditional on other terms".into()
+            } else {
+                null_hypothesis
+            },
+            excluded_rows: if spline_at(t).is_some() {
+                Vec::new()
+            } else {
+                row_exposure[t]
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, w)| **w <= 0.0)
+                    .map(|(r, _)| r)
+                    .collect()
+            },
             unavailable_reason,
         });
     }

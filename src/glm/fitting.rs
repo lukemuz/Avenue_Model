@@ -1,4 +1,6 @@
-use super::inference::{compute_inference_with_clusters, solve_spd, GLMInference};
+use super::inference::{
+    compute_inference_with_clusters, compute_inference_with_splines, solve_spd, GLMInference,
+};
 use super::isotonic::{fit_ordered_log_blocks, ordered_score_residual};
 use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
@@ -667,16 +669,9 @@ pub fn fit_glm_with_diagnostics(
     options: GLMOptions,
 ) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
     let has_spline = model.tables.iter().any(|t| t.metadata.spline.is_some());
-    let has_free_spline = model
-        .tables
-        .iter()
-        .any(|t| t.metadata.spline.is_some() && !t.metadata.is_offset);
-    if (has_spline && (options.alpha != 0. || options.solver == GLMSolver::Global))
-        || (has_free_spline
-            && (options.robust_standard_errors || options.covariance_cluster.is_some()))
-    {
+    if has_spline && (options.alpha != 0. || options.solver == GLMSolver::Global) {
         return Err(PolarsError::ComputeError(
-            "Continuous splines currently require unpenalized table solving; global solving and robust covariance are not implemented".into()));
+            "Continuous splines currently require unpenalized table solving; global solving is not implemented".into()));
     }
     for table in &model.tables {
         if table.metadata.spline.is_some()
@@ -1266,14 +1261,11 @@ pub fn fit_glm_with_diagnostics(
     // collinear still has perfectly good predictions, so a failure here is recorded
     // rather than allowed to discard the fit the caller asked for.
     let mut inference_error: Option<String> = None;
-    let inference = if has_free_spline {
-        inference_error = Some("Continuous spline covariance and parameter counts are not implemented; step-table inference is not applicable".to_string());
-        None
-    } else if has_monotone {
+    let inference = if has_monotone {
         inference_error = Some("Monotonic constraints: ordinary coefficient covariance and likelihood parameter counts are unavailable; constrained inference is not implemented".to_string());
         None
     } else if options.compute_standard_errors {
-        match compute_inference_with_clusters(
+        match compute_inference_with_splines(
             &loss_fn,
             &target,
             &weights,
@@ -1299,6 +1291,7 @@ pub fn fit_glm_with_diagnostics(
                 .covariance_cluster
                 .as_deref()
                 .zip(cluster_ids.as_deref()),
+            Some(&splines),
         ) {
             Ok(inf) => Some(inf),
             Err(e) => {

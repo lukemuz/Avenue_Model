@@ -2025,7 +2025,7 @@ impl Plan {
                     }
                     if table.metadata.spline.is_some() {
                         issues.push(Issue::new(Severity::Low, "spline_support", None,
-                            format!("Table '{}' is a continuous spline. Support intervals are not knot-parameter counts; spline inference and full-design conditioning are not yet available.", built.table_names[t])));
+                            format!("Table '{}' is a continuous spline. Support intervals are not knot-parameter counts; knot inference uses the continuous basis; pre-fit spline conditioning is not yet available.", built.table_names[t])));
                         continue;
                     }
                     let empty = row_weight.iter().filter(|w| **w <= 0.0).count();

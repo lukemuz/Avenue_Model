@@ -174,7 +174,7 @@ impl PyPlan {
 
     /// Exact natural-cubic effect with linear tails. Quantile/equal_width count
     /// includes both boundary knots; default is five quantile knots, resolved on
-    /// positive-weight training rows. Supports unpenalized fits; inference is unavailable.
+    /// positive-weight training rows. Supports unpenalized fitting and knot-value inference.
     #[pyo3(signature = (column, knots=None, quantile=None, equal_width=None))]
     fn spline(
         &self,

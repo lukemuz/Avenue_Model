@@ -3,9 +3,10 @@
 Status: exact natural-cubic scoring and editable workbook persistence are implemented
 and independently tested. Low-level Rust table-sweep fitting now supports unpenalized
 continuous splines. `Plan.spline` now resolves explicit, quantile or equal-width knots within training
-folds. **Spline inference is not implemented yet**. Existing
+folds. Unpenalized spline knot covariance and whole-term tests now use continuous
+basis loadings. Existing
 polynomial variates still score as step tables. The smooth-effect acceptance requirement
-remains open until the remaining inference, penalty and workflow acceptance checks pass.
+remains open until the remaining penalty and workflow acceptance checks pass.
 
 ## Canonical curve and numerical representation
 
@@ -85,11 +86,10 @@ cargo test --no-default-features --locked spline::tests
    basis-score convergence and observed-contribution normalization. A roughness penalty
    still needs its own interpretation and covariance/selection rules. Individual locked
    knots, global solving and acceleration remain unsupported for spline fits.
-3. **Inference and support.** Use observation-dependent basis loadings for covariance
-   and joint tests. Scoring validation shows interval support and fitting rejects
-   singular within-spline information, but full-design identification and conditioning
-   reports are still required. A knot without an observation exactly on it
-   is not automatically an unestimated factor. Do not reuse free-step-table errors.
+3. **Inference extensions.** Model-based/HC0/CR0 knot covariance, full-design alias
+   detection and joint tests now use continuous basis loadings. Pre-fit spline
+   conditioning, penalized inference and continuous simultaneous bands remain open.
+   A knot without an observation exactly on it is not automatically unestimated.
 4. **Acceptance.** Recover known smooth shapes for multiple families; compare means,
    scores and uncertainty with an independent continuous-basis fit. Check raw-quote
    reloads and edits across interior points, knots, adjacent floats and tails. Preserve
@@ -170,10 +170,10 @@ Spline fits currently use the table solver, with SQUAREM acceleration and spline
 pair solving disabled. Fully fixed curves are evaluated continuously while other
 terms fit. A singular within-spline information matrix raises an actionable error
 instead of assigning independent step factors. Knots without exact observations are
-not labeled unestimated. Ordinary table covariance and discrete-table conditioning
-are explicitly unavailable for the combined fit; no spline standard errors or
-parameter-count claims are fabricated. Ridge/elastic-net options, global solving,
-robust covariance and individual locked knots are rejected pending their integration.
+not labeled unestimated. Covariance now uses the continuous observation basis, as
+described below; discrete-table conditioning is not substituted for spline conditioning.
+Ridge/elastic-net options, global solving and individual locked knots remain rejected
+pending their integration.
 
 The independent generator `studies/reference_spline_fit.py` constructs a dense SciPy
 natural-cubic basis with explicit linear tails and solves the weighted GLM score
@@ -194,8 +194,8 @@ cargo test --no-default-features --locked glm_spline
 ```
 
 The complete Rust suite passes 278 tests (six ignored plus one ignored doc test).
-These tests establish low-level fitting behavior, not a completed public smooth-term
-workflow or spline uncertainty support.
+These initial tests establish low-level fitting behavior. The later public Plan and
+continuous-basis inference checks are described below.
 
 ## Public Plan integration
 
@@ -225,8 +225,36 @@ still refused.
 When every spline is fixed, the ordinary inference layout excludes those tables
 and uses the continuously evaluated means. Newly fitted supported discrete/variate
 terms can therefore receive model-based, HC0 or CR0 covariance and whole-term tests,
-conditional on the prior. An estimated spline still disables this covariance path.
+conditional on the prior. Estimated splines now use continuous loadings in that same
+covariance engine, as described in the following section.
 Tests compare coefficient SEs and joint statistics against independent dense matrices
 for weighted-rate and count-offset Poisson updates, including both tails, integer JSON
 knots, category encodings, Plan reloads and validated bundle delivery. Prior knot
 coefficients remain bit-for-bit unchanged. No prior estimation uncertainty is propagated.
+
+## Continuous-basis covariance and whole-term tests
+
+The existing inference engine now accepts observation-dependent spline loadings.
+It retains the first knot as the reduced-basis reference and includes every other
+knot parameter, independent of support-bin counts. Both expected information and
+HC0/cluster scores use the same continuous basis at actual observation coordinates,
+including the linear tails. The design is accumulated without storing an n-by-p
+matrix. This inference pass has not been profiled as a large-portfolio workload.
+
+Weighted-mean reporting uses `B' weights` to transform knot contrasts and the
+intercept, matching the fitted normalization. Existing full-design null-space checks
+identify aliased original coefficients and refuse unsupported whole-term tests.
+The joint null is equal knot values (a constant curve), and the statistic uses the
+complete within-term covariance. Empty support groups do not silently drop spline
+parameters from the test. Parameter counts reflect the identified design rank.
+
+`tests/test_spline_inference.py` compares knot/intercept/category standard errors
+and joint statistics with independent dense SciPy basis algebra for five families,
+model-based/HC0/CR0 covariance, weighted offsets and both reporting anchors. It also
+checks parameterization-invariant unanchored joint tests, Poisson quasi-dispersion,
+two fully aliased spline terms, and bundle evidence isolation. Covariance tolerances
+are relative `3e-6` plus absolute `1e-9`; joint-statistic tolerance is relative `4e-6`.
+The mean references are the independently solved `spline_fit.json` fixtures.
+
+Intervals are marginal knot-coefficient intervals. Continuous simultaneous bands,
+roughness-penalized covariance and post-selection coverage are not claimed.
