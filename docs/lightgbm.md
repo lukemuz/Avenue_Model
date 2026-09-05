@@ -131,7 +131,10 @@ measurements, not training or loss evaluation; this is not an additional validat
 score or training-support estimate.
 
 `select(max_tables=...)` screens the mean CV table count at the selected iteration.
-It does not enforce a limit on the final converted artifact. `trial.fold_tables` retains
+It does not enforce a limit on the final converted artifact. Use
+`from_booster(..., resource_limits={'tables': N})` to reject an actual final conversion
+exceeding a requested table limit; row and interaction-order limits are also supported
+([conversion guide](CONVERSION.md)). `trial.fold_tables` retains
 the fold distribution; a constant booster is a valid one-table artifact. When
 the LightGBM in play is stock, the two interaction penalties are dropped from the search
 with a warning instead of being tuned silently — LightGBM ignores an unknown parameter

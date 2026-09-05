@@ -40,7 +40,9 @@ The complexity report distinguishes mean CV table count and its fold distributio
 final table count, total rows and largest table. It records one warm batch timing as an
 observation, not a speed comparison. CV complexity is computed at the selected boosting
 iteration. `select(max_tables=...)` screens the mean CV proxy; it does not enforce a
-final-artifact limit. Check the actual converted tables for any required resource limit.
+final-artifact limit. A caller can explicitly enforce final structural limits with
+`from_booster(..., resource_limits={'tables': N, 'total_rows': M})`; the tutorial
+itself imposes no arbitrary hard cap.
 The tutorial also passes the first 256 training predictor rows as a common scoring
 batch to tuning. Every fold retains three public-call timings and selected-prefix
 booster parity; the tuning summary shows the mean of fold median times. These timing

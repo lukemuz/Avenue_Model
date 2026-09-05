@@ -26,6 +26,39 @@ and parity are saved separately from the editable scoring workbook; the evidence
 belongs to the original artifact, not to later manual edits. The saved dump fingerprint
 identifies the source model without storing training data.
 
+## Explicit limits on the final artifact
+
+CV table counts are a selection proxy. To enforce a resource limit on the final
+conversion, request it explicitly:
+
+```python
+result = from_booster(booster, quote_predictors, consolidation="max",
+                      resource_limits={"tables": 6, "total_rows": 20000,
+                                       "largest_interaction_order": 2})
+```
+
+Accepted keys are `tables`, `total_rows`, `largest_table` and
+`largest_interaction_order`. Values must be nonnegative Python integers (not booleans
+or floats); limits are inclusive. Unspecified quantities are unconstrained. The
+intercept counts as a table and a row, with interaction order zero. Row counts include
+explicit missing/default routes. Interaction order counts the predictor columns of
+the stored table, not a fitted statistical rank.
+
+The check uses the actual artifact **after** the requested consolidation mode. An
+exceeded limit raises `ValueError` showing observed counts and requested bounds;
+it never silently truncates, simplifies or substitutes another model. Passing limits
+does not establish conversion parity, fit convergence or statistical adequacy. With
+no requested limits, conversion has no resource cap.
+
+`metadata['complexity']` records all four measurements. `metadata['resource_check']`
+records a snapshot of the requested limits and `passed` or `not_requested` status.
+These refer to the original converted artifact; subsequent structural edits require
+a fresh check. They are saved with the other conversion evidence.
+
+These are final-artifact structural constraints, **not peak-memory or time limits**:
+conversion must complete to measure the artifact. The low-level
+`FittedModel.from_lgbm_json` entry point does not enforce these optional limits.
+
 Supported objectives are regression/gaussian, Poisson, Gamma, Tweedie, and binary
 with unit sigmoid. Multiclass, averaged ensembles, linear leaves and unsupported
 split operators are rejected. The binary objective's serialized options preserve

@@ -1,0 +1,15 @@
+{
+  "complexity": {
+    "tables": 4,
+    "total_rows": 21723,
+    "largest_table": 21080,
+    "largest_interaction_order": 3
+  },
+  "historical_cv_mean_tables": 3.0,
+  "no_limits": {
+    "status": "not_requested",
+    "limits": {}
+  },
+  "requested_limit": 3,
+  "error": "Final converted artifact exceeds resource_limits: tables=4 (limit 3)"
+}
