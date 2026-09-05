@@ -545,14 +545,10 @@ pub fn validate(
             severity,
             "calibration_drift",
             format!(
-                "Overall actual over expected is {:.4}: the model predicts {:.2}% {} than \
-                 this data shows in aggregate ({:.4} actual against {:.4} expected). \
-                 Rebase the intercept before using these relativities to set a rate level.",
-                ae_ratio,
-                100.0 * drift,
-                if ae_ratio > 1.0 { "less" } else { "more" },
-                total_actual,
-                total_expected
+                "Overall actual over expected is {:.4} ({:.4} actual against {:.4} expected). \
+                 Investigate population differences, loss volatility and model specification \
+                 before changing the rate level.",
+                ae_ratio, total_actual, total_expected
             ),
         ));
     }
@@ -564,11 +560,11 @@ pub fn validate(
                 "bucket_miscalibration",
                 format!(
                     "{} of {} equal-exposure buckets have actual over expected outside \
-                     {:.0}%: buckets {}. The model is calibrated in aggregate but not \
-                     across the risk range, which is the pattern a missing interaction or \
-                     a mis-specified band produces.",
+                     {:.0}%: buckets {}. These are descriptive flags: review exposure, \
+                     claim support and loss volatility before attributing the pattern to \
+                     a missing interaction or a mis-specified band.",
                     bad.len(),
-                    options.bins,
+                    calibration.height(),
                     100.0 * options.bucket_tolerance,
                     bad.iter()
                         .map(|b| b.to_string())

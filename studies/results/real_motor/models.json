@@ -1,0 +1,41 @@
+[
+  {
+    "model": "frequency",
+    "train_rows": 508509,
+    "holdout_rows": 169504,
+    "fit_seconds": 0.2465314520013635,
+    "raw_score_seconds": 0.012648904001252959,
+    "reference_native_category_prepare_seconds": 0.4795943470016937,
+    "reference_fit_seconds": 0.16073174399934942,
+    "reference_iterations": 6,
+    "max_relative_difference": 8.659739592076221e-14,
+    "parameters": 37,
+    "converged": true
+  },
+  {
+    "model": "severity",
+    "train_rows": 18764,
+    "holdout_rows": 6180,
+    "fit_seconds": 0.020397514999785926,
+    "raw_score_seconds": 0.0008956989986472763,
+    "reference_native_category_prepare_seconds": 0.016687118000845658,
+    "reference_fit_seconds": 0.01163485099823447,
+    "reference_iterations": 5,
+    "max_relative_difference": 8.917767857496983e-09,
+    "parameters": 37,
+    "converged": true
+  },
+  {
+    "model": "premium",
+    "train_rows": 508509,
+    "holdout_rows": 169504,
+    "fit_seconds": 0.4968587439980183,
+    "raw_score_seconds": 0.012456258999009151,
+    "reference_native_category_prepare_seconds": 0.4545892639980593,
+    "reference_fit_seconds": 0.12193140500312438,
+    "reference_iterations": 4,
+    "max_relative_difference": 5.6474006138174104e-08,
+    "parameters": 37,
+    "converged": true
+  }
+]

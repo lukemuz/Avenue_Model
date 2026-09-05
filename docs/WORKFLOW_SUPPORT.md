@@ -63,3 +63,9 @@ complexity, conversion parity, raw-category reload and a rate edit.
 - [Hierarchical interactions](HIERARCHICAL_INTERACTIONS.md), [GLM selection](GLM_SELECTION.md)
 - [Named composition](COMPOSITION.md), [booster conversion and parity](CONVERSION.md)
 - [Implementation evidence and outstanding work](IMPLEMENTATION_STATUS.md)
+
+## Real-data acceptance evidence
+
+The [fresh-wheel motor exercise](REAL_MOTOR_ACCEPTANCE.md) verifies real frequency,
+severity and Tweedie fitting against glum, bundles, quote scoring and rate edits.
+It also retains the unfavorable held-out calibration and remaining acceptance gates.

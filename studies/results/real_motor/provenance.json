@@ -1,0 +1,12 @@
+{
+  "files_sha256": {
+    "studies/real_motor_acceptance.py": "2a6dbf7128d45ef8e601b5dc050fa3c34a3a42442e62a9957b035d623be22de7",
+    "src/validation.rs": "3501482f69ccad4ff03f4ee75f2b857eb56aa6ca3b9b8f8dd7683495e5470407",
+    "/tmp/avenue-acceptance-wheels/avenue_model-0.1.0-cp312-abi3-manylinux_2_39_x86_64.whl": "b4f8c3d94679c1307d6d5218484128ce759f371920d4ce3c978436af2f1600f7"
+  },
+  "installation": "fresh /tmp/avenue-acceptance-venv; release wheel, no editable package",
+  "full_outputs": "/tmp/avenue-real-acceptance-v3",
+  "threads": 4,
+  "python_tests_passed": 95,
+  "rust_tests_passed": 258
+}

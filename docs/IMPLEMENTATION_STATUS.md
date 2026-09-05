@@ -353,3 +353,32 @@ that evidence.
   constraints, model-based/estimated dispersion, aggregate-record degrees of freedom,
   underdispersion, data-selected structures, and clustering. Robust covariance,
   whole-term tests and post-selection uncertainty remain open.
+
+## Completed increment: fresh-wheel real motor acceptance arm
+
+- Built and installed a release wheel into a new Python 3.12 environment, then ran
+  `studies/real_motor_acceptance.py` on public freMTPL2 frequency and severity data.
+  Historical evaluation scripts and recorded outputs remain unchanged.
+- The join audit found 195 orphan severity records (788,714.18 source loss units),
+  retained separately, and 9,117 disagreements between reported and observed paid
+  claim counts. The study explicitly models matched positive-payment frequency,
+  claim-count-weighted severity and uncapped paid pure premium; no exposure caps,
+  monetary caps, development or trend adjustments are applied.
+- All three 37-parameter GLMs converged. Independent glum native-categorical means
+  agree within maximum relative errors 8.66e-14 Poisson, 8.92e-9 Gamma and 5.65e-8
+  Tweedie. Full raw-quote bundle reload and an exact 5% rate edit passed.
+- Real holdout calibration is unfavorable: A/E 1.428 product and 1.419 Tweedie.
+  This remains in the comparison/report; it is not hidden through holdout rebasing.
+- The study exposed and fixed misleading validation text: incorrect A/E percentage
+  interpretation, an unconditional claim of aggregate calibration, and an overly
+  definite missing-interaction explanation. Bucket messages now use actual bucket
+  count and describe support/volatility checks. Regression coverage added.
+- Fresh-wheel tests: 95 Python tests passed. Rust: 258 passed, six ignored, one doc
+  test ignored. Study completed in 14.11 seconds after loading began; first model
+  2.86 seconds. Timings are single observations; whole-process RSS around 2.91 GiB
+  motivates profiling and is not isolated solver memory.
+- [Acceptance report](REAL_MOTOR_ACCEPTANCE.md) and compact `studies/results/real_motor`
+  evidence include versions, input/source/wheel hashes, numerical comparisons, model
+  reports and explicit remaining gates. Full output: `/tmp/avenue-real-acceptance-v3`.
+  Real fork comparison, broader installation/performance checks, statistical extensions
+  and full-scope audit remain outstanding; the overall goal is not marked complete.
