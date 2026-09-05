@@ -34,6 +34,8 @@ Approximation*](https://avenue-analytics.com/research/avenue-analytics-methodolo
 
 The [workflow guide and support matrix](docs/WORKFLOW_SUPPORT.md) cover preparation,
 reproducible validation, model comparison, factor explanations and editable delivery.
+The [readiness audit](docs/READINESS_AUDIT.md) records fresh-wheel acceptance results
+and the remaining gaps against the improvement plan.
 Run the [auto study](examples/auto_pricing_study.py) or
 [homeowners attritional-peril study](examples/homeowners_perils.py) for executable
 synthetic examples with quote scoring, export/reload and reviewed factor edits.

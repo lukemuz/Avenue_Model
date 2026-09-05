@@ -1,0 +1,116 @@
+{
+  "module": "lightgbm",
+  "version": "4.7.0",
+  "device": "cpu",
+  "tuned_interaction_penalties": false,
+  "tuning_seconds": 3.0552154750002956,
+  "final_fit_seconds": 0.22446209599729627,
+  "selected_trial": {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 80,
+      "num_leaves": 4,
+      "max_depth": 2,
+      "min_data_in_leaf": 2000,
+      "num_threads": 4,
+      "verbosity": -1,
+      "deterministic": true,
+      "force_col_wise": true,
+      "seed": 20260905,
+      "learning_rate": 0.19378503512923567
+    },
+    "cv_loss": 0.25415173508576255,
+    "tables": 10.666666666666666,
+    "num_iterations": 80,
+    "fold_tables": [
+      11.0,
+      11.0,
+      10.0
+    ]
+  },
+  "modes": {
+    "analysis": {
+      "holdout_parity": {
+        "status": "passed",
+        "rows": 169504,
+        "atol": 1e-12,
+        "rtol": 1e-12,
+        "max_absolute_error": 6.106226635438361e-16,
+        "max_relative_error_nonzero_reference": 4.858233726701118e-15,
+        "unmatched_rows": 0,
+        "nonfinite_rows": 0,
+        "failed_rows": [],
+        "message": "Evidence applies only to the supplied rows."
+      },
+      "boundary_parity": {
+        "status": "passed",
+        "rows": 698,
+        "atol": 1e-12,
+        "rtol": 1e-12,
+        "max_absolute_error": 3.885780586188048e-16,
+        "max_relative_error_nonzero_reference": 2.228732795752259e-15,
+        "unmatched_rows": 0,
+        "nonfinite_rows": 0,
+        "failed_rows": [],
+        "message": "Evidence applies only to the supplied rows."
+      },
+      "conversion_and_parity_seconds": 0.14007335499991314,
+      "tables": 16,
+      "total_rows": 889,
+      "largest_table": 272,
+      "largest_interaction_order": 2,
+      "warm_batch_seconds": [
+        0.056278945001395186,
+        0.05766610000137007,
+        0.057354632997885346
+      ],
+      "warm_batch_median_seconds": 0.057354632997885346,
+      "single_quote_median_seconds": 4.900249950878788e-05
+    },
+    "max": {
+      "holdout_parity": {
+        "status": "passed",
+        "rows": 169504,
+        "atol": 1e-12,
+        "rtol": 1e-12,
+        "max_absolute_error": 6.106226635438361e-16,
+        "max_relative_error_nonzero_reference": 3.913577168731456e-15,
+        "unmatched_rows": 0,
+        "nonfinite_rows": 0,
+        "failed_rows": [],
+        "message": "Evidence applies only to the supplied rows."
+      },
+      "boundary_parity": {
+        "status": "passed",
+        "rows": 698,
+        "atol": 1e-12,
+        "rtol": 1e-12,
+        "max_absolute_error": 3.885780586188048e-16,
+        "max_relative_error_nonzero_reference": 2.69028013968266e-15,
+        "unmatched_rows": 0,
+        "nonfinite_rows": 0,
+        "failed_rows": [],
+        "message": "Evidence applies only to the supplied rows."
+      },
+      "conversion_and_parity_seconds": 0.17322615100056282,
+      "tables": 11,
+      "total_rows": 1066,
+      "largest_table": 342,
+      "largest_interaction_order": 2,
+      "warm_batch_seconds": [
+        0.061640825999347726,
+        0.05991476100098225,
+        0.0606802840011369
+      ],
+      "warm_batch_median_seconds": 0.0606802840011369,
+      "single_quote_median_seconds": 4.796050052391365e-05
+    }
+  },
+  "booster_convergence": "finite schedule completed; no GLM score-convergence certificate",
+  "limitations": [
+    "four-trial study; not an exhaustive predictive search",
+    "inner LightGBM CV shares training Dataset bins; final holdout excluded",
+    "timings are local observations, not isolated comparative benchmarks",
+    "20 bootstrap replicates exercise mechanics, not stable uncertainty estimation"
+  ]
+}

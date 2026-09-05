@@ -1,0 +1,25 @@
+{
+  "status": "passed",
+  "preparation_seconds": 2.512441773000319,
+  "time_to_first_valid_model_seconds": 2.770257810003386,
+  "total_seconds": 19.883118863002892,
+  "whole_process_peak_rss_kib": 1841136,
+  "versions": {
+    "avenue-model": "0.1.0",
+    "polars": "1.31.0",
+    "glum": "3.4.1",
+    "pandas": "3.0.5",
+    "scikit-learn": "1.9.0"
+  },
+  "input_sha256": {
+    "/home/luke/Projects/avenue_model/evaluation/data/freMTPL2freq.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f",
+    "/tmp/avenue-freMTPL2sev.parquet": "2057f9bac7414f5a528cb3e7b0940826405619174b2a54196748d379fc3cdb11"
+  },
+  "limitations": [
+    "single-run workflow timings, not a controlled speed benchmark",
+    "whole-process RSS is not incremental engine memory",
+    "no temporal variable; grouped random policy holdout",
+    "observed paid-loss cost, not developed prospective ultimate loss cost",
+    "normal intervals conditional on fixed prespecified structure"
+  ]
+}

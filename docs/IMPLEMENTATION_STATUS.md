@@ -6,6 +6,26 @@ The full scope and acceptance criteria remain in [IMPROVEMENT_PLAN.md](IMPROVEME
 This record is a progress log, not a declaration that the plan is complete.
 Existing evaluation reports, scripts and recorded runs have been preserved.
 
+## Completed increment: current-wheel workflow acceptance and full-scope audit
+
+- Added `studies/readiness_acceptance.py`: verifies installed Python/native payloads
+  against the supplied wheel, rejects editable/source imports, and runs all tests,
+  three public tutorials and the real motor study with its booster arm. Failures,
+  skipped suites, source/dependency/input identities and artifact hashes are retained.
+- Fresh stock 4.7.0 and fork 4.6.0.99 environments each passed all 110 Python tests,
+  all tutorials and the real study from the wheel built at `4e5d796`. Both conversion
+  modes passed on 169,504 holdout quotes plus 698 stock / 810 fork boundary probes.
+  A deliberately mismatched wheel failed its payload check before running tests.
+- First valid model took about 2.77 seconds in each run; the complete real study with
+  challenger took 20.31 / 19.88 seconds and peaked at about 1.76 GiB. These are local
+  workflow observations, not isolated comparative benchmarks. Poor holdout calibration
+  remains visible; predictions are approximately 30% below actual loss.
+- [The requirement-by-requirement audit](READINESS_AUDIT.md) links current evidence and
+  explicitly retains missing smooth effects, joint-term tests, pooling, regularized
+  uncertainty, review/comparison gaps, broader performance and release-platform gates.
+  No first-choice completion claim is made. Compact manifests, logs and results live
+  under `studies/results/readiness`; original evaluation artifacts remain unchanged.
+
 ## Completed increment: monotonic banded rating effects
 
 The private ordered log-link block solver is implemented and tested. It pools

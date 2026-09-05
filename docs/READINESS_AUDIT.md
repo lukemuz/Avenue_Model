@@ -1,0 +1,181 @@
+# Improvement-plan readiness audit — September 5, 2026
+
+The broader first-choice goal is **not complete**. The current branch passes the
+ordinary workflow acceptance exercise from fresh installed wheels, including a real
+motor study and stock/fork challengers. Statistical and review gaps still include
+ordinary pricing tasks. This audit follows [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md),
+including work not implemented; it does not redefine the goal around passing tests.
+
+Audited implementation: `4e5d79643e2befb4c693bf1ed142718bb5c5e08c`. The acceptance runner
+added with this audit records its own source hash separately. Historical evaluation
+reports and their snapshot verifiers remain intact. Those verifiers describe old
+results, including known failures; the current regression suite and acceptance runner
+are the evidence for current behavior.
+
+## Fresh installed-wheel evidence
+
+[The runner](../studies/readiness_acceptance.py) verifies every installed package payload
+against the supplied wheel, rejects editable/source imports, executes the complete
+Python suite without skips, runs all three public tutorials, and runs the real motor
+study including its booster arm. Each step retains its exact command, exit status,
+elapsed time and log hash. Source, dependency, input and output hashes are retained.
+An intentional [mismatched-wheel run](../studies/results/readiness/mismatched_wheel.json)
+failed before running tests, proving that identical version labels alone cannot pass
+the package identity check.
+
+| Evidence | Stock environment | Fork environment |
+|---|---|---|
+| Full manifest and artifact hashes | [stock](../studies/results/readiness/stock/acceptance.json) | [fork](../studies/results/readiness/fork/acceptance.json) |
+| LightGBM | 4.7.0 | 4.6.0.99 |
+| Python regression suite | 110 passed, no skips | 110 passed, no skips |
+| Synthetic auto, homeowners, booster studies | All passed | All passed |
+| Real study: first converged/validated model | 2.77 s | 2.77 s |
+| Real study including challenger | 20.31 s | 19.88 s |
+| Whole-process peak RSS | 1,846,432 KiB | 1,841,136 KiB |
+| Conversion holdout, both modes | 169,504 rows passed | 169,504 rows passed |
+| Additional boundary/default probes, both modes | 698 rows passed | 810 rows passed |
+
+Both environments use CPython 3.12.14 on Linux x86-64, with Polars 1.31.0 and the exact
+dependency versions in their manifests. The wheel SHA-256 is
+`16871dc2b819e5bbc8b26f14ce48e1cd9cfa6bd882acda0ae273d08c8b910031`.
+These are sequential single-run observations, not a controlled speed comparison or
+a platform/dependency-range certification. The installed payload includes the native
+extension and Python modules. The source Rust suite also passed 265 tests, with six
+ignored tests and one ignored doc test, before this wheel was built.
+
+The real study preserves the paid-record population, orphan-claim audit and uncapped
+losses described in [REAL_MOTOR_ACCEPTANCE.md](REAL_MOTOR_ACCEPTANCE.md). Its
+[stock](../studies/results/readiness/stock/real_motor/comparison.csv) and
+[fork](../studies/results/readiness/fork/real_motor/comparison.csv) comparisons retain
+poor loss calibration: product/Tweedie A/E is approximately 1.428/1.419. Predictions
+are about 30% below observed loss. Neither workflow success nor booster loss improvement
+is a production rate recommendation. Twenty bootstrap replicates test mechanics,
+not stable uncertainty estimates. The homeowners study is synthetic attritional
+water/theft with explicit adjustment assumptions; it provides no catastrophe evidence.
+
+## Requirement-by-requirement assessment
+
+“Verified” means the cited evidence covers the stated bounded requirement. “Partial”
+identifies an implemented subset and its missing portion. “Open” means no adequate
+implementation or acceptance evidence exists. A checked-in workflow is configuration,
+not evidence that its remote jobs ran successfully.
+
+### 1. Reliable scoring and conversion
+
+| Requirement / acceptance gate | Status and authoritative evidence |
+|---|---|
+| Preserve Plan/FittedModel/Rust/table architecture | Verified: existing architecture extended in `src/plan.rs`, `src/glm/`, `src/workbook.rs`; no replacement high-level GLM API. |
+| Separate fit, prediction and validation inputs; six-record count fixture | Verified: [scoring tests](../tests/test_scoring_contract.py) assert counts `[1,2,4,1,2,4]`, constant rates, validation reconciliation and quote-only scoring. |
+| Explicit rate/count units; zero/partial/invalid exposure | Verified for declared Poisson conventions: same tests and [contract](SCORING_CONTRACT.md); arbitrary physical-unit inference is deliberately absent. |
+| Strict unmatched/nonfinite behavior; diagnostic alternative; wildcard/default routes | Verified on fitted, loaded and composed fixtures: scoring, [conversion](../tests/test_conversion_contract.py) and [explanation](../tests/test_explanations.py) tests. |
+| Captured category/threshold defects; membership; both consolidation modes/builds; reload | Verified for retained fixtures and generated probes: conversion tests pass against both installed builds; real parity records above use `atol=rtol=1e-12`. This is not arbitrary-booster proof. |
+| Booster entry point, identity, no-data verification status, unsupported semantics | Verified: `python/avenue_model/conversion.py`, conversion tests and [support contract](CONVERSION.md). |
+| Independent Poisson/Gamma/Tweedie, weights/offsets, randomized differentials | Verified for covered designs: Rust reference tests, covariance tests, randomized small-tree tests, monotonic SLSQP tests and real [glum comparisons](../studies/results/readiness/stock/real_motor/models.json). Broader correlated/high-cardinality acceptance remains below. |
+
+### 2. Cohesive everyday workflow
+
+| Requirement / acceptance gate | Status and authoritative evidence |
+|---|---|
+| Explicit pandas adapter; labels/nulls/dtypes; Polars parity | Verified: [adapter tests](../tests/test_adapters.py) and [guide](PANDAS.md). Numeric-looking label JSON/CSV regression is in [monotonic tests](../tests/test_monotonic.py). |
+| Intercept-only plans; named terms, estimates and diagnostics | Verified: scoring/API/provenance tests; tutorials use named access. |
+| Frequency/severity/premium preparation; exclusions, large losses and inconsistent totals | Verified for stated positive-paid-loss population: [preparation tests](../tests/test_preparation.py), real source audits and [preparation guide](PRICING_PREPARATION.md). No implicit caps or development assumptions. |
+| Runnable complete auto study without manual Avenue encoding/index joins | Verified from both clean environments: `examples/auto_pricing_study.py` and real motor arm. Source joins and independent-reference preparation remain explicit study code. |
+| Shared exposure/claims/loss/A-E/factor/support exhibits; exact totals/exclusions | Verified for current exhibits: preparation, comparison and explanation tests; raw/current real artifact hashes retained. |
+| Numeric interval bounds/inclusion rules and optional plotting | Partial: guides explain upper-bound semantics, but estimate tables still expose raw thresholds rather than complete lower/upper interval columns. No unified plotting API. |
+| Component contributions, exposure and final mean; reconciled edits and segments | Verified: explanation/composition tests, manual 5% edit assertions in all tutorials and real study. |
+
+### 3. Validation and selection
+
+| Requirement / acceptance gate | Status and authoritative evidence |
+|---|---|
+| Reusable random/group/time specifications, seeds/IDs, external holdouts | Verified: [split tests](../tests/test_splitting.py), real grouped holdout and synthetic temporal holdout. |
+| Fold-local learned boundaries/encodings; no holdout leakage | Verified for Avenue Plan decisions: split/selection tests. LightGBM inner CV shares training Dataset bins; untouched final holdout is separately verified. |
+| Common GLM/GBM/composed/external populations, units, weights and deviance | Verified: [comparison tests](../tests/test_comparison.py) and real glum/booster comparisons. Composed means require an explicit metric. |
+| Calibration, discrimination, segment/period A-E, resampling uncertainty in comparison | Partial: common losses, aggregate/segment A-E and paired/group bootstrap are present; discrimination remains in individual validation rather than the shared comparison result. Temporal-block/refit uncertainty is absent. |
+| Penalty/mixing/power/structure selection and retained failures/history | Verified for explicit grids: [selection tests](../tests/test_glm_selection.py) include independent ElasticNet selection and common-loss power selection; synthetic auto retains trial artifacts. |
+| Warm starts and prepared-data reuse | Open: not supplied by the selection API. |
+| Separate convergence, conditioning, support and generalization; no false recommendation | Partial: GLM failures cannot be erased by good loss and warnings remain separate. A completed finite booster schedule has unknown GLM-style convergence and is currently excluded from automatic recommendation; a learner-appropriate training-status contract is still needed. |
+| Bucket warnings supplemented by support/uncertainty | Partial: warning interpretation corrected and support shown; no full support-aware calibration uncertainty model. |
+
+### 4. Statistical modeling
+
+| Capability / acceptance gate | Status and authoritative evidence |
+|---|---|
+| Identifiable main effects plus interactions | Verified for two-way treatment contrasts: [tests](../tests/test_hierarchical_interactions.py) compare independent means and contrasts, term order and numeric edges. Higher-order hierarchical contrasts remain open. |
+| Smooth/piecewise smooth plus monotonic effects; recover shapes and export | Partial: monotonic banded terms pass independent constrained fitting and exact export tests. Continuous splines/piecewise smooth predictors and their shape-recovery/export acceptance remain open. Polynomial banded variates are not substitutes for continuous smooth effects. |
+| Direct intervals and robust/cluster covariance | Verified for supported fixed unpenalized designs: interval, HC0 and CR0 tests compare independent calculations and cluster definitions; homeowners exports cluster intervals. Small-sample/multiway corrections are not implemented. |
+| Whole-term tests | Open: no supported public joint-term test API. |
+| Regularized uncertainty, simulation checks and post-selection interpretation | Partial: naive unpenalized errors are withheld and conditional limits documented; no fitted-model bootstrap interval API or simulation-based coverage study. |
+| Narrow credibility/partial pooling with sparse-group simulation | Open: generic ridge is not claimed to be a credibility model. |
+| Quasi-Poisson and separate negative-binomial evaluation | Partial: quasi-Poisson reference agreement and point-estimate/uncertainty explanation are verified. Negative-binomial estimation remains unimplemented and has no comparative acceptance study. |
+| Booster-derived structure support, simplification proposals and selected penalties | Partial: structure checks/support and general GLM selection exist; no native cell-merging proposal workflow or dedicated post-structure-selection uncertainty. Exact conversion remains distinguished from refitting. |
+
+### 5. Analytical record and composition
+
+| Requirement / acceptance gate | Status and authoritative evidence |
+|---|---|
+| Named frequency×severity and response-scale peril sums; units/components | Verified: [composition tests](../tests/test_named_composition.py), offset-to-rate behavior, nested graph reload and homeowners reconciliation. Legacy `+` remains documented separately. |
+| Versioned Plan/options/schema/maps/preprocessing/IDs/fit/validation/lineage bundle | Verified for individual fits: [bundle](../tests/test_bundle.py) and [provenance](../tests/test_fit_provenance.py) tests; current real bundles reload raw quotes. Caller JSON context never replaces captured fit evidence. |
+| Complete analytical evidence for a composed graph | Partial: component scoring graph persists; caller-supplied lineage exists, but a native analytical graph bundle is not implemented. |
+| Edited artifact detection, source evidence isolation, semantic impact and fresh validation | Verified: bundle integrity/edit tests and known-factor edit exhibits; loaded factors are `scoring_only`, fixed priors `locked`. Monotonic edit violations reach reports. |
+| Migration, future-version failures, incremental/locked prior updates | Verified on supported fixtures: workbook v1/v2 reading, v3 monotonic export, unknown-version rejection, Rust composition/refit tests and Plan replay. |
+
+### 6. Tuning and performance
+
+| Requirement / acceptance gate | Status and authoritative evidence |
+|---|---|
+| Table count as proxy, mean/CV distribution, selected round/final artifact | Verified: [tuning tests](../tests/test_tuning_contract.py), fold counts and selected-round calculations; stock/fork study complexity exhibits show final rows/count differences. |
+| Rows/largest table/order/parameters/support/scoring cost in every trial summary | Partial: final artifacts have richer measures; core `Trial` still contains loss, table count, iteration and fold counts only. The historical 4-table/19,181-row case is not yet visible through full per-trial native summaries. |
+| Explicit hard resource constraint on final artifact | Partial: CV `max_tables` is documented as a selection proxy, not a guarantee. No general final-artifact hard-resource enforcement API. |
+| Stock/fork identity, controls, CPU/GPU distinctions and installation guidance | Verified for CPU identities and supported controls in current tests/guides. GPU behavior has not been revalidated in this acceptance. Fork source/penalties remain intact. |
+| Stage profiling, prepared predictors, index/cache reuse and invalidation | Partial: change-review allocation bottleneck profiled/fixed; no reusable prepared-scoring cache or stage-complete profile. |
+| Equivalent native categorical and sparse reference workloads; cold/warm/inference/memory | Partial: real glum native categorical agreement and local scoring observations retained; prior Rust/sparse references exist. No current full controlled matrix of correlated/high-cardinality designs and all requested timing modes. |
+| Correctness before speed claims; investigate repeatable >10% regressions | Partial: current numerical gates pass and the [change-review benchmark](CHANGE_REVIEW_PERFORMANCE.md) has repeated exact-output checks. No automated controlled regression series spanning the full workflow. |
+| Fivefold target on original ~3-second large-table scoring case | Open: 7.65× faster change review is a different workload and does not satisfy this target. |
+
+### 7. Installation, learning and maintenance
+
+| Requirement / acceptance gate | Status and authoritative evidence |
+|---|---|
+| Tested published wheel/platform/Python matrix and source prerequisites | Partial: source guide and release matrix exist; this audit verifies local CPython 3.12 Linux x86-64 wheels only. Release jobs build artifacts but do not install/test every platform wheel. Publishing and other platforms are unverified. |
+| Accurate extras and dependency ranges | Partial: test/tuning/pandas extras installed successfully at recorded versions; Polars remains pinned. Broad lower/upper dependency-range evidence is absent. |
+| Hosted Python API reference | Open: no built/hosted reference in the inspected source/workflows. |
+| Three data-loading tutorials with definitions, splits, convergence, review, quotes, export/edit | Verified for the current synthetic auto/homeowners/booster paths and real motor/challenger. Optional booster-structure GLM refit is not a complete branch of the public booster tutorial. |
+| Explicit development/trend/coverage/tail scope | Verified within the tutorials' declared scope: homeowners adjustment audit and attritional-only statement; real study uncapped paid-loss caveats retained. |
+| Support matrix and corrected contracts/signatures/tolerance/budget language | Partial: focused guides/matrix updated as features land; the old user-edited roadmap remains historical worktree content, not proof of implementation. Complete documentation/API consistency needs a release audit. |
+| CI public examples plus scheduled/release independent comparisons | Partial: ordinary CI config runs tests and all three tutorials, reproduced locally here. No scheduled large-study job or verified remote run for this branch. The new runner supplies a repeatable local/release acceptance command. |
+
+## Remaining priorities
+
+1. Finish continuous smooth effects with independent shape-recovery and export evidence;
+   add valid joint-term inference. These remain ordinary modeling requirements.
+2. Close review/selection gaps: numeric interval columns, common discrimination exhibits,
+   and training-status semantics that let completed booster candidates be assessed fairly.
+3. Establish a narrow credibility workflow and defensible regularized uncertainty before
+   claiming the remaining statistical needs are all specialized.
+4. Complete final-artifact trial complexity, original large-table scoring profiling,
+   wheel installation tests across the supported matrix, and an executable API reference.
+
+The user allows some plan items to remain unfinished, but that is not evidence that
+these current ordinary-task gaps are acceptable for a first-choice claim. The goal
+remains active. No publishing or remote communication was performed during this audit.
+
+## Reproduction
+
+Build and install the wheel into a new environment with its `test,tuning` extras and
+`glum`; install the local fork wheel into a separate environment for the fork run.
+Then run with the documented public parquet sources and a new output directory:
+
+```sh
+python studies/readiness_acceptance.py \
+  --wheel /absolute/path/avenue_model.whl \
+  --frequency /absolute/path/frequency.parquet \
+  --severity /absolute/path/severity.parquet \
+  --output /tmp/avenue-readiness-new
+```
+
+The runner is independent of editable source installation, but runs source-checkout
+tests/examples whose hashes it captures. It retains failure evidence and stops on
+the first failed step or skipped suite. Full outputs from this audit remain at
+`/tmp/avenue-readiness-stock` and `/tmp/avenue-readiness-fork`; compact manifests,
+logs and numerical results are committed under `studies/results/readiness/`.
