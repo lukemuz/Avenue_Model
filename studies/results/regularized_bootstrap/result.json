@@ -1,0 +1,18 @@
+{
+  "status": "passed_mechanics",
+  "source_commit": "01f91dff8bd0e952939718a4ee2bebe3e6b07ae7",
+  "script_sha256": "9ae006e19996ea88794b5d34c33c1933f5894d91e0dc07ffc6f5636fd52077bc",
+  "extension_sha256": "167692bfdd709e0141cd993ef604feb712cb60403fa4bd4e35df17b5daa0aaf9",
+  "versions": {
+    "numpy": "2.5.2",
+    "polars": "1.31.0"
+  },
+  "seed": 20260906,
+  "datasets": 100,
+  "rows_per_dataset": 300,
+  "resamples": 100,
+  "max_independent_prediction_error": 2.3314683517128287e-15,
+  "failures": [],
+  "wall_seconds": 5.5352506909985095,
+  "interpretation": "fixed-penalty percentile pairs bootstrap; true and penalized population targets evaluated separately; no model selection or lasso coverage claim"
+}
