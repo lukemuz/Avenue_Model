@@ -796,7 +796,14 @@ impl PyFittedModel {
         let predictors = PyDict::new(py);
         for (name, dtype) in &features {
             let info = PyDict::new(py);
-            info.set_item("kind", if *dtype == DataType::Float64 { "numeric" } else { "categorical" })?;
+            info.set_item(
+                "kind",
+                if *dtype == DataType::Float64 {
+                    "numeric"
+                } else {
+                    "categorical"
+                },
+            )?;
             info.set_item("internal_dtype", format!("{:?}", dtype))?;
             if let Some(levels) = self.inner.encoding.maps.get(name) {
                 info.set_item("levels", levels.clone())?;
@@ -815,8 +822,14 @@ impl PyFittedModel {
             validation.insert(target.clone());
         }
         schema.set_item("predictors", predictors)?;
-        schema.set_item("prediction_columns", prediction.into_iter().collect::<Vec<_>>())?;
-        schema.set_item("validation_columns", validation.into_iter().collect::<Vec<_>>())?;
+        schema.set_item(
+            "prediction_columns",
+            prediction.into_iter().collect::<Vec<_>>(),
+        )?;
+        schema.set_item(
+            "validation_columns",
+            validation.into_iter().collect::<Vec<_>>(),
+        )?;
         schema.set_item("target", self.inner.target.clone())?;
         schema.set_item("exposure", self.inner.exposure.clone())?;
         schema.set_item("prediction_kind", self.inner.prediction_kind())?;
@@ -827,21 +840,28 @@ impl PyFittedModel {
     fn predict_rate(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
         let df: DataFrame = df.into();
         let values = self.inner.predict_rate(&df).map_err(value_error)?;
-        DataFrame::new(vec![values.into()]).map(PyDataFrame).map_err(value_error)
+        DataFrame::new(vec![values.into()])
+            .map(PyDataFrame)
+            .map_err(value_error)
     }
 
     /// Expected Poisson counts, with recorded exposure applied exactly once.
     fn predict_count(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
         let df: DataFrame = df.into();
         let values = self.inner.predict_count(&df).map_err(value_error)?;
-        DataFrame::new(vec![values.into()]).map(PyDataFrame).map_err(value_error)
+        DataFrame::new(vec![values.into()])
+            .map(PyDataFrame)
+            .map_err(value_error)
     }
 
     /// Row-level scoring results: row, predictions, status and unmatched_tables.
     /// Unmatched/nonfinite means are null. Invalid input schemas/exposures raise.
     fn predict_diagnostics(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
         let df: DataFrame = df.into();
-        self.inner.predict_diagnostics(&df).map(PyDataFrame).map_err(value_error)
+        self.inner
+            .predict_diagnostics(&df)
+            .map(PyDataFrame)
+            .map_err(value_error)
     }
 
     /// Rating tables with `Coefficient`, `Standard_Error`, `Status` and, for log
@@ -855,6 +875,16 @@ impl PyFittedModel {
             .into_iter()
             .map(PyDataFrame)
             .collect())
+    }
+
+    /// Estimated factor tables keyed by stable table names.
+    fn rating_tables_by_name<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let result = PyDict::new(py);
+        let tables = self.inner.rating_tables().map_err(value_error)?;
+        for (name, table) in self.inner.table_names.iter().zip(tables) {
+            result.set_item(name, PyDataFrame(table))?;
+        }
+        Ok(result)
     }
 
     /// The fitted model as an editable, portable artifact.

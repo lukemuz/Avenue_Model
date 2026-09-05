@@ -119,6 +119,25 @@ called dependable for arbitrary quote inputs.
 - Declared the independent test extra and installed it in Python CI. Usage and
   statistical limits: [MODEL_COMPARISON.md](MODEL_COMPARISON.md).
 
+## Completed increment: preparation, experience and executable auto study
+
+- `prepare_pricing` supplies frequency, positive-loss severity and pure-premium
+  populations with preserved source rows, explicit invalid-row exclusion policy,
+  row-level reasons/flags and reconciled population totals. It never adjusts loss
+  or exposure. Zero-payment severity limitations are documented explicitly.
+- Common factor experience includes exposure, claims, loss and derived rates.
+  `rating_tables_by_name` provides named estimated-factor access.
+- `examples/auto_pricing_study.py` generates/loads a synthetic CSV, prepares/audits,
+  resolves an out-of-time split, fits/checks/reviews all three model types, compares
+  loss-cost means and exports/reloads workbooks to score raw quote predictors.
+- The example completed with 3,000 rate records, 371 positive-loss severity records
+  and a common 1,000-row holdout. The paired loss-difference interval includes zero;
+  this synthetic run is workflow evidence, not a predictive-superiority claim.
+- CI now runs the complete example. All 60 Python and 258 Rust tests pass. Installed
+  rustfmt and formatted the accumulated Rust changes; `cargo fmt -- --check` passes.
+- Documentation: [PRICING_PREPARATION.md](PRICING_PREPARATION.md). Local example outputs
+  are in `/tmp/avenue-auto-study`; log is `/tmp/avenue-auto-study.log`.
+
 ## Next required work
 
 Complete general response-unit semantics and complete LightGBM missing/default routing, constant boosters and preprocessing persistence.

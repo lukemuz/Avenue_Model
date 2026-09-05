@@ -23,9 +23,10 @@ from .tuning import (  # noqa: F401
 from .conversion import ConversionResult, from_booster
 from .splitting import Fold, FoldFit, SplitSpec
 from .comparison import Candidate, Comparison, compare_models
+from .preparation import PreparedPricing, prepare_pricing
 
 __all__ = [
-    "Candidate", "Comparison", "compare_models",
+    "Candidate", "Comparison", "compare_models", "PreparedPricing", "prepare_pricing",
     "ConversionResult", "from_booster", "Fold", "FoldFit", "SplitSpec",
     *(getattr(_rust, "__all__", None) or
       [n for n in dir(_rust) if not n.startswith("_")]),

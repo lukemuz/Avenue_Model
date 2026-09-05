@@ -652,7 +652,11 @@ fn validate_exposure(series: &Column, name: &str) -> Result<(), PolarsError> {
     for (row, value) in series.f64()?.into_iter().enumerate() {
         if !value.is_some_and(|v| v.is_finite() && v >= 0.0) {
             return Err(PolarsError::ComputeError(
-                format!("Exposure '{}' at row {} must be finite, non-null and nonnegative.", name, row).into(),
+                format!(
+                    "Exposure '{}' at row {} must be finite, non-null and nonnegative.",
+                    name, row
+                )
+                .into(),
             ));
         }
     }
@@ -2252,7 +2256,11 @@ impl FittedModel {
         self.prepare_inputs(df, true)
     }
 
-    fn prepare_inputs(&self, df: &DataFrame, for_validation: bool) -> Result<Prepared, PolarsError> {
+    fn prepare_inputs(
+        &self,
+        df: &DataFrame,
+        for_validation: bool,
+    ) -> Result<Prepared, PolarsError> {
         if let Some(plan) = &self.plan {
             let mut plan = plan.clone();
             if !for_validation {
@@ -2359,7 +2367,11 @@ impl FittedModel {
         Ok(result)
     }
 
-    fn predict_with_offset(&self, df: &DataFrame, apply_offset: bool) -> Result<Series, PolarsError> {
+    fn predict_with_offset(
+        &self,
+        df: &DataFrame,
+        apply_offset: bool,
+    ) -> Result<Series, PolarsError> {
         let result = self.diagnostics_with_offset(df, apply_offset)?;
         let status = result.column("status")?.str()?;
         if let Some(row) = status.into_iter().position(|s| s != Some("ok")) {
@@ -2372,7 +2384,10 @@ impl FittedModel {
                 ).into(),
             ));
         }
-        Ok(result.column("predictions")?.as_materialized_series().clone())
+        Ok(result
+            .column("predictions")?
+            .as_materialized_series()
+            .clone())
     }
 
     /// Preserve input row order and return null means for unmatched/nonfinite rows.
@@ -2381,13 +2396,20 @@ impl FittedModel {
         self.diagnostics_with_offset(df, self.exposure_role == Some(ExposureRole::Offset))
     }
 
-    fn diagnostics_with_offset(&self, df: &DataFrame, apply_offset: bool) -> Result<DataFrame, PolarsError> {
+    fn diagnostics_with_offset(
+        &self,
+        df: &DataFrame,
+        apply_offset: bool,
+    ) -> Result<DataFrame, PolarsError> {
         use crate::glm::matching::{precompute_all_matches, NO_MATCH};
         let prepared = self.prepare_inputs(df, false)?;
         // Require the same predictor schema for fitted and loaded artifacts.
         for table in &self.model.tables {
             for (column, _) in table.get_feature_info() {
-                prepared.df.column(&column).map_err(|_| missing_column(&column, df))?;
+                prepared
+                    .df
+                    .column(&column)
+                    .map_err(|_| missing_column(&column, df))?;
             }
         }
         let matches = precompute_all_matches(&self.model, &prepared.df)?;
@@ -2397,7 +2419,12 @@ impl FittedModel {
             let factors = table.data.column("Rating_Factor")?.f64()?;
             for row in 0..df.height() {
                 if matches[t][row] == NO_MATCH {
-                    unmatched[row].push(self.table_names.get(t).cloned().unwrap_or_else(|| format!("table_{}", t)));
+                    unmatched[row].push(
+                        self.table_names
+                            .get(t)
+                            .cloned()
+                            .unwrap_or_else(|| format!("table_{}", t)),
+                    );
                 } else {
                     eta[row] += factors.get(matches[t][row] as usize).unwrap_or(f64::NAN);
                 }
@@ -2438,13 +2465,21 @@ impl FittedModel {
                 "ok"
             };
             status.push(reason);
-            predictions.push(if reason == "ok" { Some(means[row]) } else { None });
+            predictions.push(if reason == "ok" {
+                Some(means[row])
+            } else {
+                None
+            });
         }
         DataFrame::new(vec![
             Series::new("row".into(), (0..df.height() as u64).collect::<Vec<_>>()).into(),
             Series::new("predictions".into(), predictions).into(),
             Series::new("status".into(), status).into(),
-            Series::new("unmatched_tables".into(), unmatched.iter().map(|v| v.join(", ")).collect::<Vec<_>>()).into(),
+            Series::new(
+                "unmatched_tables".into(),
+                unmatched.iter().map(|v| v.join(", ")).collect::<Vec<_>>(),
+            )
+            .into(),
         ])
     }
 

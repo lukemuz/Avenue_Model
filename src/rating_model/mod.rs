@@ -804,7 +804,9 @@ impl RatingModel {
             .get("objective")
             .and_then(|v| v.as_str())
             .unwrap_or("regression");
-        Ok(LinkFunction::from_objective(objective.split_whitespace().next().unwrap_or(objective)))
+        Ok(LinkFunction::from_objective(
+            objective.split_whitespace().next().unwrap_or(objective),
+        ))
     }
 
     //Constructor method from lgbm json
@@ -812,39 +814,71 @@ impl RatingModel {
         model_json: &str,
         consolidation_level: &str,
     ) -> Result<Self, PolarsError> {
-        let semantics: Value = serde_json::from_str(model_json)
-            .map_err(|e| PolarsError::ComputeError(format!("Invalid booster JSON: {}", e).into()))?;
-        let objective = semantics.get("objective").and_then(Value::as_str).unwrap_or("");
+        let semantics: Value = serde_json::from_str(model_json).map_err(|e| {
+            PolarsError::ComputeError(format!("Invalid booster JSON: {}", e).into())
+        })?;
+        let objective = semantics
+            .get("objective")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let mut parts = objective.split_whitespace();
         let family = parts.next().unwrap_or("");
-        if !matches!(family, "regression" | "gaussian" | "poisson" | "gamma" | "tweedie" | "binary") {
+        if !matches!(
+            family,
+            "regression" | "gaussian" | "poisson" | "gamma" | "tweedie" | "binary"
+        ) {
             return Err(PolarsError::ComputeError(format!("Unsupported LightGBM objective '{}'. Supported objectives: regression, gaussian, poisson, gamma, tweedie, binary.", objective).into()));
         }
-        if semantics.get("num_class").and_then(Value::as_u64).unwrap_or(1) != 1
-            || semantics.get("num_tree_per_iteration").and_then(Value::as_u64).unwrap_or(1) != 1
-            || semantics.get("average_output").and_then(Value::as_bool).unwrap_or(false)
-            || parts.any(|part| part.starts_with("sigmoid:") && part[8..].parse::<f64>().ok() != Some(1.0))
+        if semantics
+            .get("num_class")
+            .and_then(Value::as_u64)
+            .unwrap_or(1)
+            != 1
+            || semantics
+                .get("num_tree_per_iteration")
+                .and_then(Value::as_u64)
+                .unwrap_or(1)
+                != 1
+            || semantics
+                .get("average_output")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            || parts.any(|part| {
+                part.starts_with("sigmoid:") && part[8..].parse::<f64>().ok() != Some(1.0)
+            })
         {
             return Err(PolarsError::ComputeError("Unsupported LightGBM semantics: multiclass, averaged ensembles and non-unit binary sigmoid are not supported.".into()));
         }
         fn check_tree(node: &Value) -> Result<(), PolarsError> {
             if node.get("leaf_coeff").is_some() || node.get("leaf_features").is_some() {
-                return Err(PolarsError::ComputeError("LightGBM linear leaves are not supported.".into()));
+                return Err(PolarsError::ComputeError(
+                    "LightGBM linear leaves are not supported.".into(),
+                ));
             }
             if let Some(decision) = node.get("decision_type").and_then(Value::as_str) {
                 if !matches!(decision, "<=" | "==") {
-                    return Err(PolarsError::ComputeError(format!("Unsupported LightGBM decision type '{}'.", decision).into()));
+                    return Err(PolarsError::ComputeError(
+                        format!("Unsupported LightGBM decision type '{}'.", decision).into(),
+                    ));
                 }
             }
             for child in ["left_child", "right_child"] {
-                if let Some(child) = node.get(child) { check_tree(child)?; }
+                if let Some(child) = node.get(child) {
+                    check_tree(child)?;
+                }
             }
             Ok(())
         }
-        let trees = semantics.get("tree_info").and_then(Value::as_array)
+        let trees = semantics
+            .get("tree_info")
+            .and_then(Value::as_array)
             .filter(|trees| !trees.is_empty())
-            .ok_or_else(|| PolarsError::ComputeError("LightGBM tree_info must be a nonempty array.".into()))?;
-        for tree in trees { check_tree(&tree["tree_structure"])?; }
+            .ok_or_else(|| {
+                PolarsError::ComputeError("LightGBM tree_info must be a nonempty array.".into())
+            })?;
+        for tree in trees {
+            check_tree(&tree["tree_structure"])?;
+        }
         let tables = lgbm_parser::process_lgbm_trees(model_json).map_err(|e| {
             PolarsError::ComputeError(format!("Error processing trees: {}", e).into())
         })?;

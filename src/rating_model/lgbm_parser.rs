@@ -559,7 +559,11 @@ fn process_tree_analysis(
     // therefore be included; only the first root is already in the mean table.
     if !is_first_tree {
         tables.push(RatingTable::new(
-            DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![root_internal_value]).into()])?,
+            DataFrame::new(vec![Series::new(
+                "Rating_Factor".into(),
+                vec![root_internal_value],
+            )
+            .into()])?,
             None,
         ));
     }
