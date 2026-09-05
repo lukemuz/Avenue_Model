@@ -1,0 +1,188 @@
+[
+  {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 20,
+      "num_threads": 1,
+      "verbosity": -1,
+      "min_data_in_leaf": 80,
+      "max_depth": 2,
+      "num_leaves": 3,
+      "seed": 47,
+      "learning_rate": 0.06702327078404743
+    },
+    "cv_loss": 0.5178725753937242,
+    "tables": 2.0,
+    "num_iterations": 1,
+    "fold_tables": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "fold_complexity": [
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.0006057430000510067,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": null
+      },
+      {
+        "tables": 2,
+        "total_rows": 7,
+        "largest_table": 6,
+        "largest_interaction_order": 2,
+        "coefficient_cells": 7,
+        "conversion_seconds": 0.00036525900213746354,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": null
+      },
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.0001533090035081841,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": null
+      }
+    ]
+  },
+  {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 20,
+      "num_threads": 1,
+      "verbosity": -1,
+      "min_data_in_leaf": 80,
+      "max_depth": 2,
+      "num_leaves": 3,
+      "seed": 47,
+      "learning_rate": 0.19617246416546852
+    },
+    "cv_loss": 0.517906759281704,
+    "tables": 2.0,
+    "num_iterations": 1,
+    "fold_tables": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "fold_complexity": [
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.00020380399655550718,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": null
+      },
+      {
+        "tables": 2,
+        "total_rows": 7,
+        "largest_table": 6,
+        "largest_interaction_order": 2,
+        "coefficient_cells": 7,
+        "conversion_seconds": 0.00017677400319371372,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": null
+      },
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.00013861199840903282,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": null
+      }
+    ]
+  },
+  {
+    "params": {
+      "objective": "poisson",
+      "num_iterations": 20,
+      "num_threads": 1,
+      "verbosity": -1,
+      "min_data_in_leaf": 80,
+      "max_depth": 2,
+      "num_leaves": 3,
+      "seed": 47,
+      "learning_rate": 0.15931019502516597
+    },
+    "cv_loss": 0.5178934254035948,
+    "tables": 2.0,
+    "num_iterations": 1,
+    "fold_tables": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "fold_complexity": [
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.00019705200247699395,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": null
+      },
+      {
+        "tables": 2,
+        "total_rows": 7,
+        "largest_table": 6,
+        "largest_interaction_order": 2,
+        "coefficient_cells": 7,
+        "conversion_seconds": 0.00017714400019031018,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": null
+      },
+      {
+        "tables": 2,
+        "total_rows": 5,
+        "largest_table": 4,
+        "largest_interaction_order": 1,
+        "coefficient_cells": 5,
+        "conversion_seconds": 0.00013883199426345527,
+        "consolidation": "max",
+        "num_iterations": 1,
+        "support_status": "not_measured",
+        "statistical_rank": null,
+        "scoring_seconds": null
+      }
+    ]
+  }
+]

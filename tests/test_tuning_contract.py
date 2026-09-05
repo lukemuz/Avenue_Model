@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
-from avenue_model import estimate_num_tables, resolve_lightgbm, tune_lgbm
+from avenue_model import FittedModel, estimate_num_tables, resolve_lightgbm, tune_lgbm
 import avenue_model.tuning as tuning
 
 
@@ -39,11 +39,20 @@ class TuningContractTests(unittest.TestCase):
             expected = [float(estimate_num_tables(json.dumps(b.dump_model(num_iteration=1)))) for b in boosters]
             self.assertEqual(record.fold_tables, expected)
             self.assertEqual(record.tables, sum(expected) / 2)
+            for measured, booster in zip(record.fold_complexity, boosters):
+                tables = FittedModel.from_lgbm_json(json.dumps(booster.dump_model(num_iteration=1))).to_workbook().tables
+                self.assertEqual(measured['num_iterations'], 1)
+                self.assertEqual(measured['total_rows'], sum(t.height for t in tables))
+                self.assertEqual(measured['largest_table'], max(t.height for t in tables))
+                self.assertEqual(measured['largest_interaction_order'], max(t.width - 1 for t in tables))
+                self.assertIsNone(measured['statistical_rank'])
+                self.assertEqual(measured['support_status'], 'not_measured')
             self.assertTrue(any(b.num_trees() > 1 for b in boosters))
         self.assertTrue(any(estimate_num_tables(json.dumps(b.dump_model())) !=
                             estimate_num_tables(json.dumps(b.dump_model(num_iteration=1)))
                             for boosters in captured for b in boosters))
         self.assertIn('mean tables', result.summary())
+        self.assertIn('mean rows', result.summary())
 
     def test_constant_booster_counts_as_one_table(self):
         lgb, _ = resolve_lightgbm()
@@ -55,3 +64,14 @@ class TuningContractTests(unittest.TestCase):
                 tunable=[], n_trials=1, nfold=2, seed=7)
         self.assertEqual(result.best_cv.fold_tables, [1., 1.])
         self.assertEqual(result.select().tables, 1.)
+        self.assertEqual([c['total_rows'] for c in result.best_cv.fold_complexity], [1, 1])
+        self.assertEqual([c['largest_interaction_order'] for c in result.best_cv.fold_complexity], [0, 0])
+
+    def test_equal_table_counts_do_not_hide_large_row_counts(self):
+        trials = [tuning.Trial({}, 1., 4., 10, fold_complexity=[
+            {'total_rows': n, 'largest_table': n - 3, 'largest_interaction_order': 3}])
+            for n in [40, 19181]]
+        summary = tuning.TuningResult(trials, 'poisson', False).summary()
+        self.assertIn('19181.0', summary)
+        self.assertIn('19178', summary)
+        self.assertIn('40.0', summary)

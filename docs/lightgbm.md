@@ -83,6 +83,25 @@ booster = lgb.train({**trial.params, "num_iterations": trial.num_iterations}, da
 ```
 
 `result.frontier` is sorted by table count, `result.best_cv` ignores size entirely, and
+`result.trials` retains every trial. Each trial's `fold_complexity` records the actual
+maximum-consolidation artifact for each CV fold at `num_iterations`: table count,
+total rows, largest table, largest interaction order and coefficient cells. The text
+summary shows mean rows across folds, the largest individual table across folds and
+the maximum interaction order alongside mean table count and loss. Thus equal table
+counts no longer hide different row counts. The Pareto objectives remain loss and
+table count; row count does not silently change the selection rule.
+
+These measurements require conversion of each selected fold prefix. The recorded
+`conversion_seconds` includes dump creation, conversion and extraction of table data;
+it is not scoring latency. Models are released after each fold's measurement. Large
+artifacts can make this materially more expensive than the standalone inexpensive
+`estimate_num_tables` helper. Conversion errors propagate instead of becoming invented
+complexity scores. No prediction-parity claim is inferred from measuring structure.
+`coefficient_cells` counts stored factor values, not independent fitted parameters:
+`statistical_rank` and `scoring_seconds` are null and `support_status` is `not_measured`.
+Support/rank require the corresponding data and fitting specification. Final full-data
+refits can differ from these CV artifacts and still need separate review.
+
 `select(max_tables=...)` screens the mean CV table count at the selected iteration.
 It does not enforce a limit on the final converted artifact. `trial.fold_tables` retains
 the fold distribution; a constant booster is a valid one-table artifact. When

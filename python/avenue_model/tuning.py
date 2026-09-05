@@ -7,9 +7,10 @@ to retain numerical parity evidence for the supplied inputs.
 
 `tune_lgbm` runs an Optuna study with two objectives — cross-validated loss and the
 mean consolidated table count — and returns the Pareto frontier, so the trade-off is
-chosen rather than stumbled into. The table count comes from `estimate_num_tables`,
-which reads a LightGBM dump and reports what the conversion would produce without
-performing it, cheaply enough to call on every fold of every trial.
+chosen rather than stumbled into. Each selected fold prefix is converted with maximum
+consolidation to measure table count, total rows, largest table and interaction order.
+Conversion cost is recorded separately. These are actual fold artifacts, not promises
+about a later full-data refit or estimates of statistical rank and training support.
 
 Two of the levers only exist in `avenue-lightgbm`, a small fork that adds penalties
 aimed at the table count directly rather than at tree size:
@@ -224,6 +225,7 @@ class Trial:
     tables: float
     num_iterations: int
     fold_tables: list[float] = field(default_factory=list)
+    fold_complexity: list[dict[str, Any]] = field(default_factory=list)
 
     def dominates(self, other: "Trial") -> bool:
         no_worse = self.cv_loss <= other.cv_loss and self.tables <= other.tables
@@ -235,9 +237,9 @@ class Trial:
 class TuningResult:
     """Every trial, and the non-dominated ones.
 
-    `frontier` is sorted by table count, so the first entry is the most interpretable
-    model found and the last is the most accurate. Picking from it is the point: the
-    study does not decide the trade-off for you.
+    `frontier` is sorted by table count. Fewer tables do not necessarily mean fewer
+    rows or easier review; inspect fold_complexity as well. The study does not decide
+    the trade-off for you.
     """
 
     trials: list[Trial]
@@ -279,13 +281,20 @@ class TuningResult:
         if not self.tuned_interaction_penalties:
             lines.append(f"  interaction penalties were NOT tuned - {self.lightgbm} "
                          f"does not accept them")
-        lines.append(f"  {'mean tables':>12}{'cv loss':>14}   parameters")
+        lines.append(f"  {'mean tables':>12}{'mean rows':>12}{'largest':>10}{'order':>7}{'cv loss':>14}   parameters")
         for t in self.frontier:
             shown = {k: v for k, v in t.params.items() if k in DEFAULT_SPACE}
             rendered = ", ".join(
                 f"{k}={v:.3g}" if isinstance(v, float) else f"{k}={v}"
                 for k, v in sorted(shown.items()))
-            lines.append(f"  {t.tables:>12.2f}{t.cv_loss:>14.6f}   {rendered}")
+            if t.fold_complexity:
+                mean_rows = sum(c['total_rows'] for c in t.fold_complexity) / len(t.fold_complexity)
+                largest = max(c['largest_table'] for c in t.fold_complexity)
+                order = max(c['largest_interaction_order'] for c in t.fold_complexity)
+                complexity = f"{mean_rows:>12.1f}{largest:>10}{order:>7}"
+            else:
+                complexity = f"{'unknown':>12}{'unknown':>10}{'unknown':>7}"
+            lines.append(f"  {t.tables:>12.2f}{complexity}{t.cv_loss:>14.6f}   {rendered}")
         return "\n".join(lines)
 
 
@@ -383,9 +392,10 @@ def tune_lgbm(
                 "lgb.Dataset(..., params={'feature_pre_filter': False}), or drop "
                 "'min_data_in_leaf' from `tunable`.")
 
-    # `estimate_num_tables` comes from the compiled engine; importing it here rather
+    # Conversion comes from the compiled engine; importing it here rather
     # than at module scope keeps this module importable from a source checkout.
-    from .avenue_model import estimate_num_tables
+    from .avenue_model import FittedModel
+    import time
 
     # Materialize one-shot fold iterators once so every trial sees the same split.
     if folds is not None and not hasattr(folds, 'split'):
@@ -428,12 +438,26 @@ def tune_lgbm(
         # Complexity must describe the same boosting prefix as the selected loss.
         # Constant ensembles legitimately have one intercept table. Invalid dumps
         # raise their real error instead of becoming an invented complexity score.
-        counts = [float(estimate_num_tables(_model_json(booster, best_round + 1)))
-                  for booster in result["cvbooster"].boosters]
+        complexity = []
+        for booster in result["cvbooster"].boosters:
+            started = time.perf_counter()
+            converted = FittedModel.from_lgbm_json(_model_json(booster, best_round + 1), consolidation='max')
+            artifact = converted.to_workbook(scale='factor').tables
+            rows = [table.height for table in artifact]
+            orders = [table.width - 1 for table in artifact]
+            complexity.append({'tables': len(artifact), 'total_rows': sum(rows),
+                               'largest_table': max(rows), 'largest_interaction_order': max(orders),
+                               'coefficient_cells': sum(rows),
+                               'conversion_seconds': time.perf_counter() - started,
+                               'consolidation': 'max', 'num_iterations': best_round + 1,
+                               'support_status': 'not_measured', 'statistical_rank': None,
+                               'scoring_seconds': None})
+            del converted, artifact
+        counts = [float(c['tables']) for c in complexity]
         tables = sum(counts) / len(counts)
 
         record = Trial(params=dict(trial_params), cv_loss=cv_loss, tables=tables,
-                       num_iterations=best_round + 1, fold_tables=counts)
+                       num_iterations=best_round + 1, fold_tables=counts, fold_complexity=complexity)
         trials.append(record)
         if callback is not None:
             callback(record)
