@@ -32,6 +32,47 @@ class ScoringContract(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'Exposure.*row 0'):
                 model.predict(pl.DataFrame({'group': ['A'], 'exposure': [value]}))
 
+    def test_rate_count_conveniences_survive_workbook_reload(self):
+        rates = Plan.frequency('exposure').categorical('group').fit(self.df, 'frequency')
+        counts = Plan('poisson', exposure='exposure', exposure_role='offset').categorical('group').fit(self.df, 'claims')
+        for model, kind in ((rates, 'rate'), (counts, 'count')):
+            for artifact in (model, model.to_workbook().to_model()):
+                self.assertEqual(artifact.prediction_kind, kind)
+                schema = artifact.input_schema
+                self.assertEqual(schema['prediction_columns'],
+                                 ['group'] if kind == 'rate' else ['exposure', 'group'])
+                self.assertIn('exposure', schema['validation_columns'])
+                self.assertEqual(schema['predictors']['group']['kind'], 'categorical')
+                self.assertEqual(schema['predictors']['group']['levels'], [('A', 0)])
+
+                for rate in artifact.predict_rate(self.df.select('group'))['rate']:
+                    self.assertAlmostEqual(rate, 4.)
+                expected = artifact.predict_count(self.df)['expected_count'].to_list()
+                for actual, truth in zip(expected, [1., 2., 4.] * 2):
+                    self.assertAlmostEqual(actual, truth)
+                zero = pl.DataFrame({'group': ['A'], 'exposure': [0.]})
+                self.assertEqual(artifact.predict_count(zero)['expected_count'][0], 0.)
+                with self.assertRaisesRegex(ValueError, 'exposure'):
+                    artifact.predict_count(self.df.select('group'))
+        severity = Plan.severity('claims').categorical('group').fit(self.df, 'severity')
+        for artifact in (severity, rates + severity):
+            self.assertEqual(artifact.prediction_kind, 'response')
+            with self.assertRaisesRegex(ValueError, 'Poisson response'):
+                artifact.predict_count(self.df)
+
+    def test_invalid_exposure_is_rejected_in_fit_and_validation(self):
+        for role in ('weight', 'offset'):
+            plan = Plan('poisson', exposure='exposure', exposure_role=role).categorical('group')
+            fitted = plan.fit(self.df, 'claims')
+            for value in (-1., float('nan'), float('inf'), None):
+                invalid = self.df.with_columns(pl.lit(value, dtype=pl.Float64).alias('exposure'))
+                with self.subTest(role=role, value=value):
+                    with self.assertRaisesRegex(ValueError, 'Exposure.*row 0'):
+                        plan.fit(invalid, 'claims')
+                    for artifact in (fitted, fitted.to_workbook().to_model()):
+                        with self.assertRaisesRegex(ValueError, 'Exposure.*row 0'):
+                            artifact.validate(invalid)
+
     def test_training_weights_are_not_quote_inputs(self):
         frequency = Plan.frequency('exposure').categorical('group').fit(self.df, 'frequency')
         severity = Plan.severity('claims').categorical('group').fit(self.df, 'severity')

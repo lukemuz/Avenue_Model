@@ -777,6 +777,66 @@ impl PyFittedModel {
             .map_err(value_error)
     }
 
+    /// Recorded Poisson prediction kind: rate, count, or unspecified response.
+    #[getter]
+    fn prediction_kind(&self) -> &str {
+        self.inner.prediction_kind()
+    }
+
+    /// Separate predictor, prediction and validation column requirements.
+    #[getter]
+    fn input_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let schema = PyDict::new(py);
+        let mut features = std::collections::BTreeMap::new();
+        for table in &self.inner.model.tables {
+            for (name, dtype) in table.get_feature_info() {
+                features.insert(name, dtype);
+            }
+        }
+        let predictors = PyDict::new(py);
+        for (name, dtype) in &features {
+            let info = PyDict::new(py);
+            info.set_item("kind", if *dtype == DataType::Float64 { "numeric" } else { "categorical" })?;
+            info.set_item("internal_dtype", format!("{:?}", dtype))?;
+            if let Some(levels) = self.inner.encoding.maps.get(name) {
+                info.set_item("levels", levels.clone())?;
+            }
+            predictors.set_item(name, info)?;
+        }
+        let mut prediction: std::collections::BTreeSet<String> = features.keys().cloned().collect();
+        let mut validation = prediction.clone();
+        if let Some(exposure) = &self.inner.exposure {
+            validation.insert(exposure.clone());
+            if self.inner.exposure_role == Some(ExposureRole::Offset) {
+                prediction.insert(exposure.clone());
+            }
+        }
+        if let Some(target) = &self.inner.target {
+            validation.insert(target.clone());
+        }
+        schema.set_item("predictors", predictors)?;
+        schema.set_item("prediction_columns", prediction.into_iter().collect::<Vec<_>>())?;
+        schema.set_item("validation_columns", validation.into_iter().collect::<Vec<_>>())?;
+        schema.set_item("target", self.inner.target.clone())?;
+        schema.set_item("exposure", self.inner.exposure.clone())?;
+        schema.set_item("prediction_kind", self.inner.prediction_kind())?;
+        Ok(schema)
+    }
+
+    /// Poisson rates. Exposure is not required on the scoring frame.
+    fn predict_rate(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = df.into();
+        let values = self.inner.predict_rate(&df).map_err(value_error)?;
+        DataFrame::new(vec![values.into()]).map(PyDataFrame).map_err(value_error)
+    }
+
+    /// Expected Poisson counts, with recorded exposure applied exactly once.
+    fn predict_count(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = df.into();
+        let values = self.inner.predict_count(&df).map_err(value_error)?;
+        DataFrame::new(vec![values.into()]).map(PyDataFrame).map_err(value_error)
+    }
+
     /// Row-level scoring results: row, predictions, status and unmatched_tables.
     /// Unmatched/nonfinite means are null. Invalid input schemas/exposures raise.
     fn predict_diagnostics(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {

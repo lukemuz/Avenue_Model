@@ -602,6 +602,7 @@ impl Plan {
                             .into(),
                     )
                 })?;
+            validate_exposure(&series, exposure)?;
             out.with_column(series.clone())?;
             match self.resolved_exposure_role() {
                 ExposureRole::Weight => weight_col = Some(exposure.clone()),
@@ -644,6 +645,18 @@ fn missing_column(column: &str, df: &DataFrame) -> PolarsError {
         )
         .into(),
     )
+}
+
+/// Exposure is a measured nonnegative quantity, never an implicit missing-row filter.
+fn validate_exposure(series: &Column, name: &str) -> Result<(), PolarsError> {
+    for (row, value) in series.f64()?.into_iter().enumerate() {
+        if !value.is_some_and(|v| v.is_finite() && v >= 0.0) {
+            return Err(PolarsError::ComputeError(
+                format!("Exposure '{}' at row {} must be finite, non-null and nonnegative.", name, row).into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Cast a categorical column to `Int32`, mapping strings to codes when needed.
@@ -2276,6 +2289,7 @@ impl FittedModel {
                 .column(exposure)
                 .map_err(|_| missing_column(exposure, df))?
                 .cast(&DataType::Float64)?;
+            validate_exposure(&series, exposure)?;
             out.with_column(series.clone())?;
             match self.exposure_role.unwrap_or(ExposureRole::Weight) {
                 ExposureRole::Weight => weight_col = Some(exposure.clone()),
@@ -2304,7 +2318,49 @@ impl FittedModel {
 
     /// Fitted means on the response scale. Unmatched or nonfinite results raise.
     pub fn predict(&self, df: &DataFrame) -> Result<Series, PolarsError> {
-        let result = self.predict_diagnostics(df)?;
+        self.predict_with_offset(df, self.exposure_role == Some(ExposureRole::Offset))
+    }
+
+    /// The recorded Poisson exposure convention, or an unspecified response mean.
+    pub fn prediction_kind(&self) -> &'static str {
+        if self.family == "poisson" && self.target.is_some() && self.exposure.is_some() {
+            match self.exposure_role {
+                Some(ExposureRole::Weight) => "rate",
+                Some(ExposureRole::Offset) => "count",
+                None => "response",
+            }
+        } else {
+            "response"
+        }
+    }
+
+    fn require_count_convention(&self) -> Result<(), PolarsError> {
+        if self.prediction_kind() == "response" {
+            return Err(PolarsError::ComputeError(
+                "Rate/count conversion requires a Poisson response with a recorded exposure column and weight/offset convention. Severity, composed and unspecified means cannot be converted to counts.".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Poisson rate per exposure, without requiring an exposure column to score.
+    pub fn predict_rate(&self, df: &DataFrame) -> Result<Series, PolarsError> {
+        self.require_count_convention()?;
+        let mut result = self.predict_with_offset(df, false)?;
+        result.rename("rate".into());
+        Ok(result)
+    }
+
+    /// Expected Poisson counts, applying the recorded exposure exactly once.
+    pub fn predict_count(&self, df: &DataFrame) -> Result<Series, PolarsError> {
+        self.require_count_convention()?;
+        let mut result = self.predict_with_offset(df, true)?;
+        result.rename("expected_count".into());
+        Ok(result)
+    }
+
+    fn predict_with_offset(&self, df: &DataFrame, apply_offset: bool) -> Result<Series, PolarsError> {
+        let result = self.diagnostics_with_offset(df, apply_offset)?;
         let status = result.column("status")?.str()?;
         if let Some(row) = status.into_iter().position(|s| s != Some("ok")) {
             return Err(PolarsError::ComputeError(
@@ -2322,6 +2378,10 @@ impl FittedModel {
     /// Preserve input row order and return null means for unmatched/nonfinite rows.
     /// Invalid schemas or exposure values are errors even in diagnostic mode.
     pub fn predict_diagnostics(&self, df: &DataFrame) -> Result<DataFrame, PolarsError> {
+        self.diagnostics_with_offset(df, self.exposure_role == Some(ExposureRole::Offset))
+    }
+
+    fn diagnostics_with_offset(&self, df: &DataFrame, apply_offset: bool) -> Result<DataFrame, PolarsError> {
         use crate::glm::matching::{precompute_all_matches, NO_MATCH};
         let prepared = self.prepare_inputs(df, false)?;
         // Require the same predictor schema for fitted and loaded artifacts.
@@ -2344,7 +2404,7 @@ impl FittedModel {
             }
         }
         let finite_factors: Vec<bool> = eta.iter().map(|v| v.is_finite()).collect();
-        if self.exposure_role == Some(ExposureRole::Offset) {
+        if apply_offset {
             if let Some(exposure) = &self.exposure {
                 let values = df
                     .column(exposure)

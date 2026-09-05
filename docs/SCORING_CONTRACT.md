@@ -39,5 +39,32 @@ wildcard table rows remain valid matches. Missing predictor columns and invalid
 exposures raise even in diagnostic mode. Validation continues to report unmatched
 rows and mark the result unusable; it does not silently accept the reduced population.
 
-Explicit rate/count convenience methods and response-unit metadata remain planned.
-Training and validation exposure checks also need to be unified with scoring.
+## Explicit Poisson predictions and input schema
+
+Both the frequency preset and a Poisson offset model support:
+
+```python
+rates = model.predict_rate(quotes)             # column: rate; exposure not required
+counts = model.predict_count(quotes_with_exposure)  # column: expected_count
+print(model.prediction_kind)                   # rate, count, or response
+print(model.input_schema)
+```
+
+`predict_count()` uses the recorded exposure column and applies it exactly once.
+`predict_rate()` evaluates the rate directly, including at zero exposure; it does
+not divide a count by zero. These methods require a Poisson response with a recorded
+target, exposure column and weight/offset convention. Severity, composed and
+unspecified response means raise instead of guessing a count interpretation.
+`prediction_kind` describes this limited recorded convention; `response` leaves
+physical units unspecified. General loss/currency/unit metadata remains planned.
+
+`input_schema` contains predictor kinds and internal dtypes, encoded `(label, code)`
+pairs where available, separate `prediction_columns` and `validation_columns`,
+target, exposure, and prediction kind. A categorical predictor with a mapping accepts
+those strings or their numerical codes. Internal dtypes describe the table matcher;
+the boundary normalizes supported input types as usual. The schema reflects the
+current artifact and survives workbook reload.
+
+Negative, null, NaN and infinite exposure now raise during fitting and validation
+as well as count scoring. Weight-zero rows carry no fitting weight. Offset models
+still require positive training exposure; zero scoring exposure yields zero counts.

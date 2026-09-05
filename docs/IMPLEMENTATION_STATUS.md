@@ -76,9 +76,23 @@ called dependable for arbitrary quote inputs.
   the seven conversion tests also run against the installed fork. Usage and remaining
   missing/default limitations are documented in [CONVERSION.md](CONVERSION.md).
 
+## Completed increment: explicit Poisson prediction conveniences and schema
+
+- `predict_rate` and `predict_count` use the recorded Poisson convention and reject
+  ambiguous/severity/composed means. Offset rates can score without exposure.
+- `prediction_kind` exposes the recorded Poisson convention; it is not a general
+  physical-unit system. `input_schema` separates prediction and validation inputs
+  and exposes category mappings from the current tables/artifact.
+- Invalid exposure values now fail consistently in plan preparation, fitted/loaded
+  validation and count scoring. Zero weight versus positive offset training exposure
+  is documented separately from zero scoring exposure.
+- Regression coverage exercises both Poisson conventions and workbook reload,
+  schema mappings, ambiguous conversion rejection and invalid exposure in fitting
+  and validation. Verification: 44 Python tests and 258 Rust tests passed.
+
 ## Next required work
 
-Complete scoring semantics (explicit units/conversions, schema, consistent exposure checks); complete LightGBM missing/default routing, constant boosters and preprocessing persistence.
+Complete general response-unit semantics and complete LightGBM missing/default routing, constant boosters and preprocessing persistence.
 Then complete the ordinary study workflow, reproducible splits/comparison, named
 review/explanations, composition and analytical preservation, and selected modeling
 extensions from the plan. Run the plan's fresh-user acceptance exercise before making
