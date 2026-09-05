@@ -6,6 +6,8 @@ pub mod plan;
 pub mod python_api;
 pub mod rating_model;
 pub mod report;
+#[allow(dead_code)] // Continuous spline kernel staged before fitting/scoring integration.
+mod spline;
 pub mod table_estimator;
 pub mod tests;
 pub mod validation;

@@ -13,3 +13,11 @@ modes and a CSV workbook reload at `atol=1e-12, rtol=1e-12`. The handcrafted fix
 use distinct leaf values to make incorrect branch membership observable directly.
 The suite also covers null/NaN routes, both default directions, repeated numerical
 splits and JSON reloads. zero_as_missing remains explicitly unsupported.
+# Natural cubic reference fixture
+
+`natural_spline.json` is generated independently with SciPy by
+`studies/reference_natural_spline.py`. It records values, two derivatives, cardinal
+basis weights, integrated curvature and dense IRLS information/score references for
+five knot geometries and 220 probes. Linear tails are an explicit fixture convention.
+The per-case derivative tolerances account for reference roundoff on closely spaced
+knots. See `docs/SMOOTH_EFFECTS_IMPLEMENTATION.md` for the method and integration limits.

@@ -6,6 +6,22 @@ The full scope and acceptance criteria remain in [IMPROVEMENT_PLAN.md](IMPROVEME
 This record is a progress log, not a declaration that the plan is complete.
 Existing evaluation reports, scripts and recorded runs have been preserved.
 
+## In progress: exact continuous spline effects
+
+- Added a private natural-cubic kernel parameterized by knot values, with local
+  polynomial evaluation, linear endpoint tails, cardinal basis weights and a
+  normalized-range curvature penalty. It rejects invalid/nonfinite geometry and inputs.
+- Added interval-local IRLS sufficient-statistic accumulation, transformed to knot
+  coordinates without an observation-by-knot matrix. This is numerical groundwork;
+  no public smooth Plan term or fitting/scoring integration is claimed yet.
+- Independent SciPy fixtures cover five geometries and 220 probes, including irregular
+  and clustered knots, large offsets, adjacent floats and tails. Values, derivatives,
+  basis weights, curvature and dense information/score references agree. C2 joins,
+  affine invariance, exact knot interpolation and edit linearity are also tested.
+- All 272 Rust tests pass, with six ignored tests and one ignored doc test. Existing
+  public Python behavior is unchanged. [Implementation notes](SMOOTH_EFFECTS_IMPLEMENTATION.md)
+  identify the remaining Plan, fitting, inference, shared-scoring and workbook gates.
+
 ## Completed increment: whole-term Wald inference and estimability correction
 
 - Added `term_tests(model, dispersion=...)` with named joint statistics, chi-square
