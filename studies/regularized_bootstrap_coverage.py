@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import importlib.metadata as metadata
 import json
+import random
 from pathlib import Path
 import subprocess
 import time
@@ -11,7 +12,7 @@ import time
 import numpy as np
 import polars as pl
 
-from avenue_model import GLMOptions, Plan
+from avenue_model import GLMOptions, Plan, bootstrap_stability
 
 
 def ridge_reference(x, y, alpha):
@@ -21,7 +22,7 @@ def ridge_reference(x, y, alpha):
     return np.array([beta[0], beta.sum()])
 
 
-def run(output, datasets=100, resamples=100):
+def run(output, datasets=100, resamples=100, public_api=False):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     rng = np.random.default_rng(20260906)
@@ -42,12 +43,29 @@ def run(output, datasets=100, resamples=100):
         draws = rng.integers(0, n, size=(resamples, n))
         for alpha, fit_options in options.items():
             predictions = []
-            for replicate, indices in enumerate([np.arange(n), *draws]):
+            stability = None
+            indices_to_check = [np.arange(n), *draws]
+            if public_api:
+                stability = bootstrap_stability(frame, plan, quotes, target='y', resamples=resamples, seed=sample,
+                    options={'alpha': alpha, 'l1_ratio': 0., 'tolerance': 1e-10, 'max_iterations': 1000})
+                if not stability.metadata['bands_available']:
+                    failures.extend({'dataset': sample, 'alpha': alpha, **row} for row in
+                                    stability.history.filter(pl.col('status') == 'failed').to_dicts())
+                    continue
+                indices_to_check = [np.arange(n)]
+                for sample_seed in stability.history['sample_seed']:
+                    sampler = random.Random(sample_seed)
+                    indices_to_check.append(np.array([sampler.randrange(n) for _ in range(n)]))
+            for replicate, indices in enumerate(indices_to_check):
                 try:
-                    fitted = plan.fit(frame[indices.tolist()], 'y', fit_options)
-                    if fitted.converged is not True:
-                        raise ValueError('Fit did not converge')
-                    mu = fitted.predict(quotes).to_numpy().reshape(-1)
+                    if stability is None:
+                        fitted = plan.fit(frame[indices.tolist()], 'y', fit_options)
+                        if fitted.converged is not True:
+                            raise ValueError('Fit did not converge')
+                        mu = fitted.predict(quotes).to_numpy().reshape(-1)
+                    else:
+                        mu = (stability.summary['prediction'] if replicate == 0 else
+                              stability.draws[f'draw_{replicate-1}']).to_numpy()
                     reference = ridge_reference(x[indices], y[indices], alpha)
                     error = float(np.max(np.abs(mu-reference)))
                     max_error = max(max_error, error)
@@ -59,6 +77,9 @@ def run(output, datasets=100, resamples=100):
                 continue  # No intervals from a silently reduced successful subset.
             point = predictions[0]
             lower, upper = np.quantile(predictions[1:], [.025, .975], axis=0)
+            if stability is not None:
+                np.testing.assert_allclose(stability.summary['stability_lower'], lower, atol=1e-12)
+                np.testing.assert_allclose(stability.summary['stability_upper'], upper, atol=1e-12)
             # Population penalized optimum under P(group=b)=1/2 and fixed alpha.
             penalized_effect = effect * .25 / (.25 + alpha)
             penalized_mean = np.array([intercept + .5*(effect-penalized_effect),
@@ -86,6 +107,9 @@ def run(output, datasets=100, resamples=100):
               'extension_sha256': hashlib.sha256(Path(importlib.import_module('avenue_model.avenue_model').__file__).read_bytes()).hexdigest(),
               'versions': {name: metadata.version(name) for name in ['numpy', 'polars']},
               'seed': 20260906, 'datasets': datasets, 'rows_per_dataset': n, 'resamples': resamples,
+              'public_api': public_api,
+              'stability_sha256': (hashlib.sha256(Path(importlib.import_module('avenue_model.stability').__file__).read_bytes()).hexdigest()
+                                   if public_api else None),
               'max_independent_prediction_error': max_error, 'failures': failures,
               'wall_seconds': time.perf_counter()-started,
               'interpretation': 'fixed-penalty percentile pairs bootstrap; true and penalized population targets evaluated separately; no model selection or lasso coverage claim'}
@@ -100,7 +124,8 @@ if __name__ == '__main__':
     parser.add_argument('--output', required=True)
     parser.add_argument('--datasets', type=int, default=100)
     parser.add_argument('--resamples', type=int, default=100)
+    parser.add_argument('--public-api', action='store_true')
     args = parser.parse_args()
     if args.datasets < 2 or args.resamples < 20:
         parser.error('Use at least two datasets and twenty resamples')
-    run(args.output, args.datasets, args.resamples)
+    run(args.output, args.datasets, args.resamples, args.public_api)

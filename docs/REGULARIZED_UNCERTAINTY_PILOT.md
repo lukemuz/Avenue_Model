@@ -35,13 +35,19 @@ estimate near 95% has Monte Carlo standard error about 2.2 percentage points; th
 100 inner resamples give coarse tail estimates. This pilot rejects a misleading
 interpretation, rather than validating a general interval method.
 
-The public regularized-uncertainty API remains open. Its next design must specify the
+The public coverage-valid regularized-uncertainty API remains open. Its next design must specify the
 estimand, the resampled pipeline, and what bias or model-selection uncertainty is
 included. Fixed-penalty fit-stability bands can be useful if labeled as such, but are
 not a substitute for valid confidence intervals for true regression effects. Lasso
 has further bootstrap-consistency issues; this ridge experiment does not validate a
 lasso method. See Chatterjee and Lahiri,
 [Bootstrapping Lasso Estimators](https://www.tandfonline.com/doi/abs/10.1198/jasa.2011.tm10159).
+
+[Bootstrap stability](BOOTSTRAP_STABILITY.md) now exposes reproducible refits and
+descriptive percentile bands with this limitation explicit. It retains all failures
+and withholds bands if any replicate fails. The pilot can exercise that public API
+with `--public-api`; this is a mechanics check, not a claim that the coverage problem
+has been solved.
 
 Run `studies/regularized_bootstrap_coverage.py --output <new-directory>` to reproduce.
 [Retained evidence](../studies/results/regularized_bootstrap/result.json) includes the

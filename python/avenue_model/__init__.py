@@ -51,3 +51,5 @@ from .inference import CoefficientIntervals, coefficient_intervals, TermTests, t
 __all__ += ['CoefficientIntervals', 'coefficient_intervals', 'TermTests', 'term_tests']
 from .credibility import CredibilityResult, poisson_credibility
 __all__ += ['CredibilityResult', 'poisson_credibility']
+from .stability import BootstrapStability, bootstrap_stability
+__all__ += ['BootstrapStability', 'bootstrap_stability']
