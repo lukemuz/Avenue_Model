@@ -613,6 +613,8 @@ impl PyFittedModel {
         {
             out.set_item("dispersion", info.dispersion)?;
             out.set_item("covariance_method", &info.covariance_method)?;
+            out.set_item("cluster_column", &info.cluster_column)?;
+            out.set_item("n_clusters", info.n_clusters)?;
             out.set_item("pearson_chi2", info.pearson_chi2)?;
             out.set_item("df_residual", info.df_residual)?;
             out.set_item("n_parameters", info.n_parameters)?;
@@ -1054,6 +1056,8 @@ impl PyModelReport {
         dict.set_item("n_parameters", fit.n_parameters)?;
         dict.set_item("dispersion", fit.dispersion)?;
         dict.set_item("covariance_method", &fit.covariance_method)?;
+        dict.set_item("cluster_column", &fit.cluster_column)?;
+        dict.set_item("n_clusters", fit.n_clusters)?;
         dict.set_item("aic", fit.aic)?;
         dict.set_item("bic", fit.bic)?;
         dict.set_item("table_conditioning", fit.table_conditioning)?;

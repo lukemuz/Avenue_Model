@@ -38,7 +38,7 @@ def coefficient_intervals(model, *, confidence=.95, dispersion='model'):
     scale = base_dispersion
     if dispersion == 'quasi_poisson':
         if covariance_method != 'model_based':
-            raise ValueError('quasi_poisson cannot rescale HC0 covariance')
+            raise ValueError('quasi_poisson cannot rescale HC0 or cluster covariance')
         if model.family != 'poisson':
             raise ValueError('quasi_poisson requires a Poisson fit')
         df = evidence['df_residual']
@@ -81,6 +81,8 @@ def coefficient_intervals(model, *, confidence=.95, dispersion='model'):
         'confidence': confidence, 'method': 'normal Wald', 'dispersion_method': dispersion,
         'dispersion': scale if covariance_method == 'model_based' else None,
         'covariance_method': covariance_method, 'source_inference': evidence,
-        'interpretation': 'conditional on the fixed model structure; no selection or cluster adjustment',
+        'interpretation': ('conditional on fixed structure and independent clusters; no selection or small-sample adjustment'
+                           if covariance_method == 'cluster_cr0' else
+                           'conditional on the fixed model structure; no selection or cluster adjustment'),
         'point_estimates_changed': False,
     })

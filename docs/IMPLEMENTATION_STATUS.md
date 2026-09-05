@@ -404,3 +404,27 @@ that evidence.
   state the correctly specified conditional-mean/independent-observation assumptions.
   Cluster covariance, whole-term tests, finite-sample/coverage studies and
   post-selection uncertainty remain open.
+
+## Completed increment: one-way clustered covariance
+
+- `GLMOptions(covariance='cluster', cluster='column')` computes CR0 by summing weighted
+  observation scores within independent groups before forming their outer products.
+  Both solvers share the reduced design/contrast machinery; predictions are unchanged.
+- Cluster identity is explicit, requires non-null string/integer IDs and at least two
+  positive-weight groups, and is not added to quote input requirements. Metadata and
+  reports record `cluster_cr0`, the source column and positive-weight group count.
+- Grouping sorts observation indices and holds one score vector, avoiding dense
+  groups-by-parameters storage. Penalties, disabled inference, unanchored normalization
+  and quasi-Poisson rescaling are rejected. Source bundle evidence remains separate
+  from loaded/edited scoring artifacts.
+- Independent dense-score checks cover all five families and both solvers. Additional
+  tests verify count offsets, singleton equivalence to HC0, row-order invariance,
+  zero-weight group counts, invalid definitions, metadata and reload isolation.
+- All 103 Python tests and 258 Rust tests pass; six Rust tests and one doc test remain
+  ignored. Release extension rebuilt. The homeowners study completed at
+  `/tmp/avenue-homeowners-cluster-study`, with 1,000 training-home clusters per peril,
+  CR0 intervals, raw-quote reload and a validated component edit.
+- [Assumptions and limitations](CLUSTER_INFERENCE.md) distinguish one-way uncorrected
+  CR0, independent clusters, precision/exposure weights and normal intervals from
+  small-sample corrections, multi-way clustering, group-based t intervals, coverage
+  guarantees, whole-term tests and post-selection uncertainty. Those remain open.

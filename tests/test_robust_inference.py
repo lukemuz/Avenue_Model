@@ -111,4 +111,4 @@ class RobustInferenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'HC0 covariance requires'):
                 Plan('poisson').fit(data, 'y', options)
         with self.assertRaisesRegex(ValueError, 'Unknown covariance'):
-            GLMOptions(covariance='cluster')
+            GLMOptions(covariance='hc3')

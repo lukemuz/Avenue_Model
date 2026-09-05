@@ -10,7 +10,7 @@ from pathlib import Path
 import random
 
 import polars as pl
-from avenue_model import (Candidate, ComposedModel, Plan, SplitSpec, Workbook,
+from avenue_model import (GLMOptions, coefficient_intervals, Candidate, ComposedModel, Plan, SplitSpec, Workbook,
                           compare_models, prepare_pricing, sum_loss_costs)
 
 
@@ -63,12 +63,16 @@ def run(output, data_path=None):
         validation.audit.write_csv(output / f'{peril}_validation_audit.csv')
         prepared.experience('territory').write_csv(output / f'{peril}_experience.csv')
         model = (Plan.pure_premium('exposure').banded('home_age', breaks=[20., 40., 60.])
-                 .categorical('territory').fit(prepared.pure_premium, 'avenue_pure_premium'))
-        baseline = Plan.pure_premium('exposure').fit(prepared.pure_premium, 'avenue_pure_premium')
+                 .categorical('territory').fit(prepared.pure_premium, 'avenue_pure_premium',
+                      GLMOptions(covariance='cluster', cluster='home_id')))
+        baseline = Plan.pure_premium('exposure').fit(prepared.pure_premium, 'avenue_pure_premium',
+                      GLMOptions(covariance='cluster', cluster='home_id'))
         if not model.converged or not baseline.converged:
             raise RuntimeError(f'{peril} did not converge')
         models[peril], baselines[peril] = model, baseline
         (output / f'{peril}_review.md').write_text(model.report(validation.pure_premium).markdown)
+        for name, table in coefficient_intervals(model).tables.items():
+            table.write_csv(output / f'{peril}_{name}_cluster_intervals.csv')
         for name, table in model.rating_tables_by_name().items():
             table.write_csv(output / f'{peril}_{name}_factors.csv')
     total = sum_loss_costs(models)

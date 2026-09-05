@@ -646,9 +646,12 @@ impl PyGLMOptions {
     ///
     ///         No standard errors are reported under a penalty of either kind.
     ///         See GLMDiagnostics.standard_errors_note.
-    ///     covariance: "model_based" (default) or "hc0" for independent-observation
-    ///         expected-information sandwich covariance. Unpenalized fits only; no
-    ///         leverage, small-sample, cluster or post-selection adjustment.
+    ///     covariance: "model_based" (default), "hc0" for independent observations,
+    ///         or "cluster" for one-way CR0 covariance. Sandwich options require
+    ///         unpenalized fits; no leverage, small-sample or post-selection adjustment.
+    ///     cluster: Column of non-null integer/string independent-group identifiers;
+    ///         required only with covariance="cluster". At least two positive-weight
+    ///         groups are required. Cluster identity is not required for prediction.
     ///     solver: "auto" (default) prefers global IRLS and falls back to the
     ///         low-memory table solver for unsupported or very wide models.
     ///         "global" requires the global path; "table" requires table descent.
@@ -666,6 +669,7 @@ impl PyGLMOptions {
         l1_ratio=None,
         solver=None,
         covariance=None,
+        cluster=None,
     ))]
     fn new(
         max_iterations: Option<usize>,
@@ -680,18 +684,36 @@ impl PyGLMOptions {
         l1_ratio: Option<f64>,
         solver: Option<&str>,
         covariance: Option<&str>,
+        cluster: Option<&str>,
     ) -> PyResult<Self> {
         let mut options = glm::GLMOptions::default();
         options.robust_standard_errors = match covariance.unwrap_or("model_based") {
             "model_based" => false,
-            "hc0" => true,
+            "hc0" | "cluster" => true,
             other => {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Unknown covariance '{}'; expected model_based or hc0",
+                    "Unknown covariance '{}'; expected model_based, hc0 or cluster",
                     other
                 )))
             }
         };
+
+        if covariance == Some("cluster") {
+            options.covariance_cluster = Some(
+                cluster
+                    .filter(|name| !name.is_empty())
+                    .ok_or_else(|| {
+                        pyo3::exceptions::PyValueError::new_err(
+                            "covariance='cluster' requires a nonempty cluster column",
+                        )
+                    })?
+                    .to_string(),
+            );
+        } else if cluster.is_some() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "cluster requires covariance='cluster'",
+            ));
+        }
 
         if let Some(max_iter) = max_iterations {
             options.max_iterations = max_iter;
@@ -839,6 +861,10 @@ struct PyGLMDiagnostics {
     /// Covariance estimator used for reported standard errors.
     #[pyo3(get)]
     covariance_method: Option<String>,
+    #[pyo3(get)]
+    cluster_column: Option<String>,
+    #[pyo3(get)]
+    n_clusters: Option<usize>,
     /// Free parameters actually estimated, i.e. the model's rank.
     #[pyo3(get)]
     n_parameters: Option<usize>,
@@ -937,6 +963,8 @@ impl From<glm::GLMDiagnostics> for PyGLMDiagnostics {
             aliased_rows: inf.as_ref().map(|i| i.aliased_rows.clone()),
             dispersion: inf.as_ref().map(|i| i.dispersion),
             covariance_method: inf.as_ref().map(|i| i.covariance_method.clone()),
+            cluster_column: inf.as_ref().and_then(|i| i.cluster_column.clone()),
+            n_clusters: inf.as_ref().and_then(|i| i.n_clusters),
             n_parameters: inf.as_ref().map(|i| i.n_parameters),
             effective_parameters: inf.as_ref().map(|i| i.effective_parameters),
             df_residual: inf.as_ref().map(|i| i.df_residual),

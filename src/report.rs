@@ -62,6 +62,8 @@ pub struct FitSummary {
     pub n_parameters: Option<usize>,
     pub dispersion: Option<f64>,
     pub covariance_method: Option<String>,
+    pub cluster_column: Option<String>,
+    pub n_clusters: Option<usize>,
     pub aic: Option<f64>,
     pub bic: Option<f64>,
     pub table_conditioning: Option<f64>,
@@ -181,6 +183,8 @@ impl FittedModel {
                 n_parameters: inference.map(|i| i.n_parameters),
                 dispersion: inference.map(|i| i.dispersion),
                 covariance_method: inference.map(|i| i.covariance_method.clone()),
+                cluster_column: inference.and_then(|i| i.cluster_column.clone()),
+                n_clusters: inference.and_then(|i| i.n_clusters),
                 aic: inference.and_then(|i| i.aic),
                 bic: inference.and_then(|i| i.bic),
                 table_conditioning: diagnostics.table_conditioning,
@@ -369,6 +373,13 @@ impl ModelReport {
             }
             if let Some(method) = &fit.covariance_method {
                 out.push_str(&format!("| Covariance | {} |\n", method));
+            }
+            if let Some(column) = &fit.cluster_column {
+                out.push_str(&format!(
+                    "| Cluster column | {} |\n| Positive-weight clusters | {} |\n",
+                    column,
+                    fit.n_clusters.unwrap_or(0)
+                ));
             }
             if let Some(d) = fit.dispersion {
                 out.push_str(&format!("| Dispersion | {:.6} |\n", d));

@@ -71,6 +71,8 @@ pub struct GLMInference {
     pub dispersion: f64,
     /// Covariance used for standard errors, independently of likelihood dispersion.
     pub covariance_method: String,
+    pub cluster_column: Option<String>,
+    pub n_clusters: Option<usize>,
     /// Free parameters in the reduced basis, i.e. the model's rank.
     pub n_parameters: usize,
     /// Effective parameters actually spent, which is what `aic`, `bic` and
@@ -263,8 +265,50 @@ pub fn compute_inference_with_covariance(
     locked_rows: &[Vec<bool>],
     hc0: bool,
 ) -> Result<GLMInference, PolarsError> {
+    compute_inference_with_clusters(
+        loss_fn,
+        target,
+        weights,
+        means,
+        matches,
+        factors,
+        row_exposure,
+        updatable,
+        variate_values,
+        normalization,
+        penalty,
+        locked_rows,
+        hc0,
+        None,
+    )
+}
+
+/// One-way CR0 uses summed scores for each independent cluster.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_inference_with_clusters(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    factors: &[Vec<f64>],
+    row_exposure: &[Vec<f64>],
+    updatable: &[bool],
+    variate_values: &[Option<(Vec<f64>, usize)>],
+    normalization: Normalization,
+    penalty: Option<&PenaltyPlan>,
+    locked_rows: &[Vec<bool>],
+    hc0: bool,
+    clusters: Option<(&str, &[usize])>,
+) -> Result<GLMInference, PolarsError> {
     let n_obs = target.len();
     let n_tables = factors.len();
+    let hc0 = hc0 || clusters.is_some();
+    if clusters.is_some_and(|(_, ids)| ids.len() != n_obs) {
+        return Err(PolarsError::ComputeError(
+            "Cluster IDs must align with observations".into(),
+        ));
+    }
 
     // ---- 1. Lay out the reduced basis -----------------------------------------
     //
@@ -452,20 +496,80 @@ pub fn compute_inference_with_covariance(
         }
         for (a_idx, &(u, cu)) in cols.iter().enumerate() {
             xtwx[u * n_params + u] += w * cu * cu;
-            if hc0 {
+            if hc0 && clusters.is_none() {
                 meat[u * n_params + u] += score_squared * cu * cu;
             }
             for &(v_col, cv) in cols.iter().skip(a_idx + 1) {
                 let contribution = w * cu * cv;
                 xtwx[u * n_params + v_col] += contribution;
                 xtwx[v_col * n_params + u] += contribution;
-                if hc0 {
+                if hc0 && clusters.is_none() {
                     let contribution = score_squared * cu * cv;
                     meat[u * n_params + v_col] += contribution;
                     meat[v_col * n_params + u] += contribution;
                 }
             }
         }
+    }
+
+    // Sort row indices by cluster and hold only one cluster's score vector.
+    // Memory is O(n + p^2), rather than a dense clusters-by-parameters matrix.
+    let mut n_clusters = None;
+    if let Some((_, ids)) = clusters {
+        let mut order: Vec<usize> = (0..n_obs).filter(|i| weights[*i] > 0.0).collect();
+        order.sort_by_key(|i| ids[*i]);
+        let mut cluster_score = vec![0.0; n_params];
+        let mut start = 0;
+        let mut count = 0;
+        while start < order.len() {
+            let cluster = ids[order[start]];
+            let mut end = start;
+            cluster_score.fill(0.0);
+            while end < order.len() && ids[order[end]] == cluster {
+                let i = order[end];
+                let score = weights[i] * loss_fn.weighted_link_residual(target[i], means[i]);
+                if !score.is_finite() {
+                    return Err(PolarsError::ComputeError(
+                        "Cluster observation score is nonfinite".into(),
+                    ));
+                }
+                for t in 0..n_tables {
+                    let m = matches[t][i];
+                    if m != NO_MATCH {
+                        if let ReducedColumn::Loadings(loadings) = &layout[t][m as usize] {
+                            for (column, loading) in loadings {
+                                cluster_score[*column] += score * loading;
+                            }
+                        }
+                    }
+                }
+                end += 1;
+            }
+            let nonzero: Vec<(usize, f64)> = cluster_score
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, value)| *value != 0.0)
+                .collect();
+            for &(u, su) in &nonzero {
+                for &(v, sv) in &nonzero {
+                    meat[u * n_params + v] += su * sv;
+                }
+            }
+            count += 1;
+            start = end;
+        }
+        if count < 2 {
+            return Err(PolarsError::ComputeError(
+                "Cluster covariance requires at least two positive-weight clusters".into(),
+            ));
+        }
+        if meat.iter().any(|v| !v.is_finite()) {
+            return Err(PolarsError::ComputeError(
+                "Cluster score covariance is nonfinite".into(),
+            ));
+        }
+        n_clusters = Some(count);
     }
 
     // ---- 3. Rank ---------------------------------------------------------------
@@ -802,7 +906,16 @@ pub fn compute_inference_with_covariance(
         standard_errors,
         aliased_rows,
         dispersion,
-        covariance_method: if hc0 { "hc0" } else { "model_based" }.to_string(),
+        covariance_method: if clusters.is_some() {
+            "cluster_cr0"
+        } else if hc0 {
+            "hc0"
+        } else {
+            "model_based"
+        }
+        .to_string(),
+        cluster_column: clusters.map(|(column, _)| column.to_string()),
+        n_clusters,
         variate_terms,
         n_parameters: rank,
         effective_parameters,

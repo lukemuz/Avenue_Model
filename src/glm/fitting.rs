@@ -1,4 +1,4 @@
-use super::inference::{compute_inference_with_covariance, solve_spd, GLMInference};
+use super::inference::{compute_inference_with_clusters, solve_spd, GLMInference};
 use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
 use super::penalty::{soft_threshold, PenaltyPlan, TablePenalty, ANCHOR_ROW};
@@ -85,6 +85,8 @@ pub struct GLMOptions {
     pub compute_standard_errors: bool,
     /// Independent-observation HC0 expected-information sandwich; unpenalized only.
     pub robust_standard_errors: bool,
+    /// One-way independent clusters for uncorrected CR0 sandwich covariance.
+    pub covariance_cluster: Option<String>,
     /// Accelerate the sweep with SQUAREM extrapolation. See [`squarem_steplength`].
     ///
     /// Costs three parameter vectors of memory and pays for itself many times over on
@@ -141,6 +143,7 @@ impl Default for GLMOptions {
             normalization: Normalization::default(),
             compute_standard_errors: true,
             robust_standard_errors: false,
+            covariance_cluster: None,
             accelerate: true,
             solve_aliased_pairs_jointly: true,
             alpha: 0.0,
@@ -610,16 +613,32 @@ pub fn fit_glm_with_diagnostics(
     options: GLMOptions,
 ) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
     validate_inputs(model, df, target_col, weight_col, offset_col)?;
-    if options.robust_standard_errors && (options.alpha != 0.0 || !options.compute_standard_errors)
+    let covariance_label = if options.covariance_cluster.is_some() {
+        "Cluster"
+    } else {
+        "HC0"
+    };
+    if (options.robust_standard_errors || options.covariance_cluster.is_some())
+        && (options.alpha != 0.0 || !options.compute_standard_errors)
     {
         return Err(PolarsError::ComputeError(
-            "HC0 covariance requires an unpenalized fit with inference enabled".into(),
+            format!(
+                "{} covariance requires an unpenalized fit with inference enabled",
+                covariance_label
+            )
+            .into(),
         ));
     }
 
-    if options.robust_standard_errors && options.normalization == Normalization::None {
+    if (options.robust_standard_errors || options.covariance_cluster.is_some())
+        && options.normalization == Normalization::None
+    {
         return Err(PolarsError::ComputeError(
-            "HC0 covariance requires base-level or weighted-mean normalization".into(),
+            format!(
+                "{} covariance requires base-level or weighted-mean normalization",
+                covariance_label
+            )
+            .into(),
         ));
     }
 
@@ -680,6 +699,44 @@ pub fn fit_glm_with_diagnostics(
             w
         }
         None => vec![1.0; n],
+    };
+    let cluster_ids = if let Some(column) = &options.covariance_cluster {
+        let values = df.column(column)?;
+        if values.null_count() > 0
+            || !(values.dtype().is_integer() || values.dtype() == &DataType::String)
+        {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Cluster column '{}' requires non-null integer or string IDs",
+                    column
+                )
+                .into(),
+            ));
+        }
+        let strings = values.cast(&DataType::String)?;
+        let mut codes = std::collections::HashMap::new();
+        let ids: Vec<usize> = strings
+            .str()?
+            .into_no_null_iter()
+            .map(|label| {
+                let next = codes.len();
+                *codes.entry(label.to_string()).or_insert(next)
+            })
+            .collect();
+        let active: std::collections::HashSet<usize> = ids
+            .iter()
+            .zip(&weights)
+            .filter(|(_, w)| **w > 0.0)
+            .map(|(id, _)| *id)
+            .collect();
+        if active.len() < 2 {
+            return Err(PolarsError::ComputeError(
+                "Cluster covariance requires at least two positive-weight clusters".into(),
+            ));
+        }
+        Some(ids)
+    } else {
+        None
     };
     let offset = match offset_col {
         Some(col) => read_f64_column(df, col, "offset")?,
@@ -825,6 +882,7 @@ pub fn fit_glm_with_diagnostics(
             row_exposure,
             penalty,
             null_deviance,
+            cluster_ids,
             options,
         );
     }
@@ -1066,7 +1124,7 @@ pub fn fit_glm_with_diagnostics(
     // rather than allowed to discard the fit the caller asked for.
     let mut inference_error: Option<String> = None;
     let inference = if options.compute_standard_errors {
-        match compute_inference_with_covariance(
+        match compute_inference_with_clusters(
             &loss_fn,
             &target,
             &weights,
@@ -1088,6 +1146,10 @@ pub fn fit_glm_with_diagnostics(
                 })
                 .collect::<Vec<_>>(),
             options.robust_standard_errors,
+            options
+                .covariance_cluster
+                .as_deref()
+                .zip(cluster_ids.as_deref()),
         ) {
             Ok(inf) => Some(inf),
             Err(e) => {
@@ -1474,6 +1536,7 @@ fn fit_global_irls(
     row_exposure: Vec<Vec<f64>>,
     penalty: Option<PenaltyPlan>,
     null_deviance: f64,
+    cluster_ids: Option<Vec<usize>>,
     options: GLMOptions,
 ) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
     if options.normalization != Normalization::BaseLevel {
@@ -1707,7 +1770,7 @@ fn fit_global_irls(
 
     let mut inference_error = None;
     let inference = if options.compute_standard_errors {
-        match compute_inference_with_covariance(
+        match compute_inference_with_clusters(
             &loss_fn,
             &target,
             &weights,
@@ -1729,6 +1792,10 @@ fn fit_global_irls(
                 })
                 .collect::<Vec<_>>(),
             options.robust_standard_errors,
+            options
+                .covariance_cluster
+                .as_deref()
+                .zip(cluster_ids.as_deref()),
         ) {
             Ok(value) => Some(value),
             Err(error) => {

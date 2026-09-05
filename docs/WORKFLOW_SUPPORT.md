@@ -22,7 +22,8 @@ Both generate clearly labeled synthetic CSVs and load them, or accept `--data` w
 the same column schema. Auto uses an out-of-time split; homeowners uses grouped
 home identifiers so renewals stay together. Both check convergence, produce factor
 reviews, compare models on a common population, save/reload quote-scoring artifacts,
-and inspect an explicit factor edit with fresh validation evidence.
+and inspect an explicit factor edit with fresh validation evidence. Homeowners factor
+uncertainty uses one-way CR0 covariance by home across renewal years.
 
 The homeowners example models **attritional water and theft** only. It does not model
 catastrophe loss, tail aggregation or reinsurance. Input losses are assumed at a common
@@ -45,7 +46,7 @@ complexity, conversion parity, raw-category reload and a rate edit.
 | Pricing populations | Frequency, positive-loss severity, pure premium; row audits; factor experience | Development/trend/coverage assumptions supplied by user; zero-payment severity needs explicit treatment |
 | GLM structures | Intercept, categorical/banded factors, polynomial variates, two-way main-effect/interaction contrasts, interaction tables, supplied/locked tables | Higher-order hierarchical contrasts, splines, monotonic constraints and partial pooling remain planned |
 | Families | Gaussian, Poisson, Gamma, Tweedie, binary | No negative-binomial or general mixed-model estimator |
-| Penalties/inference | GLM penalties, classical/HC0 inference, direct conditional intervals and quasi-Poisson uncertainty; named estimates | [Explicit GLM grid selection](GLM_SELECTION.md) supported; cluster covariance and post-selection uncertainty remain open |
+| Penalties/inference | GLM penalties, classical/HC0/one-way CR0 inference, direct conditional intervals and quasi-Poisson uncertainty; named estimates | [Explicit GLM grid selection](GLM_SELECTION.md) supported; small-sample cluster corrections and post-selection uncertainty remain open |
 | Validation | Random/grouped/out-of-time splits; common candidate comparison; deviance, segment/period A/E; paired fixed-prediction bootstrap | No automatic temporal-block or refit uncertainty; explicit common units/metric required |
 | Scoring | Strict unmatched/nonfinite checks; row diagnostics; Poisson rate/count conveniences; input schema; quote explanations | General physical-unit inference is not automatic |
 | Composition | Named frequency-severity product and peril sum; nested component persistence; no inherited likelihood | Full analytical bundle and broader composition algebra remain open |
@@ -59,7 +60,7 @@ complexity, conversion parity, raw-category reload and a rate edit.
 - [Preparation and experience](PRICING_PREPARATION.md), [pandas adapter](PANDAS.md)
 - [Scoring contract](SCORING_CONTRACT.md), [quote explanations and model changes](EXPLANATIONS.md)
 - [Reproducible splits](VALIDATION_SPLITS.md), [common model comparison](MODEL_COMPARISON.md)
-- [Coefficient intervals and quasi-Poisson](COEFFICIENT_INTERVALS.md), [HC0 covariance](ROBUST_INFERENCE.md)
+- [Coefficient intervals and quasi-Poisson](COEFFICIENT_INTERVALS.md), [HC0 covariance](ROBUST_INFERENCE.md), [cluster covariance](CLUSTER_INFERENCE.md)
 - [Hierarchical interactions](HIERARCHICAL_INTERACTIONS.md), [GLM selection](GLM_SELECTION.md)
 - [Named composition](COMPOSITION.md), [booster conversion and parity](CONVERSION.md)
 - [Implementation evidence and outstanding work](IMPLEMENTATION_STATUS.md)

@@ -44,8 +44,9 @@ can reflect omitted structure, dependence or heterogeneous risk; scaling alone
 does not diagnose or fix those issues.
 
 These intervals are conditional on the specified structure and use a normal
-approximation. They do not account for tuning, data-selected bands, clustering,
-uncertainty in the dispersion estimate. [HC0 robust covariance](ROBUST_INFERENCE.md)
+approximation. They do not account for tuning, data-selected bands or uncertainty in the dispersion
+estimate. Clustering requires [explicit cluster covariance](CLUSTER_INFERENCE.md)
+at fitting time. [HC0 robust covariance](ROBUST_INFERENCE.md)
 can be selected at fitting time; it is labeled separately and is not dispersion-scaled. Penalized fits,
 nonconverged fits, and fits without computed inference are rejected. Loaded/edited
 workbooks cannot acquire the source fit's intervals. The original numerical evidence

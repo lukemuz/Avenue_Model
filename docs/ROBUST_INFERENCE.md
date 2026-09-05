@@ -53,7 +53,8 @@ scaling is a separate alternative, not another multiplier for robust errors.
 HC0 has no leverage correction, finite-sample correction, clustering, whole-term
 Wald tests or adjustment for model selection. It can be unreliable in small samples
 or high-leverage cells. Repeated policies, geographic dependence or other cluster
-structures need clustered inference, which remains unimplemented. Standard errors
+structures need [explicit clustered inference](CLUSTER_INFERENCE.md); HC0 alone does
+not account for them. Standard errors
 on edited/loaded scorers remain unavailable; source bundle evidence stays separate.
 
 Independent tests form dense information and score matrices across all five families,
