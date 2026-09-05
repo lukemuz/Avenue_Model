@@ -24,6 +24,13 @@ and both workbook formats. All 275 Rust and 118 Python tests pass from editable 
 Smooth Plan terms, spline fitting, inference and shape recovery remain open; this
 does not supersede the historical clean-wheel evidence below.
 
+Low-level unpenalized spline fitting now uses the existing table sweeps and agrees
+with independent dense SciPy GLM references for five families, weights, offsets and
+three normalization modes. A two-spline Poisson case recovers new-quote curves and
+tails. The follow-up passes 278 Rust and 118 Python tests from editable source.
+Public smooth Plan/fold integration, spline inference and roughness penalties remain
+open; the earlier scoring increment alone did not establish fitting behavior.
+
 ## Fresh installed-wheel evidence
 
 [The runner](../studies/readiness_acceptance.py) verifies every installed package payload

@@ -569,7 +569,7 @@ impl RatingTable {
 
     /// Interpret the numeric column as knots and factors as function values on
     /// the link scale. Interpolate naturally and use endpoint-tangent linear tails.
-    /// Spline fitting is not yet supported; this builder declares a scoring table.
+    /// Supports unpenalized table-sweep fitting; spline inference is not yet available.
     pub fn as_natural_cubic(mut self) -> Result<Self, PolarsError> {
         self.metadata.spline = Some(SplineKind::NaturalCubicLinearTails);
         self.spline_curve()?;

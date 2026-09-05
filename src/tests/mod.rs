@@ -34,3 +34,5 @@ use pyo3::types::PyDict;
 #[cfg(feature = "python")]
 use pyo3_polars::PyDataFrame;
 use std::collections::{HashMap, HashSet};
+
+mod glm_spline_tests;

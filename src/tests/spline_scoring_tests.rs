@@ -1,3 +1,4 @@
+#![cfg(test)]
 use crate::glm::{fit_glm_with_diagnostics, GLMOptions};
 use crate::plan::Encoding;
 use crate::rating_model::{FeatureValue, LinkFunction, RatingModel, RatingTable};
@@ -187,7 +188,12 @@ fn spline_explanations_validation_edits_and_composition_share_continuous_scores(
     {
         close(*a, 0.2 + 2. * b);
     }
-    assert!(fit_glm_with_diagnostics(&model, &df, "y", None, None, GLMOptions::default()).is_err());
+    assert!(
+        fit_glm_with_diagnostics(&model, &df, "y", None, None, GLMOptions::default())
+            .unwrap()
+            .1
+            .converged
+    );
 }
 
 #[test]

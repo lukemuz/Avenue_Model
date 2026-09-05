@@ -13,7 +13,7 @@ Existing evaluation reports, scripts and recorded runs have been preserved.
   normalized-range curvature penalty. It rejects invalid/nonfinite geometry and inputs.
 - Added interval-local IRLS sufficient-statistic accumulation, transformed to knot
   coordinates without an observation-by-knot matrix. This is numerical groundwork;
-  no smooth Plan term or spline fitting is claimed yet.
+  this initial kernel increment did not expose a smooth Plan term or spline fitting.
 - Independent SciPy fixtures cover five geometries and 220 probes, including irregular
   and clustered knots, large offsets, adjacent floats and tails. Values, derivatives,
   basis weights, curvature and dense information/score references agree. C2 joins,
@@ -24,12 +24,26 @@ Existing evaluation reports, scripts and recorded runs have been preserved.
   and monotonic workbooks retain their earlier format versions.
 - Independent probes now also traverse scalar/batch scoring and JSON/CSV reloads.
   Python checks cover bundle reloads, change review, offset means, zero exposure and
-  relativity-scale CSV. Unsupported spline fitting is rejected explicitly.
+  relativity-scale CSV. At this scoring-only increment, spline fitting was rejected explicitly; see the fitting follow-up below.
   [Implementation notes](SMOOTH_EFFECTS_IMPLEMENTATION.md) identify the remaining
   Plan, fitting, inference and full recovery gates.
 - Verification after scoring integration: 275 Rust tests passed (six ignored and one
   ignored doc test), release extension rebuilt, and all 118 Python tests passed.
   This is editable-source evidence, not a refreshed clean-wheel acceptance run.
+
+## Continuous fitting follow-up
+
+- Connected natural-cubic blocks to the existing GLM table sweep with safeguarded
+  Fisher scoring, exact continuous predictor changes and basis-score convergence.
+  Weighted-mean normalization uses observed basis loadings, not support-bin counts.
+- Independent dense SciPy references agree for five families, weighted offsets and
+  all three normalization modes. A two-spline Poisson case recovers known shapes at
+  new quotes and tails. Singular knot information and unsupported fitting options
+  fail explicitly; fixed whole curves can be carried by the low-level fitter.
+- Spline fits report no covariance, parameter count or discrete-table conditioning.
+  Public Plan/fold integration, inference, roughness penalties and individual locked
+  knots remain open. The complete Rust suite passes 278 tests; the release extension
+  was rebuilt and all 118 Python tests passed. This remains editable-source evidence.
 
 ## Completed increment: whole-term Wald inference and estimability correction
 

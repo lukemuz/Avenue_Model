@@ -8,6 +8,7 @@ pub mod loss;
 pub mod matching;
 pub mod penalty;
 pub mod redundancy;
+mod spline;
 pub mod utils;
 
 pub use fitting::{

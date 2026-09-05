@@ -4,6 +4,7 @@ use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
 use super::penalty::{soft_threshold, PenaltyPlan, TablePenalty, ANCHOR_ROW};
 use super::redundancy::{collective_strength, table_correlations, TablePair};
+use super::spline::SplineBlock;
 use crate::rating_model::{variate_basis_params, RatingModel, RatingTable, TableSemantics};
 use polars::prelude::*;
 use rayon::prelude::*;
@@ -230,6 +231,9 @@ struct FitContext<'a> {
     tables: &'a [RatingTable],
     updatable: &'a [bool],
     row_exposure: &'a [Vec<f64>],
+    normalization_weights: &'a [Vec<f64>],
+    splines: &'a [Option<SplineBlock>],
+    discrete_updatable: &'a [bool],
     variate_values: &'a [Option<(Vec<f64>, usize)>],
     normalization: Normalization,
     /// Near-aliased table pairs to update as one block, primary first. Disjoint: a table
@@ -281,6 +285,18 @@ impl<'a> FitContext<'a> {
             if !self.updatable[t] || paired[t] {
                 continue;
             }
+            if let Some(spline) = &self.splines[t] {
+                spline.update(
+                    &mut factors[t],
+                    eta,
+                    means,
+                    self.target,
+                    self.weights,
+                    self.offset,
+                    self.loss_fn,
+                )?;
+                continue;
+            }
             update_table(
                 t,
                 factors,
@@ -302,7 +318,7 @@ impl<'a> FitContext<'a> {
         if self.normalization != Normalization::None {
             normalize(
                 factors,
-                self.row_exposure,
+                self.normalization_weights,
                 self.tables,
                 self.updatable,
                 self.normalization,
@@ -323,9 +339,20 @@ impl<'a> FitContext<'a> {
     /// The sweep maintains both incrementally, so this is only needed where the factors
     /// are written directly rather than reached by a sweep — which is exactly what the
     /// accelerator does.
-    fn refresh(&self, factors: &[Vec<f64>], eta: &mut [f64], means: &mut [f64]) {
+    fn refresh(
+        &self,
+        factors: &[Vec<f64>],
+        eta: &mut [f64],
+        means: &mut [f64],
+    ) -> Result<(), PolarsError> {
         eta.iter_mut().for_each(|v| *v = 0.0);
         for (t, table_matches) in self.matches.iter().enumerate() {
+            if let Some(spline) = &self.splines[t] {
+                for (sum, value) in eta.iter_mut().zip(spline.evaluate(&factors[t])?) {
+                    *sum += value;
+                }
+                continue;
+            }
             for (i, m) in table_matches.iter().enumerate() {
                 if *m != NO_MATCH {
                     eta[i] += factors[t][*m as usize];
@@ -333,6 +360,7 @@ impl<'a> FitContext<'a> {
             }
         }
         self.relink(eta, means);
+        Ok(())
     }
 
     fn relink(&self, eta: &[f64], means: &mut [f64]) {
@@ -358,21 +386,39 @@ impl<'a> FitContext<'a> {
         self.deviance(means) + self.penalty.map_or(0.0, |p| p.total(factors))
     }
 
-    fn max_score(&self, factors: &[Vec<f64>], means: &[f64], scratch: &mut [Vec<f64>]) -> f64 {
-        max_abs_score(
+    fn max_score(
+        &self,
+        factors: &[Vec<f64>],
+        means: &[f64],
+        scratch: &mut [Vec<f64>],
+    ) -> Result<f64, PolarsError> {
+        let mut score = max_abs_score(
             self.loss_fn,
             self.target,
             self.weights,
             means,
             self.matches,
             self.tables,
-            self.updatable,
+            self.discrete_updatable,
             self.row_exposure,
             self.variate_values,
             factors,
             self.penalty,
             scratch,
-        )
+        );
+        for (t, spline) in self.splines.iter().enumerate() {
+            if self.updatable[t] {
+                if let Some(spline) = spline {
+                    score = score.max(spline.relative_score(
+                        self.loss_fn,
+                        self.target,
+                        self.weights,
+                        means,
+                    )?);
+                }
+            }
+        }
+        Ok(score)
     }
 }
 
@@ -620,9 +666,24 @@ pub fn fit_glm_with_diagnostics(
     offset_col: Option<&str>,
     options: GLMOptions,
 ) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
-    if model.tables.iter().any(|t| t.metadata.spline.is_some()) {
+    let has_spline = model.tables.iter().any(|t| t.metadata.spline.is_some());
+    if has_spline
+        && (options.alpha != 0.
+            || options.solver == GLMSolver::Global
+            || options.robust_standard_errors
+            || options.covariance_cluster.is_some())
+    {
         return Err(PolarsError::ComputeError(
-            "Continuous spline fitting is not implemented; spline tables currently support scoring and workbook editing only".into()));
+            "Continuous splines currently require unpenalized table solving; global solving and robust covariance are not implemented".into()));
+    }
+    for table in &model.tables {
+        if table.metadata.spline.is_some()
+            && (0..table.data.height()).any(|r| table.is_row_offset(r))
+        {
+            return Err(PolarsError::ComputeError(
+                "Individual locked spline knots are not implemented".into(),
+            ));
+        }
     }
     validate_inputs(model, df, target_col, weight_col, offset_col)?;
     let covariance_label = if options.covariance_cluster.is_some() {
@@ -792,6 +853,17 @@ pub fn fit_glm_with_diagnostics(
     }
     let matches = precompute_all_matches(&working_model, df)?;
     validate_matches(&working_model, &matches, n)?;
+    let splines: Vec<Option<SplineBlock>> = working_model
+        .tables
+        .iter()
+        .map(|table| {
+            if table.metadata.spline.is_some() {
+                SplineBlock::new(table, df).map(Some)
+            } else {
+                Ok(None)
+            }
+        })
+        .collect::<Result<_, PolarsError>>()?;
     if options.verbose {
         println!("Matches computed. Starting iterations...");
     }
@@ -842,6 +914,12 @@ pub fn fit_glm_with_diagnostics(
     // Running linear predictor from the tables only; `offset` is added where used.
     let mut eta = vec![0.0; n];
     for t in 0..n_tables {
+        if let Some(spline) = &splines[t] {
+            for (sum, value) in eta.iter_mut().zip(spline.evaluate(&factors[t])?) {
+                *sum += value;
+            }
+            continue;
+        }
         for (i, m) in matches[t].iter().enumerate() {
             if *m != NO_MATCH {
                 eta[i] += factors[t][*m as usize];
@@ -884,6 +962,7 @@ pub fn fit_glm_with_diagnostics(
     );
 
     let global_supported = !has_monotone
+        && !has_spline
         && options.normalization == Normalization::BaseLevel
         && !factors.is_empty()
         && factors[0].len() == 1
@@ -935,6 +1014,7 @@ pub fn fit_glm_with_diagnostics(
             updatable[t]
                 && variate_values[t].is_none()
                 && working_model.tables[t].metadata.monotonicity.is_none()
+                && splines[t].is_none()
         })
         .collect();
     let correlations = if options.solve_aliased_pairs_jointly {
@@ -965,7 +1045,7 @@ pub fn fit_glm_with_diagnostics(
     // because the case it warns about is precisely the one where none of them does - a
     // plan whose tables are individually only mildly correlated but collectively cover
     // one shared direction converges at a crawl with nothing for the pair solve to find.
-    let table_conditioning = if options.solve_aliased_pairs_jointly {
+    let table_conditioning = if options.solve_aliased_pairs_jointly && !has_spline {
         Some(collective_strength(&correlations))
     } else {
         None
@@ -996,6 +1076,17 @@ pub fn fit_glm_with_diagnostics(
         }
     }
 
+    let mut normalization_weights = row_exposure.clone();
+    for (t, spline) in splines.iter().enumerate() {
+        if let Some(spline) = spline {
+            normalization_weights[t] = spline.loadings(&weights)?;
+        }
+    }
+    let discrete_updatable: Vec<bool> = updatable
+        .iter()
+        .enumerate()
+        .map(|(t, active)| *active && splines[t].is_none())
+        .collect();
     let ctx = FitContext {
         loss_fn: &loss_fn,
         target: &target,
@@ -1005,6 +1096,9 @@ pub fn fit_glm_with_diagnostics(
         tables: &working_model.tables,
         updatable: &updatable,
         row_exposure: &row_exposure,
+        normalization_weights: &normalization_weights,
+        splines: &splines,
+        discrete_updatable: &discrete_updatable,
         variate_values: &variate_values,
         normalization: options.normalization,
         joint_pairs: &joint_pairs,
@@ -1037,20 +1131,20 @@ pub fn fit_glm_with_diagnostics(
 
     'fitting: loop {
         // ---------------------------------------------------------- two plain sweeps
-        if options.accelerate && !has_monotone {
+        if options.accelerate && !has_monotone && !has_spline {
             flatten_factors(&factors, &mut theta0);
         }
         ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom)?;
         if let Status::Stop = progress.record(
             ctx.objective(&factors, &means),
             ctx.deviance(&means),
-            ctx.max_score(&factors, &means, &mut score_scratch),
+            ctx.max_score(&factors, &means, &mut score_scratch)?,
             &options,
         ) {
             break 'fitting;
         }
 
-        if !options.accelerate || has_monotone {
+        if !options.accelerate || has_monotone || has_spline {
             continue;
         }
 
@@ -1062,7 +1156,7 @@ pub fn fit_glm_with_diagnostics(
         let objective2 = ctx.objective(&factors, &means);
         // What plain iteration achieved. An extrapolated jump has to beat this on the
         // same quantity the fit converges on, or it is not worth taking.
-        let score2 = ctx.max_score(&factors, &means, &mut score_scratch);
+        let score2 = ctx.max_score(&factors, &means, &mut score_scratch)?;
         if let Status::Stop = progress.record(objective2, deviance2, score2, &options) {
             break 'fitting;
         }
@@ -1087,7 +1181,7 @@ pub fn fit_glm_with_diagnostics(
         for _ in 0..SQUAREM_BACKTRACKS {
             squarem_extrapolate(&theta0, &theta1, &theta2, alpha, eta_limit, &mut candidate);
             unflatten_factors(&candidate, &mut factors);
-            ctx.refresh(&factors, &mut eta, &mut means);
+            ctx.refresh(&factors, &mut eta, &mut means)?;
             // The extrapolated point is not normalised, which is exactly why the penalty
             // reads its anchor out of the factors rather than assuming it is zero.
             let d = ctx.objective(&factors, &means);
@@ -1105,7 +1199,7 @@ pub fn fit_glm_with_diagnostics(
             // Nothing better than plain iteration was found. Put theta2 back, let the
             // next cycle sweep on from there, and wait longer before trying again.
             unflatten_factors(&theta2, &mut factors);
-            ctx.refresh(&factors, &mut eta, &mut means);
+            ctx.refresh(&factors, &mut eta, &mut means)?;
             consecutive_failures = (consecutive_failures + 1).min(SQUAREM_MAX_BACKOFF);
             cycles_to_skip = (1usize << consecutive_failures) - 1;
             continue;
@@ -1127,10 +1221,10 @@ pub fn fit_glm_with_diagnostics(
         ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom)?;
         let deviance3 = ctx.deviance(&means);
         let objective3 = ctx.objective(&factors, &means);
-        let score3 = ctx.max_score(&factors, &means, &mut score_scratch);
+        let score3 = ctx.max_score(&factors, &means, &mut score_scratch)?;
         if !(objective3.is_finite() && objective3 <= accept_at) || !(score3 <= score2) {
             unflatten_factors(&theta2, &mut factors);
-            ctx.refresh(&factors, &mut eta, &mut means);
+            ctx.refresh(&factors, &mut eta, &mut means)?;
             consecutive_failures = (consecutive_failures + 1).min(SQUAREM_MAX_BACKOFF);
             cycles_to_skip = (1usize << consecutive_failures) - 1;
             continue;
@@ -1170,7 +1264,10 @@ pub fn fit_glm_with_diagnostics(
     // collinear still has perfectly good predictions, so a failure here is recorded
     // rather than allowed to discard the fit the caller asked for.
     let mut inference_error: Option<String> = None;
-    let inference = if has_monotone {
+    let inference = if has_spline {
+        inference_error = Some("Continuous spline covariance and parameter counts are not implemented; step-table inference is not applicable".to_string());
+        None
+    } else if has_monotone {
         inference_error = Some("Monotonic constraints: ordinary coefficient covariance and likelihood parameter counts are unavailable; constrained inference is not implemented".to_string());
         None
     } else if options.compute_standard_errors {
@@ -1224,7 +1321,10 @@ pub fn fit_glm_with_diagnostics(
     // factor off the table's slope — so it is not listed here.
     let mut unfitted_rows = Vec::new();
     for t in 0..n_tables {
-        if !updatable[t] || working_model.tables[t].variate_values().is_some() {
+        if !updatable[t]
+            || working_model.tables[t].variate_values().is_some()
+            || splines[t].is_some()
+        {
             continue;
         }
         for (r, e) in row_exposure[t].iter().enumerate() {
