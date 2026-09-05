@@ -3,6 +3,7 @@ mod composition_tests;
 mod glm_benchmarks;
 mod glm_correctness_tests;
 mod glm_distribution_tests;
+mod glm_monotonic_tests;
 mod glm_penalty_tests;
 mod glm_realistic_benchmarks;
 mod glm_reference_data;

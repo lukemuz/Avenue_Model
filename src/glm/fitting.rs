@@ -1,4 +1,5 @@
 use super::inference::{compute_inference_with_clusters, solve_spd, GLMInference};
+use super::isotonic::{fit_ordered_log_blocks, ordered_score_residual};
 use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
 use super::penalty::{soft_threshold, PenaltyPlan, TablePenalty, ANCHOR_ROW};
@@ -161,7 +162,8 @@ pub struct GLMDiagnostics {
     pub solver_used: GLMSolver,
     /// Sweeps performed over the full set of tables.
     pub iterations: usize,
-    /// Whether the largest absolute score fell to `tolerance`.
+    /// Whether the largest optimality residual fell to `tolerance` (ordered-cone
+    /// directional scores for monotonic terms, ordinary scores otherwise).
     ///
     /// False means the returned factors are not at the optimum. Check
     /// [`max_gradient`](Self::max_gradient) to see how far off they are.
@@ -178,8 +180,9 @@ pub struct GLMDiagnostics {
     pub null_deviance: f64,
     /// Deviance after each sweep, in order.
     pub deviance_history: Vec<f64>,
-    /// Table rows that received no exposure and so kept their starting factor,
-    /// as `(table_index, row_index)`.
+    /// Table rows that received no exposure, as `(table_index, row_index)`.
+    /// Ordinary step rows keep starting factors; monotonic rows extend adjacent
+    /// supported factors and remain flagged as having no data.
     pub unfitted_rows: Vec<(usize, usize)>,
     /// How strongly the tables share a single common direction: 1.0 when they are
     /// orthogonal, rising to the number of tables when they all carry the same
@@ -252,7 +255,7 @@ impl<'a> FitContext<'a> {
         means: &mut [f64],
         numer: &mut Vec<f64>,
         denom: &mut Vec<f64>,
-    ) {
+    ) -> Result<(), PolarsError> {
         let mut paired = vec![false; self.tables.len()];
         for (t, u) in self.joint_pairs {
             update_pair(
@@ -293,7 +296,7 @@ impl<'a> FitContext<'a> {
                 self.penalty,
                 numer,
                 denom,
-            );
+            )?;
         }
 
         if self.normalization != Normalization::None {
@@ -312,6 +315,7 @@ impl<'a> FitContext<'a> {
         // what a single table update used to, and it bounds the rounding those
         // increments can accumulate to a single sweep's worth.
         self.relink(eta, means);
+        Ok(())
     }
 
     /// Rebuilds `eta` from the factors and `means` from `eta`.
@@ -653,6 +657,36 @@ pub fn fit_glm_with_diagnostics(
         loss_fn = LossFunction::Tweedie(options.tweedie_power);
     }
 
+    let has_monotone = model
+        .tables
+        .iter()
+        .any(|t| t.metadata.monotonicity.is_some());
+    if has_monotone {
+        if !loss_fn
+            .log_link_variance_power()
+            .is_some_and(|p| (1.0..=2.0).contains(&p))
+            || options.alpha != 0.0
+            || options.solver == GLMSolver::Global
+            || options.robust_standard_errors
+            || options.covariance_cluster.is_some()
+        {
+            return Err(PolarsError::ComputeError("Monotonic fitting requires an unpenalized Poisson, Gamma or Tweedie (1 <= power <= 2) table solver; global solving and robust covariance are not supported".into()));
+        }
+        for table in &model.tables {
+            if let Some(direction) = table.metadata.monotonicity {
+                table.clone().as_monotone(direction)?;
+                if table.metadata.is_offset
+                    || !table.metadata.is_updatable
+                    || (0..table.data.height()).any(|r| table.is_row_offset(r))
+                {
+                    return Err(PolarsError::ComputeError(
+                        "Monotonic fitting does not yet support locked tables or rows".into(),
+                    ));
+                }
+            }
+        }
+    }
+
     // A penalty is defined on each level's contrast against its table's base level,
     // which only means anything if something pins the base level down. `BaseLevel` is
     // what does that, and it is the default; under the other two modes the penalty and
@@ -845,7 +879,8 @@ pub fn fit_glm_with_diagnostics(
         &is_variate,
     );
 
-    let global_supported = options.normalization == Normalization::BaseLevel
+    let global_supported = !has_monotone
+        && options.normalization == Normalization::BaseLevel
         && !factors.is_empty()
         && factors[0].len() == 1
         && updatable[0]
@@ -892,7 +927,11 @@ pub fn fit_glm_with_diagnostics(
     }
 
     let pairable: Vec<bool> = (0..n_tables)
-        .map(|t| updatable[t] && variate_values[t].is_none())
+        .map(|t| {
+            updatable[t]
+                && variate_values[t].is_none()
+                && working_model.tables[t].metadata.monotonicity.is_none()
+        })
         .collect();
     let correlations = if options.solve_aliased_pairs_jointly {
         table_correlations(&matches, &weights, &table_shapes, &pairable)
@@ -994,10 +1033,10 @@ pub fn fit_glm_with_diagnostics(
 
     'fitting: loop {
         // ---------------------------------------------------------- two plain sweeps
-        if options.accelerate {
+        if options.accelerate && !has_monotone {
             flatten_factors(&factors, &mut theta0);
         }
-        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
+        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom)?;
         if let Status::Stop = progress.record(
             ctx.objective(&factors, &means),
             ctx.deviance(&means),
@@ -1007,12 +1046,12 @@ pub fn fit_glm_with_diagnostics(
             break 'fitting;
         }
 
-        if !options.accelerate {
+        if !options.accelerate || has_monotone {
             continue;
         }
 
         flatten_factors(&factors, &mut theta1);
-        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
+        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom)?;
         let deviance2 = ctx.deviance(&means);
         // Judged on the penalised objective, which is what the sweep is descending.
         // Equal to the deviance whenever no penalty is on.
@@ -1081,7 +1120,7 @@ pub fn fit_glm_with_diagnostics(
         // after 5,000.
         //
         // `score3` is computed either way, to hand to `record` - so this costs nothing.
-        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
+        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom)?;
         let deviance3 = ctx.deviance(&means);
         let objective3 = ctx.objective(&factors, &means);
         let score3 = ctx.max_score(&factors, &means, &mut score_scratch);
@@ -1127,7 +1166,10 @@ pub fn fit_glm_with_diagnostics(
     // collinear still has perfectly good predictions, so a failure here is recorded
     // rather than allowed to discard the fit the caller asked for.
     let mut inference_error: Option<String> = None;
-    let inference = if options.compute_standard_errors {
+    let inference = if has_monotone {
+        inference_error = Some("Monotonic constraints: ordinary coefficient covariance and likelihood parameter counts are unavailable; constrained inference is not implemented".to_string());
+        None
+    } else if options.compute_standard_errors {
         match compute_inference_with_clusters(
             &loss_fn,
             &target,
@@ -1173,8 +1215,8 @@ pub fn fit_glm_with_diagnostics(
         write_back_factors(&mut working_model.tables[t], &factors[t])?;
     }
 
-    // A step row with no exposure keeps whatever factor it started with, so callers
-    // need to know. A variate row with no exposure is still fitted — it reads its
+    // Empty ordinary step rows keep starting factors; empty monotonic rows extend
+    // supported factors. Both need a no-data flag. A variate row with no exposure reads its
     // factor off the table's slope — so it is not listed here.
     let mut unfitted_rows = Vec::new();
     for t in 0..n_tables {
@@ -1240,7 +1282,7 @@ fn update_table(
     penalty: Option<&PenaltyPlan>,
     numer: &mut Vec<f64>,
     denom: &mut Vec<f64>,
-) {
+) -> Result<(), PolarsError> {
     if let TableSemantics::Variate { values, degree } = table.semantics() {
         update_variate_table(
             t,
@@ -1255,7 +1297,7 @@ fn update_table(
             *degree,
             loss_fn,
         );
-        return;
+        return Ok(());
     }
     let n_rows = factors[t].len();
     numer.clear();
@@ -1308,6 +1350,33 @@ fn update_table(
 
     let step_limit = loss_fn.step_limit();
     let eta_limit = loss_fn.eta_limit();
+
+    if let Some(direction) = table.metadata.monotonicity {
+        let p = power.expect("monotonic family checked before fitting");
+        let a: Vec<f64> = numer
+            .iter()
+            .zip(&factors[t])
+            .map(|(a, old)| a.ln() + (p - 1.0) * old)
+            .collect();
+        let b: Vec<f64> = denom
+            .iter()
+            .zip(&factors[t])
+            .map(|(b, old)| b.ln() + (p - 2.0) * old)
+            .collect();
+        let fitted =
+            fit_ordered_log_blocks(&a, &b, direction.is_increasing(), -eta_limit, eta_limit)
+                .map_err(|message| {
+                    PolarsError::ComputeError(
+                        format!("Monotonic table '{}': {}", table.metadata.name, message).into(),
+                    )
+                })?;
+        for r in 0..n_rows {
+            numer[r] = fitted[r] - factors[t][r];
+            factors[t][r] = fitted[r];
+        }
+        apply_row_deltas(loss_fn, table_matches, &numer[..n_rows], offset, eta, means);
+        return Ok(());
+    }
 
     // Every level of a penalised table is shrunk toward this one. Read from the factors
     // rather than assumed to be zero, so the penalty stays invariant to the anchoring
@@ -1388,6 +1457,7 @@ fn update_table(
     // Fold the changes into the running linear predictor and mean. Reusing `numer` as
     // the per-row delta keeps this to a single pass with no extra allocation.
     apply_row_deltas(loss_fn, table_matches, &numer[..n_rows], offset, eta, means);
+    Ok(())
 }
 
 /// Where one level of a step table moves to, or `None` if the step is unusable.
@@ -2945,6 +3015,15 @@ fn max_abs_score(
     let mut worst = 0.0f64;
     for t in 0..scratch.len() {
         if !updatable[t] {
+            continue;
+        }
+
+        if let Some(direction) = tables[t].metadata.monotonicity {
+            worst = worst.max(ordered_score_residual(
+                &factors[t],
+                &scratch[t],
+                direction.is_increasing(),
+            ));
             continue;
         }
 

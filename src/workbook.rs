@@ -38,15 +38,16 @@
 //! because fitting reconstructs tables on every sweep and must not pay for it.
 
 use crate::plan::Encoding;
-use crate::rating_model::{LinkFunction, RatingModel, RatingTable};
+use crate::rating_model::{LinkFunction, Monotonicity, RatingModel, RatingTable};
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Bumped when the on-disk shape changes in a way older readers cannot handle.
-// Version 2 defines explicit NaN numeric bounds as missing-only rows.
-pub const FORMAT_VERSION: u32 = 2;
+// Version 2 defines missing-only rows; version 3 preserves monotonic constraints.
+// Ordinary workbooks continue to use version 2 for compatibility.
+pub const FORMAT_VERSION: u32 = 3;
 
 /// Factors that lie this far off the variate's own curve are worth remarking on.
 const VARIATE_TOLERANCE: f64 = 1e-6;
@@ -123,6 +124,8 @@ pub struct TableManifest {
     pub locked_rows: Vec<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variate: Option<VariateManifest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monotonicity: Option<Monotonicity>,
 }
 
 /// Everything about a model that its tables cannot say on their own.
@@ -622,6 +625,7 @@ impl Workbook {
                 name: table_names[index].clone(),
                 file: Some(csv_file_name(index, &table_names[index])),
                 is_offset: table.metadata.is_offset,
+                monotonicity: table.metadata.monotonicity,
                 locked_rows,
                 variate: table.variate_values().map(|values| VariateManifest {
                     values: values.to_vec(),
@@ -633,7 +637,15 @@ impl Workbook {
 
         Ok(Workbook {
             manifest: Manifest {
-                format_version: FORMAT_VERSION,
+                format_version: if model
+                    .tables
+                    .iter()
+                    .any(|t| t.metadata.monotonicity.is_some())
+                {
+                    FORMAT_VERSION
+                } else {
+                    2
+                },
                 avenue_version: env!("CARGO_PKG_VERSION").to_string(),
                 created: Some(chrono::Utc::now().to_rfc3339()),
                 family: family.to_string(),
@@ -763,6 +775,31 @@ impl Workbook {
             data.with_column(Series::new("Rating_Factor".into(), factors))?;
 
             let mut table = RatingTable::new(data, None).with_name(&entry.name);
+
+            if let Some(direction) = entry.monotonicity {
+                table = table.as_monotone(direction)?;
+                if entry.variate.is_some() {
+                    return Err(PolarsError::ComputeError(
+                        "A workbook table cannot combine monotonicity and a variate".into(),
+                    ));
+                }
+                let values: Vec<f64> = table
+                    .data
+                    .column("Rating_Factor")?
+                    .f64()?
+                    .into_no_null_iter()
+                    .collect();
+                if values.windows(2).any(|v| {
+                    if direction.is_increasing() {
+                        v[0] > v[1]
+                    } else {
+                        v[0] < v[1]
+                    }
+                }) {
+                    issues.push(TableIssue::note(&entry.name, None, "monotonicity_violated",
+                        "Edited factors violate the declared monotonic direction; scoring uses the edited factors. Refit to enforce the constraint.".to_string()));
+                }
+            }
 
             if let Some(variate) = &entry.variate {
                 if variate.values.len() != table.data.height() {
@@ -996,7 +1033,7 @@ impl Workbook {
         let tables = parsed
             .tables
             .iter()
-            .map(|records| records_to_frame(records))
+            .map(|records| records_to_frame_with_encodings(records, &parsed.manifest.encodings))
             .collect::<Result<Vec<_>, PolarsError>>()?;
         Ok(Workbook {
             manifest: parsed.manifest,
@@ -1068,6 +1105,13 @@ pub(crate) fn frame_to_records(
 pub(crate) fn records_to_frame(
     records: &[BTreeMap<String, serde_json::Value>],
 ) -> Result<DataFrame, PolarsError> {
+    records_to_frame_with_encodings(records, &BTreeMap::new())
+}
+
+fn records_to_frame_with_encodings(
+    records: &[BTreeMap<String, serde_json::Value>],
+    encodings: &BTreeMap<String, Vec<(String, i32)>>,
+) -> Result<DataFrame, PolarsError> {
     if records.is_empty() {
         return DataFrame::new(vec![]);
     }
@@ -1092,6 +1136,7 @@ pub(crate) fn records_to_frame(
                 _ => false,
             });
         let all_numeric = populated
+            && !encodings.contains_key(name)
             && cells.iter().all(|v| match v {
                 serde_json::Value::Number(_) | serde_json::Value::Null => true,
                 serde_json::Value::String(s) => parse_number(s).is_some(),
@@ -1232,7 +1277,7 @@ impl Workbook {
                     .into(),
                 )
             })?;
-            tables.push(csv_to_frame(&text, &entry.name)?);
+            tables.push(csv_to_frame(&text, &entry.name, &manifest.encodings)?);
         }
 
         Ok(Workbook { manifest, tables })
@@ -1293,7 +1338,11 @@ fn escape_csv(text: &str) -> String {
     }
 }
 
-fn csv_to_frame(text: &str, table: &str) -> Result<DataFrame, PolarsError> {
+fn csv_to_frame(
+    text: &str,
+    table: &str,
+    encodings: &BTreeMap<String, Vec<(String, i32)>>,
+) -> Result<DataFrame, PolarsError> {
     let mut lines = text.lines().filter(|l| !l.trim().is_empty());
     let header = lines.next().ok_or_else(|| {
         PolarsError::ComputeError(format!("Table '{}' has no header row.", table).into())
@@ -1323,6 +1372,19 @@ fn csv_to_frame(text: &str, table: &str) -> Result<DataFrame, PolarsError> {
     let mut columns: Vec<Column> = Vec::with_capacity(names.len());
     for (position, name) in names.iter().enumerate() {
         let cells: Vec<&str> = rows.iter().map(|r| r[position].as_str()).collect();
+        // Encoded columns contain labels even when every label looks numeric.
+        // Preserve spelling (including leading zeros) for decode_levels; that
+        // routine also supports explicit code spellings absent from the label map.
+        if encodings.contains_key(name) {
+            columns.push(
+                Series::new(
+                    name.as_str().into(),
+                    cells.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+                )
+                .into(),
+            );
+            continue;
+        }
         let non_empty: Vec<&str> = cells
             .iter()
             .copied()

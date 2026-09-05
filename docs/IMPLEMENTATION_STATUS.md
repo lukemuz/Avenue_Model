@@ -6,19 +6,33 @@ The full scope and acceptance criteria remain in [IMPROVEMENT_PLAN.md](IMPROVEME
 This record is a progress log, not a declaration that the plan is complete.
 Existing evaluation reports, scripts and recorded runs have been preserved.
 
-## In progress: monotonic rating effects
+## Completed increment: monotonic banded rating effects
 
 The private ordered log-link block solver is implemented and tested. It pools
 Poisson/Gamma/Tweedie sufficient statistics exactly in log space, supports either
 direction and common finite coefficient bounds, and handles zero actuals. An
 independent exhaustive contiguous-partition oracle checks 3,072 loss comparisons;
 additional checks cover unequal weights, extreme statistics and invalid inputs.
-All 261 Rust tests pass (six ignored, plus one ignored doc test).
+`Plan.monotone(column, direction, ...)` now connects it to ordinary fitting for
+unpenalized Poisson/Gamma/Tweedie. The table solver uses ordered-cone optimality
+residuals, excludes constrained tables from joint updates, and disables extrapolation.
+Empty bands extend supported factors and retain no-data flags. Unsupported families,
+global solves, penalties, robust covariance, locks and repeated predictor terms fail
+explicitly. Ordinary inference and likelihood parameter counts are withheld with
+an explanation that reaches intervals, reports and analytical bundles.
 
-This does not yet enable monotonic fitting through Plan. Solver integration,
-constrained convergence, empty bands, inference semantics and export acceptance
-remain open. [Implementation notes](MONOTONIC_IMPLEMENTATION.md) give the derivation
-and integration gates. Existing model behavior is unchanged.
+Plan JSON and version-3 workbooks preserve direction; ordinary workbooks still write
+version 2. Edited violations reach the model report. Tests compare multi-term fits
+with an independent dense constrained optimizer for three families and both directions;
+Rust tests additionally verify exact weighted offset fits under both normalizations.
+Full CSV/bundle quote reloads pass at 1e-12 relative tolerance. Export acceptance also
+found and fixed numeric-looking category labels being inferred as numeric values;
+JSON/CSV now respect recorded encodings, including labels with leading zeros.
+
+All 110 Python tests and 265 Rust tests pass (six Rust tests and one doc test ignored).
+Release extension rebuilt. [Usage and limits](MONOTONIC_EFFECTS.md) distinguish this
+exact banded constraint from the still-unimplemented smooth/spline requirement;
+[implementation notes](MONOTONIC_IMPLEMENTATION.md) retain the derivation.
 
 ## Completed increment: scoring exposure and intercept-only fitting
 

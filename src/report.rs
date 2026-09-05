@@ -114,6 +114,18 @@ impl FittedModel {
         };
 
         let mut findings: Vec<Finding> = Vec::new();
+        for note in &self.notes {
+            findings.push(Finding {
+                severity: if note.blocking {
+                    Severity::High
+                } else {
+                    Severity::Medium
+                },
+                code: note.code.clone(),
+                message: note.describe(),
+                stage: "artifact".to_string(),
+            });
+        }
         // The check comes from the fit rather than from the caller. Several of its
         // findings are about the plan and cannot be recovered from the fitted model,
         // so asking for it back meant forgetting produced a cleaner report.
@@ -157,6 +169,19 @@ impl FittedModel {
                     stage: "fit".to_string(),
                 });
             }
+        }
+
+        if let Some(message) = self
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.inference_error.as_ref())
+        {
+            findings.push(Finding {
+                severity: Severity::Medium,
+                code: "inference_unavailable".to_string(),
+                message: message.clone(),
+                stage: "fit".to_string(),
+            });
         }
 
         // A finding reported before the fit and again after it is one finding.

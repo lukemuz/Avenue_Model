@@ -8,8 +8,7 @@
 //! so adjacent violating blocks can be merged exactly, without an IRLS approximation.
 //! Store sufficient statistics on the log scale to avoid exponentiating large offsets.
 //!
-//! This kernel is not yet connected to Plan or the fitting loop. Integration must
-//! also handle constrained convergence, solver selection and inference eligibility.
+//! The table fitter uses this update and the ordered-cone score residual below.
 
 #[derive(Clone, Copy)]
 struct Block {
@@ -32,10 +31,10 @@ fn log_add(a: f64, b: f64) -> f64 {
 }
 
 /// Exact ordered minimizer with common finite coefficient bounds.
-/// Zero actuals are represented by -infinity. Every supplied row must have
-/// positive expected weight; unsupported/empty bands must be handled by the caller.
+/// Zero statistics are represented by -infinity. Empty bands copy the preceding
+/// supported band's fitted value (leading empty bands copy the first supported band).
+/// This is a deterministic extension, not an estimate from observations in that band.
 /// `increasing=false` imposes a decreasing order in the original row order.
-#[allow(dead_code)] // Deliberately staged before fitting/Plan integration.
 pub(crate) fn fit_ordered_log_blocks(
     log_actual: &[f64],
     log_expected: &[f64],
@@ -52,12 +51,21 @@ pub(crate) fn fit_ordered_log_blocks(
     if log_actual
         .iter()
         .any(|a| !a.is_finite() && *a != f64::NEG_INFINITY)
-        || log_expected.iter().any(|b| !b.is_finite())
+        || log_expected
+            .iter()
+            .any(|b| !b.is_finite() && *b != f64::NEG_INFINITY)
+        || log_actual
+            .iter()
+            .zip(log_expected)
+            .any(|(a, b)| *b == f64::NEG_INFINITY && *a != f64::NEG_INFINITY)
     {
         return Err("ordered statistics require nonnegative actuals and positive expected weights");
     }
     let mut blocks: Vec<Block> = Vec::with_capacity(log_actual.len());
     for r in 0..log_actual.len() {
+        if log_expected[r] == f64::NEG_INFINITY {
+            continue;
+        }
         blocks.push(Block {
             start: r,
             end: r + 1,
@@ -89,16 +97,111 @@ pub(crate) fn fit_ordered_log_blocks(
             });
         }
     }
-    let mut result = vec![0.0; log_actual.len()];
-    for block in blocks {
-        result[block.start..block.end].fill(block.value);
+    if blocks.is_empty() {
+        return Err("ordered table requires at least one supported band");
     }
+    let mut result = vec![blocks[0].value; log_actual.len()];
+    let mut previous_end = 0;
+    let mut previous_value = blocks[0].value;
+    for block in blocks {
+        result[previous_end..block.start].fill(previous_value);
+        result[block.start..block.end].fill(block.value);
+        previous_end = block.end;
+        previous_value = block.value;
+    }
+    result[previous_end..].fill(previous_value);
     Ok(result)
+}
+
+/// Largest first-order improvement along the ordered cone's generators.
+/// Scores are negative loss derivatives. In each equal-valued block, feasible
+/// directions decrease a prefix or increase a suffix. All their directional
+/// scores must be nonpositive at the optimum. Unlike free-coordinate scores,
+/// this residual vanishes when opposing row scores balance in a pooled block.
+/// Numerical coefficient guards are not statistical bounds: a boundary-limited
+/// fit with no finite unconstrained optimum is deliberately not certified here.
+pub(crate) fn ordered_score_residual(values: &[f64], scores: &[f64], increasing: bool) -> f64 {
+    if values.len() != scores.len()
+        || values.is_empty()
+        || values.iter().chain(scores).any(|x| !x.is_finite())
+        || values
+            .windows(2)
+            .any(|v| if increasing { v[0] > v[1] } else { v[0] < v[1] })
+    {
+        return f64::INFINITY;
+    }
+    let mut worst = 0.0_f64;
+    let mut start = 0;
+    for end in 1..=values.len() {
+        if end != values.len() && values[end] == values[start] {
+            continue;
+        }
+        let mut prefix = 0.0;
+        for score in &scores[start..end] {
+            prefix += score;
+            worst = worst.max(if increasing { -prefix } else { prefix });
+        }
+        let mut suffix = 0.0;
+        for score in scores[start..end].iter().rev() {
+            suffix += score;
+            worst = worst.max(if increasing { suffix } else { -suffix });
+        }
+        start = end;
+    }
+    worst
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_bands_extend_supported_values_without_changing_the_fit() {
+        for increasing in [true, false] {
+            let supported = fit(&[8.0, 2.0, 20.0], &[1.0, 3.0, 2.0], increasing, -30.0, 30.0);
+            let extended = fit(
+                &[0.0, 8.0, 0.0, 2.0, 0.0, 20.0, 0.0],
+                &[0.0, 1.0, 0.0, 3.0, 0.0, 2.0, 0.0],
+                increasing,
+                -30.0,
+                30.0,
+            );
+            assert_eq!(
+                extended,
+                vec![
+                    supported[0],
+                    supported[0],
+                    supported[0],
+                    supported[1],
+                    supported[1],
+                    supported[2],
+                    supported[2]
+                ]
+            );
+        }
+        assert!(fit_ordered_log_blocks(
+            &[f64::NEG_INFINITY],
+            &[f64::NEG_INFINITY],
+            true,
+            -30.0,
+            30.0
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn cone_score_distinguishes_pooling_from_false_convergence() {
+        assert_eq!(ordered_score_residual(&[1.0, 1.0], &[5.0, -5.0], true), 0.0);
+        assert_eq!(ordered_score_residual(&[1.0, 1.0], &[-5.0, 5.0], true), 5.0);
+        assert_eq!(ordered_score_residual(&[1.0, 2.0], &[5.0, -5.0], true), 5.0);
+        assert_eq!(
+            ordered_score_residual(&[1.0, 1.0], &[-5.0, 5.0], false),
+            0.0
+        );
+        assert_eq!(ordered_score_residual(&[1.0, 1.0], &[5.0, -4.0], true), 1.0);
+        assert!(ordered_score_residual(&[2.0, 1.0], &[0.0, 0.0], true).is_infinite());
+        assert!(ordered_score_residual(&[f64::NAN], &[0.0], true).is_infinite());
+    }
 
     fn fit(a: &[f64], b: &[f64], increasing: bool, lower: f64, upper: f64) -> Vec<f64> {
         fit_ordered_log_blocks(

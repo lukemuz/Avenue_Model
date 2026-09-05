@@ -123,7 +123,7 @@ class ScoringContract(unittest.TestCase):
             path.write_text(json.dumps(payload))
             loaded = Workbook.load_json(str(path)).to_model()
             self.assert_predictions(loaded, self.df.select('group'), [4.] * 6)
-            payload['manifest']['format_version'] = 3
+            payload['manifest']['format_version'] = 999
             path.write_text(json.dumps(payload))
             with self.assertRaisesRegex(ValueError, 'format version'):
                 Workbook.load_json(str(path)).to_model()

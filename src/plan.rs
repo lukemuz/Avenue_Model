@@ -32,7 +32,7 @@
 //! back and relayed.
 
 use crate::glm::{fit_glm_with_diagnostics, GLMDiagnostics, GLMOptions};
-use crate::rating_model::{RatingModel, RatingTable};
+use crate::rating_model::{Monotonicity, RatingModel, RatingTable};
 use crate::validation::{validate, Severity, Validation, ValidationOptions};
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -104,6 +104,12 @@ impl Default for Base {
 pub enum Term {
     /// A numeric driver cut into bands, each band carrying its own free factor.
     Banded { column: String, breaks: Breaks },
+    /// Numeric bands whose factors follow a declared direction during fitting.
+    Monotone {
+        column: String,
+        breaks: Breaks,
+        direction: Monotonicity,
+    },
     /// A categorical driver, one free factor per level.
     Categorical {
         column: String,
@@ -169,6 +175,13 @@ impl Default for GivenRole {
 }
 
 impl Term {
+    pub fn monotone(column: &str, breaks: Breaks, direction: Monotonicity) -> Self {
+        Self::Monotone {
+            column: column.to_string(),
+            breaks,
+            direction,
+        }
+    }
     pub fn banded(column: &str, breaks: Breaks) -> Self {
         Term::Banded {
             column: column.to_string(),
@@ -225,6 +238,7 @@ impl Term {
     pub fn columns(&self) -> Vec<&str> {
         match self {
             Term::Banded { column, .. }
+            | Term::Monotone { column, .. }
             | Term::Categorical { column, .. }
             | Term::Variate { column, .. } => vec![column.as_str()],
             Term::Interaction { columns, .. } => columns.iter().map(String::as_str).collect(),
@@ -238,6 +252,7 @@ impl Term {
     pub fn name(&self) -> String {
         match self {
             Term::Banded { column, .. }
+            | Term::Monotone { column, .. }
             | Term::Categorical { column, .. }
             | Term::Variate { column, .. } => column.clone(),
             Term::Interaction { columns, .. } => columns.join(" x "),
@@ -493,9 +508,9 @@ impl Plan {
 
         for term in &self.terms {
             let numeric_columns: HashSet<&str> = match term {
-                Term::Banded { column, .. } | Term::Variate { column, .. } => {
-                    [column.as_str()].into_iter().collect()
-                }
+                Term::Banded { column, .. }
+                | Term::Monotone { column, .. }
+                | Term::Variate { column, .. } => [column.as_str()].into_iter().collect(),
                 Term::Categorical { .. } => HashSet::new(),
                 Term::Interaction { columns, breaks } => columns
                     .iter()
@@ -1095,6 +1110,33 @@ impl Plan {
         encoding: &Encoding,
     ) -> Result<(RatingTable, ResolvedTerm), PolarsError> {
         match term {
+            Term::Monotone {
+                column,
+                breaks,
+                direction,
+            } => {
+                if !["poisson", "gamma", "tweedie"].contains(&self.family.as_str())
+                    || (self.family == "tweedie" && !(1.0..=2.0).contains(&self.tweedie_power))
+                {
+                    return Err(PolarsError::ComputeError(
+                        "Monotonic terms require Poisson, Gamma or Tweedie with power in [1, 2]"
+                            .into(),
+                    ));
+                }
+                if self.terms.iter().any(|other| !std::ptr::eq(other, term) &&
+                    (other.columns().contains(&column.as_str()) || matches!(other, Term::Given { table, .. } if table.iter().any(|row| row.contains_key(column))))) {
+                    return Err(PolarsError::ComputeError("A monotonic predictor cannot also enter another term: that term could reverse its declared direction".into()));
+                }
+                let (table, mut info) =
+                    self.build_term(&Term::banded(column, breaks.clone()), df, weights, encoding)?;
+                info.kind = if direction.is_increasing() {
+                    "monotone_increasing"
+                } else {
+                    "monotone_decreasing"
+                }
+                .to_string();
+                Ok((table.as_monotone(*direction)?, info))
+            }
             Term::Banded { column, breaks } => {
                 let values = numeric_values(df, column)?;
                 let edges = band_edges(&values, breaks, column)?;
@@ -1826,11 +1868,17 @@ impl Plan {
                             "empty_levels",
                             None,
                             format!(
-                                "{} of {} rows in table '{}' carry no exposure. They cannot be \
-                                 estimated and will keep their starting factor.",
+                                "{} of {} rows in table '{}' carry no exposure. {}",
                                 empty,
                                 row_weight.len(),
-                                built.table_names[t]
+                                built.table_names[t],
+                                if table.metadata.monotonicity.is_some() {
+                                    "Their factors extend the preceding supported band (leading empty bands use the first supported band); these are not estimates from those bands."
+                                } else if table.variate_values().is_some() {
+                                    "Their factors are determined by the variate curve, not observations in those bands."
+                                } else {
+                                    "They cannot be estimated and will keep their starting factor."
+                                }
                             ),
                         ));
                     }

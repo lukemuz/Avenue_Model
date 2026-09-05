@@ -169,6 +169,36 @@ impl PyPlan {
         })
     }
 
+    /// Numeric bands constrained to an explicit increasing or decreasing direction.
+    /// Empty bands extend adjacent supported values. Uses the unpenalized table
+    /// solver; ordinary coefficient inference is unavailable for constrained fits.
+    #[pyo3(signature = (column, direction, breaks=None, quantile=None, equal_width=None))]
+    fn monotone(
+        &self,
+        column: &str,
+        direction: &str,
+        breaks: Option<Vec<f64>>,
+        quantile: Option<usize>,
+        equal_width: Option<usize>,
+    ) -> PyResult<Self> {
+        let direction = match direction {
+            "increasing" => crate::rating_model::Monotonicity::Increasing,
+            "decreasing" => crate::rating_model::Monotonicity::Decreasing,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "direction must be 'increasing' or 'decreasing'",
+                ))
+            }
+        };
+        Ok(Self {
+            inner: self.inner.clone().with(Term::monotone(
+                column,
+                breaks_from(breaks, quantile, equal_width)?,
+                direction,
+            )),
+        })
+    }
+
     /// A categorical driver, one free factor per level.
     ///
     /// `base` is `most_exposed` (the default), `first`, or a level named as it appears
@@ -679,6 +709,25 @@ impl PyFittedModel {
             out.set_item("n_parameters", info.n_parameters)?;
             out.set_item("effective_parameters", info.effective_parameters)?;
             out.set_item("standard_errors_note", &info.standard_errors_note)?;
+        } else if let Some(message) = self
+            .inner
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.inference_error.as_ref())
+        {
+            for key in [
+                "dispersion",
+                "covariance_method",
+                "cluster_column",
+                "n_clusters",
+                "pearson_chi2",
+                "df_residual",
+                "n_parameters",
+                "effective_parameters",
+            ] {
+                out.set_item(key, py.None())?;
+            }
+            out.set_item("standard_errors_note", message)?;
         }
         Ok(out)
     }

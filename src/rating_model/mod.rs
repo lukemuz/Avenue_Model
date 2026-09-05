@@ -100,6 +100,20 @@ impl Default for TableSemantics {
     }
 }
 
+/// Declared order of a numeric step table's fitted factors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Monotonicity {
+    Increasing,
+    Decreasing,
+}
+
+impl Monotonicity {
+    pub fn is_increasing(self) -> bool {
+        self == Self::Increasing
+    }
+}
+
 /// Metadata for a RatingTable
 #[derive(Debug, Clone)]
 pub struct TableMetadata {
@@ -108,6 +122,7 @@ pub struct TableMetadata {
     pub is_updatable: bool, // Can GLM update this table's factors?
     /// How many free parameters this table's rows represent. See [`TableSemantics`].
     pub semantics: TableSemantics,
+    pub monotonicity: Option<Monotonicity>,
 }
 
 impl Default for TableMetadata {
@@ -117,6 +132,7 @@ impl Default for TableMetadata {
             is_offset: false,
             is_updatable: true,
             semantics: TableSemantics::default(),
+            monotonicity: None,
         }
     }
 }
@@ -509,6 +525,34 @@ impl RatingTable {
     }
 
     // NEW: Offset-related methods
+
+    /// Declare an order constraint on one numeric step table. The factors are
+    /// updated by fitting; this declaration does not rewrite existing factors.
+    pub fn as_monotone(mut self, direction: Monotonicity) -> Result<Self, PolarsError> {
+        if self.numeric_columns.len() != 1
+            || !self.categorical_columns.is_empty()
+            || self.metadata.semantics != TableSemantics::Step
+        {
+            return Err(PolarsError::ComputeError(
+                "Monotonicity requires a one-dimensional numeric step table".into(),
+            ));
+        }
+        let name = self.numeric_columns.keys().next().unwrap();
+        let bounds = self.data.column(name)?.f64()?;
+        let values: Vec<f64> = bounds.into_no_null_iter().collect();
+        if bounds.null_count() > 0
+            || values.is_empty()
+            || values.iter().any(|v| v.is_nan())
+            || values.windows(2).any(|v| v[0] >= v[1])
+        {
+            return Err(PolarsError::ComputeError(
+                "Monotonicity requires strictly ascending numeric bands without missing-only rows"
+                    .into(),
+            ));
+        }
+        self.metadata.monotonicity = Some(direction);
+        Ok(self)
+    }
 
     /// Mark this entire table as an offset (fixed, not updated by GLM)
     pub fn as_offset(mut self) -> Self {

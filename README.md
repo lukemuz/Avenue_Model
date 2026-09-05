@@ -19,6 +19,8 @@ comes out is a set of CSVs a person can read, edit, file and load back.
   ([methodology](src/glm/README.md#the-rest-of-the-field)).
 - **The plan is data.** Levels, bands, interactions, reference levels and exposure
   treatment are explicit, serializable and reproducible.
+  [Monotonic banded effects](docs/MONOTONIC_EFFECTS.md) retain a declared increasing
+  or decreasing direction through fitting and export.
 - **Problems are found before fitting.** `check()` reports data faults, thin levels,
   unidentified terms and redundant tables together, with actionable messages.
 - **The fitted model is an artifact.** Save it as JSON or readable CSV tables, edit it,
