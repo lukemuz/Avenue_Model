@@ -141,11 +141,19 @@ def run(args):
     product.save(out / 'product')
     xholdout, _ = native_frame(holdout, native_frame(train)[1])
     reference_premium = references['premium'].predict(xholdout)
-    comparison = compare_models(holdout, {
+    candidates = {
         'frequency_severity': Candidate(product, 'loss/exposure'),
         'tweedie': Candidate(models['premium'], 'loss/exposure'),
         'glum_tweedie': Candidate(reference_premium, 'loss/exposure', True),
-    }, target='avenue_pure_premium', unit='loss/exposure', metric='tweedie', tweedie_power=1.5,
+    }
+    if args.booster:
+        from booster_challenger import run_challenger
+        challenger = run_challenger(train, holdout, models['frequency'], out / 'booster')
+        challenger_product = frequency_severity(challenger, models['severity'])
+        challenger_product.save(out / 'booster_severity_product')
+        candidates['booster_frequency_glm_severity'] = Candidate(challenger_product, 'loss/exposure')
+    comparison = compare_models(holdout, candidates,
+       target='avenue_pure_premium', unit='loss/exposure', metric='tweedie', tweedie_power=1.5,
        weight='exposure', segments=['region', 'fuel'], bootstrap=20, seed=20260905)
     comparison.summary.write_csv(out / 'comparison.csv')
     for segment, table in comparison.segments.items():
@@ -179,4 +187,5 @@ if __name__ == '__main__':
     parser.add_argument('--frequency', required=True)
     parser.add_argument('--severity', required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--booster', action='store_true', help='Tune and verify the installed stock/fork challenger on the same holdout')
     run(parser.parse_args())

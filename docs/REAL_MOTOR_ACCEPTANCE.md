@@ -117,3 +117,10 @@ The retained provenance records the script, validation source and installed whee
 The clean wheel passed all 95 Python tests; Rust passed 258 tests with six ignored tests
 and one ignored doc test. The study is deliberately outside ordinary CI because its
 public data and independent glum dependency are larger than the synthetic smoke studies.
+
+## Follow-up
+
+The [real-data fork challenger arm](REAL_FORK_ACCEPTANCE.md) has since completed in a
+fresh fork/wheel environment, on this same paid-record definition and holdout.
+Its numerical agreement, predictive improvements and remaining calibration weakness
+are reported separately; the original measurements above remain unchanged.

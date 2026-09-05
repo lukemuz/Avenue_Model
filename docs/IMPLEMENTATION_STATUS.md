@@ -428,3 +428,30 @@ that evidence.
   CR0, independent clusters, precision/exposure weights and normal intervals from
   small-sample corrections, multi-way clustering, group-based t intervals, coverage
   guarantees, whole-term tests and post-selection uncertainty. Those remain open.
+
+## Completed increment: real-data fork challenger acceptance arm
+
+- `studies/real_motor_acceptance.py --booster` now invokes a reusable challenger arm
+  on exactly the GLM study's paid-record definition and policy train/holdout split.
+  It tunes the installed stock/fork build, restores external category identity,
+  converts both modes, records complexity/timing, and compares the same holdout means.
+- Built the current release wheel and installed it with fork LightGBM 4.6.0.99 into
+  a new environment. All 103 Python tests passed there; the real GLM/glum reference
+  checks reran successfully. Historical evaluation outputs remain untouched.
+- Four fork trials/three inner folds selected 80 boosting rounds (the cap). Both
+  modes passed all 169,504 holdout quotes and 810 threshold/adjacent-float/missing/
+  unseen probes at atol=rtol=1e-12; max holdout absolute error 5.0e-16 and relative
+  error 2.73e-15. Raw-label workbook reload and every-quote 5% edit checks passed.
+- Actual complexity illustrates the limits of table count: analysis 10 tables/153
+  rows/largest 42; max 6 tables/329 rows/largest 210. Local warm-batch medians were
+  0.0208/0.0259 seconds for 169,504 quotes; these are observations, not benchmark wins.
+- Fork frequency deviance 0.451044 versus GLM 0.453825. Fork-frequency × GLM-severity
+  common Tweedie loss 85.7881 versus all-GLM product 87.6173. Loss-cost A/E remains
+  unfavorable at 1.433, and no holdout rebasing conceals it. Bootstrap count 20 is a
+  mechanics check, not stable uncertainty evidence. Booster convergence remains
+  explicitly unknown under the current GLM-oriented recommendation rule.
+- [Acceptance report](REAL_FORK_ACCEPTANCE.md) and `studies/results/real_fork` preserve
+  comparisons, parity, trial history, build identity and input/source/wheel hashes.
+  Full output: `/tmp/avenue-real-fork-acceptance`; complete run 26.10 seconds and
+  whole-process peak around 3.06 GiB (not isolated model memory). Remaining statistical,
+  performance, release and final-audit gates are explicitly retained.

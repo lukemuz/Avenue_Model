@@ -70,3 +70,7 @@ complexity, conversion parity, raw-category reload and a rate edit.
 The [fresh-wheel motor exercise](REAL_MOTOR_ACCEPTANCE.md) verifies real frequency,
 severity and Tweedie fitting against glum, bundles, quote scoring and rate edits.
 It also retains the unfavorable held-out calibration and remaining acceptance gates.
+
+The [real fork challenger](REAL_FORK_ACCEPTANCE.md) also passes full holdout, threshold
+and default-route parity in both modes, with raw-label reload and explicit complexity
+measurements. Its improved loss does not resolve the real study's loss-cost calibration.
