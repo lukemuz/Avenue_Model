@@ -32,7 +32,7 @@
 //! back and relayed.
 
 use crate::glm::{fit_glm_with_diagnostics, GLMDiagnostics, GLMOptions};
-use crate::rating_model::{RatingModel, RatingTable};
+use crate::rating_model::{Monotonicity, RatingModel, RatingTable, SplineKind};
 use crate::validation::{validate, Severity, Validation, ValidationOptions};
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -73,6 +73,15 @@ impl Breaks {
     }
 }
 
+/// Natural-cubic control locations, including both finite boundary knots.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Knots {
+    Explicit { values: Vec<f64> },
+    Quantile { n: usize },
+    EqualWidth { n: usize },
+}
+
 /// Which level a categorical factor is anchored on.
 ///
 /// The base level's factor is fixed at zero under the default anchoring, so every
@@ -102,8 +111,16 @@ impl Default for Base {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Term {
+    /// Exact natural-cubic interpolation with linear endpoint-tangent tails.
+    Spline { column: String, knots: Knots },
     /// A numeric driver cut into bands, each band carrying its own free factor.
     Banded { column: String, breaks: Breaks },
+    /// Numeric bands whose factors follow a declared direction during fitting.
+    Monotone {
+        column: String,
+        breaks: Breaks,
+        direction: Monotonicity,
+    },
     /// A categorical driver, one free factor per level.
     Categorical {
         column: String,
@@ -146,6 +163,8 @@ pub enum Term {
         table: Vec<BTreeMap<String, serde_json::Value>>,
         #[serde(default)]
         role: GivenRole,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spline: Option<SplineKind>,
     },
 }
 
@@ -169,6 +188,19 @@ impl Default for GivenRole {
 }
 
 impl Term {
+    pub fn spline(column: &str, knots: Knots) -> Self {
+        Self::Spline {
+            column: column.to_string(),
+            knots,
+        }
+    }
+    pub fn monotone(column: &str, breaks: Breaks, direction: Monotonicity) -> Self {
+        Self::Monotone {
+            column: column.to_string(),
+            breaks,
+            direction,
+        }
+    }
     pub fn banded(column: &str, breaks: Breaks) -> Self {
         Term::Banded {
             column: column.to_string(),
@@ -208,6 +240,7 @@ impl Term {
             name: name.to_string(),
             table: crate::workbook::frame_to_records(table)?,
             role: GivenRole::Structure,
+            spline: None,
         })
     }
 
@@ -218,6 +251,7 @@ impl Term {
             name: name.to_string(),
             table: crate::workbook::frame_to_records(table)?,
             role: GivenRole::Offset,
+            spline: None,
         })
     }
 
@@ -225,6 +259,8 @@ impl Term {
     pub fn columns(&self) -> Vec<&str> {
         match self {
             Term::Banded { column, .. }
+            | Term::Monotone { column, .. }
+            | Term::Spline { column, .. }
             | Term::Categorical { column, .. }
             | Term::Variate { column, .. } => vec![column.as_str()],
             Term::Interaction { columns, .. } => columns.iter().map(String::as_str).collect(),
@@ -238,6 +274,8 @@ impl Term {
     pub fn name(&self) -> String {
         match self {
             Term::Banded { column, .. }
+            | Term::Monotone { column, .. }
+            | Term::Spline { column, .. }
             | Term::Categorical { column, .. }
             | Term::Variate { column, .. } => column.clone(),
             Term::Interaction { columns, .. } => columns.join(" x "),
@@ -387,10 +425,12 @@ impl Plan {
             ));
         }
         for (index, table) in model.tables.iter().enumerate() {
+            table.spline_curve()?;
             self.terms.push(Term::Given {
                 name: format!("{}.{}", prefix, table_names[index]),
                 table: crate::workbook::frame_to_records(&table.data)?,
                 role: GivenRole::Offset,
+                spline: table.metadata.spline,
             });
         }
         Ok(self)
@@ -493,9 +533,10 @@ impl Plan {
 
         for term in &self.terms {
             let numeric_columns: HashSet<&str> = match term {
-                Term::Banded { column, .. } | Term::Variate { column, .. } => {
-                    [column.as_str()].into_iter().collect()
-                }
+                Term::Banded { column, .. }
+                | Term::Monotone { column, .. }
+                | Term::Spline { column, .. }
+                | Term::Variate { column, .. } => [column.as_str()].into_iter().collect(),
                 Term::Categorical { .. } => HashSet::new(),
                 Term::Interaction { columns, breaks } => columns
                     .iter()
@@ -511,17 +552,18 @@ impl Plan {
             // A supplied table names its columns in its own frame, and each is banded
             // or categorical according to the dtype it was saved with.
             let given_columns: Vec<(String, bool)> = match term {
-                Term::Given { table, .. } => {
+                Term::Given { table, spline, .. } => {
                     let frame = crate::workbook::records_to_frame(table)?;
                     frame
                         .get_column_names()
                         .iter()
                         .filter(|c| c.as_str() != "Rating_Factor")
                         .map(|c| {
-                            let numeric = frame
-                                .column(c)
-                                .map(|col| col.dtype() == &DataType::Float64)
-                                .unwrap_or(false);
+                            let numeric = spline.is_some()
+                                || frame
+                                    .column(c)
+                                    .map(|col| col.dtype() == &DataType::Float64)
+                                    .unwrap_or(false);
                             (c.to_string(), numeric)
                         })
                         .collect()
@@ -602,6 +644,7 @@ impl Plan {
                             .into(),
                     )
                 })?;
+            validate_exposure(&series, exposure)?;
             out.with_column(series.clone())?;
             match self.resolved_exposure_role() {
                 ExposureRole::Weight => weight_col = Some(exposure.clone()),
@@ -646,6 +689,22 @@ fn missing_column(column: &str, df: &DataFrame) -> PolarsError {
     )
 }
 
+/// Exposure is a measured nonnegative quantity, never an implicit missing-row filter.
+fn validate_exposure(series: &Column, name: &str) -> Result<(), PolarsError> {
+    for (row, value) in series.f64()?.into_iter().enumerate() {
+        if !value.is_some_and(|v| v.is_finite() && v >= 0.0) {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Exposure '{}' at row {} must be finite, non-null and nonnegative.",
+                    name, row
+                )
+                .into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Cast a categorical column to `Int32`, mapping strings to codes when needed.
 fn encode_categorical(
     series: &Column,
@@ -687,15 +746,28 @@ fn encode_categorical(
                 .collect();
             Ok((Series::new(column.into(), codes).into(), Some(map)))
         }
-        DataType::Int32 => Ok((series.clone(), None)),
+        DataType::Int32 => Ok((
+            Series::new(
+                column.into(),
+                series
+                    .i32()?
+                    .into_iter()
+                    .map(|v| v.unwrap_or(UNSEEN_CODE))
+                    .collect::<Vec<_>>(),
+            )
+            .into(),
+            None,
+        )),
         DataType::Int8
         | DataType::Int16
         | DataType::Int64
         | DataType::UInt8
         | DataType::UInt16
         | DataType::UInt32
-        | DataType::UInt64 => Ok((series.cast(&DataType::Int32)?, None)),
-        DataType::Boolean => Ok((series.cast(&DataType::Int32)?, None)),
+        | DataType::UInt64
+        | DataType::Boolean => {
+            encode_categorical(&series.cast(&DataType::Int32)?, column, encoding)
+        }
         other => Err(PolarsError::ComputeError(
             format!(
                 "Column '{}' has dtype {:?} and is used as a categorical factor. Use an \
@@ -731,6 +803,9 @@ pub struct ResolvedTerm {
     /// The values a variate's polynomial is taken over.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variate_values: Option<Vec<f64>>,
+    /// Resolved finite control locations for a spline, never band edges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knots: Option<Vec<f64>>,
 }
 
 /// A plan turned into a model, with what it decided along the way.
@@ -803,6 +878,55 @@ fn band_edges(values: &[f64], breaks: &Breaks, column: &str) -> Result<Vec<f64>,
     // contribute nothing and be dropped from that table's update.
     edges.push(f64::INFINITY);
     Ok(edges)
+}
+
+fn spline_knots(values: &[f64], weights: &[f64], spec: &Knots) -> Result<Vec<f64>, PolarsError> {
+    let error = |message: &str| PolarsError::ComputeError(message.to_string().into());
+    let knots = match spec {
+        Knots::Explicit { values } => values.clone(),
+        Knots::Quantile { n } | Knots::EqualWidth { n } => {
+            if *n < 2 {
+                return Err(error(
+                    "A spline needs at least two knots, including its boundaries",
+                ));
+            }
+            let mut sorted: Vec<f64> = values
+                .iter()
+                .zip(weights)
+                .filter(|(_, w)| **w > 0.)
+                .map(|(v, _)| *v)
+                .collect();
+            sorted.sort_by(f64::total_cmp);
+            if sorted.is_empty() {
+                return Err(error(
+                    "Spline knot resolution needs positive-weight training observations",
+                ));
+            }
+            let lo = sorted[0];
+            let hi = *sorted.last().unwrap();
+            let mut knots: Vec<f64> = (0..*n)
+                .map(|i| {
+                    if i == 0 {
+                        lo
+                    } else if i + 1 == *n {
+                        hi
+                    } else if matches!(spec, Knots::Quantile { .. }) {
+                        let rank =
+                            (i as f64 / (*n - 1) as f64 * sorted.len() as f64).ceil() as usize;
+                        sorted[rank.clamp(1, sorted.len()) - 1]
+                    } else {
+                        lo + (hi - lo) * (i as f64 / (*n - 1) as f64)
+                    }
+                })
+                .collect();
+            knots.dedup();
+            knots
+        }
+    };
+    // Explicit knots are never sorted or silently discarded. Validate with the
+    // same geometry used by scoring, including representable finite spacing.
+    crate::spline::NaturalCubicCurve::new(knots.clone(), vec![0.; knots.len()]).map_err(error)?;
+    Ok(knots)
 }
 
 /// Midpoints for a variate's bands, with the open top band extrapolated.
@@ -931,12 +1055,6 @@ impl Plan {
     ///
     /// `prepared` must come from [`Plan::prepare`].
     pub fn build(&self, prepared: &Prepared) -> Result<BuiltPlan, PolarsError> {
-        if self.terms.is_empty() {
-            return Err(PolarsError::ComputeError(
-                "A plan needs at least one term. Add one with Plan::with(Term::...).".into(),
-            ));
-        }
-
         let df = &prepared.df;
         let weights: Vec<f64> = match &prepared.weight_col {
             Some(col) => df
@@ -963,6 +1081,7 @@ impl Plan {
             edges: None,
             base_level: None,
             variate_values: None,
+            knots: None,
         }];
 
         for term in &self.terms {
@@ -970,6 +1089,68 @@ impl Plan {
             names.push(info.name.clone());
             resolved.push(info);
             tables.push(table);
+        }
+
+        // A two-way interaction alongside both main effects uses treatment
+        // contrasts: its reference row/column are fixed at zero. Interaction-only
+        // tables retain their existing full-cell representation.
+        for (term_index, term) in self.terms.iter().enumerate() {
+            let Term::Interaction { columns, breaks } = term else {
+                continue;
+            };
+            if columns.len() != 2 || breaks.len() != 2 {
+                continue;
+            }
+            let mains: Vec<Option<usize>> = columns
+                .iter()
+                .zip(breaks)
+                .map(|(column, spec)| {
+                    self.terms
+                        .iter()
+                        .position(|candidate| match candidate {
+                            Term::Categorical { column: c, .. } => c == column && spec.is_none(),
+                            Term::Banded {
+                                column: c,
+                                breaks: b,
+                            } => c == column && spec.as_ref() == Some(b),
+                            _ => false,
+                        })
+                        .map(|i| i + 1)
+                })
+                .collect();
+            let (Some(left), Some(right)) = (mains[0], mains[1]) else {
+                continue;
+            };
+            let t = term_index + 1;
+            let mut locked = Vec::new();
+            for row in 0..tables[t].data.height() {
+                let is_reference = [(0, left), (1, right)].iter().any(|(axis, main)| {
+                    tables[t]
+                        .data
+                        .column(&columns[*axis])
+                        .unwrap()
+                        .get(row)
+                        .unwrap()
+                        == tables[*main]
+                            .data
+                            .column(&columns[*axis])
+                            .unwrap()
+                            .get(0)
+                            .unwrap()
+                });
+                if is_reference {
+                    locked.push(row);
+                }
+            }
+            for row in &locked {
+                tables[t].set_row_offset(*row, true);
+            }
+            resolved[t].parameters = tables[t].data.height() - locked.len();
+            resolved[t].kind = "interaction_contrast".into();
+            resolved[t].base_level = Some(format!(
+                "zero on either main-effect reference: {} / {}",
+                columns[0], columns[1]
+            ));
         }
 
         let mut seen = HashSet::new();
@@ -1009,6 +1190,69 @@ impl Plan {
         encoding: &Encoding,
     ) -> Result<(RatingTable, ResolvedTerm), PolarsError> {
         match term {
+            Term::Spline { column, knots } => {
+                let values = numeric_values(df, column)?;
+                if values.iter().any(|v| !v.is_finite()) {
+                    return Err(PolarsError::ComputeError(
+                        format!(
+                            "Spline column '{}' requires finite, non-null training coordinates",
+                            column
+                        )
+                        .into(),
+                    ));
+                }
+                let knots = spline_knots(&values, weights, knots)?;
+                let rows = knots.len();
+                let table = RatingTable::new(
+                    DataFrame::new(vec![
+                        Series::new(column.into(), knots.clone()).into(),
+                        Series::new("Rating_Factor".into(), vec![0.; rows]).into(),
+                    ])?,
+                    None,
+                )
+                .as_natural_cubic()?;
+                Ok((
+                    table,
+                    ResolvedTerm {
+                        name: column.clone(),
+                        kind: "natural_cubic_spline".into(),
+                        columns: vec![column.clone()],
+                        rows,
+                        parameters: rows - 1,
+                        edges: None,
+                        base_level: Some("first knot".into()),
+                        variate_values: None,
+                        knots: Some(knots),
+                    },
+                ))
+            }
+            Term::Monotone {
+                column,
+                breaks,
+                direction,
+            } => {
+                if !["poisson", "gamma", "tweedie"].contains(&self.family.as_str())
+                    || (self.family == "tweedie" && !(1.0..=2.0).contains(&self.tweedie_power))
+                {
+                    return Err(PolarsError::ComputeError(
+                        "Monotonic terms require Poisson, Gamma or Tweedie with power in [1, 2]"
+                            .into(),
+                    ));
+                }
+                if self.terms.iter().any(|other| !std::ptr::eq(other, term) &&
+                    (other.columns().contains(&column.as_str()) || matches!(other, Term::Given { table, .. } if table.iter().any(|row| row.contains_key(column))))) {
+                    return Err(PolarsError::ComputeError("A monotonic predictor cannot also enter another term: that term could reverse its declared direction".into()));
+                }
+                let (table, mut info) =
+                    self.build_term(&Term::banded(column, breaks.clone()), df, weights, encoding)?;
+                info.kind = if direction.is_increasing() {
+                    "monotone_increasing"
+                } else {
+                    "monotone_decreasing"
+                }
+                .to_string();
+                Ok((table.as_monotone(*direction)?, info))
+            }
             Term::Banded { column, breaks } => {
                 let values = numeric_values(df, column)?;
                 let edges = band_edges(&values, breaks, column)?;
@@ -1031,6 +1275,7 @@ impl Plan {
                         edges: Some(edges),
                         base_level: Some("lowest band".to_string()),
                         variate_values: None,
+                        knots: None,
                     },
                 ))
             }
@@ -1061,6 +1306,7 @@ impl Plan {
                         edges: None,
                         base_level: Some(base_label),
                         variate_values: None,
+                        knots: None,
                     },
                 ))
             }
@@ -1112,12 +1358,33 @@ impl Plan {
                         edges: Some(edges),
                         base_level: Some("lowest band".to_string()),
                         variate_values: Some(variate_values),
+                        knots: None,
                     },
                 ))
             }
 
-            Term::Given { name, table, role } => {
-                let frame = crate::workbook::records_to_frame(table)?;
+            Term::Given {
+                name,
+                table,
+                role,
+                spline,
+            } => {
+                let mut frame = crate::workbook::records_to_frame(table)?;
+                if spline.is_some() {
+                    let names: Vec<String> = frame
+                        .get_column_names()
+                        .iter()
+                        .filter(|c| c.as_str() != "Rating_Factor")
+                        .map(|c| c.to_string())
+                        .collect();
+                    for column in names {
+                        let values = frame.column(&column)?;
+                        if values.dtype().is_primitive_numeric() {
+                            let cast = values.cast(&DataType::Float64)?;
+                            frame.with_column(cast)?;
+                        }
+                    }
+                }
                 // The same structural checks a workbook load applies, so a table
                 // pasted into a plan cannot smuggle in an out-of-order band.
                 // A one-row table with no feature columns is a constant: legitimate
@@ -1131,7 +1398,10 @@ impl Plan {
                 let faults: Vec<String> =
                     crate::workbook::check_table(&frame, name, "Rating_Factor", is_constant)
                         .into_iter()
-                        .filter(|issue| issue.blocking)
+                        .filter(|issue| {
+                            issue.blocking
+                                && (spline.is_none() || issue.code != "no_unbounded_band")
+                        })
                         .map(|issue| issue.describe())
                         .collect();
                 if !faults.is_empty() {
@@ -1149,6 +1419,19 @@ impl Plan {
 
                 let rows = frame.height();
                 let mut built = RatingTable::new(frame, None).with_name(name);
+                let mut resolved_knots = None;
+                if spline.is_some() {
+                    built = built.as_natural_cubic()?;
+                    let column = built.get_numeric_columns().keys().next().unwrap();
+                    resolved_knots = Some(
+                        built
+                            .data
+                            .column(column)?
+                            .f64()?
+                            .into_no_null_iter()
+                            .collect(),
+                    );
+                }
                 if *role == GivenRole::Offset {
                     built = built.as_offset();
                 }
@@ -1158,7 +1441,12 @@ impl Plan {
                         name: name.clone(),
                         kind: match role {
                             GivenRole::Offset => "offset".to_string(),
-                            GivenRole::Structure => "given".to_string(),
+                            GivenRole::Structure => if spline.is_some() {
+                                "given_spline"
+                            } else {
+                                "given"
+                            }
+                            .to_string(),
                         },
                         columns: Vec::new(),
                         rows,
@@ -1173,6 +1461,7 @@ impl Plan {
                             GivenRole::Structure => Some("first row".to_string()),
                         },
                         variate_values: None,
+                        knots: resolved_knots,
                     },
                 ))
             }
@@ -1217,7 +1506,15 @@ impl Plan {
                             axes.push(Axis::Categorical(ordered_levels(
                                 &codes,
                                 weights,
-                                &Base::First,
+                                self.terms
+                                    .iter()
+                                    .find_map(|term| match term {
+                                        Term::Categorical { column: c, base } if c == column => {
+                                            Some(base)
+                                        }
+                                        _ => None,
+                                    })
+                                    .unwrap_or(&Base::First),
                                 encoding,
                                 column,
                             )?));
@@ -1291,6 +1588,7 @@ impl Plan {
                         edges: None,
                         base_level: Some("first combination".to_string()),
                         variate_values: None,
+                        knots: None,
                     },
                 ))
             }
@@ -1725,6 +2023,11 @@ impl Plan {
                             ),
                         ));
                     }
+                    if table.metadata.spline.is_some() {
+                        issues.push(Issue::new(Severity::Low, "spline_support", None,
+                            format!("Table '{}' is a continuous spline. Support intervals are not knot-parameter counts; knot inference uses the continuous basis; pre-fit spline conditioning is not yet available.", built.table_names[t])));
+                        continue;
+                    }
                     let empty = row_weight.iter().filter(|w| **w <= 0.0).count();
                     if empty > 0 {
                         issues.push(Issue::new(
@@ -1732,11 +2035,17 @@ impl Plan {
                             "empty_levels",
                             None,
                             format!(
-                                "{} of {} rows in table '{}' carry no exposure. They cannot be \
-                                 estimated and will keep their starting factor.",
+                                "{} of {} rows in table '{}' carry no exposure. {}",
                                 empty,
                                 row_weight.len(),
-                                built.table_names[t]
+                                built.table_names[t],
+                                if table.metadata.monotonicity.is_some() {
+                                    "Their factors extend the preceding supported band (leading empty bands use the first supported band); these are not estimates from those bands."
+                                } else if table.variate_values().is_some() {
+                                    "Their factors are determined by the variate curve, not observations in those bands."
+                                } else {
+                                    "They cannot be estimated from these data. Penalized step fits use the reference relativity; unpenalized fits retain starting factors subject to normalization."
+                                }
                             ),
                         ));
                     }
@@ -1771,10 +2080,21 @@ impl Plan {
                 .model
                 .tables
                 .iter()
-                .map(|t| !t.metadata.is_offset && t.variate_values().is_none())
+                .map(|t| {
+                    !t.metadata.is_offset
+                        && t.variate_values().is_none()
+                        && t.metadata.spline.is_none()
+                        && !(0..t.data.height()).any(|r| t.is_row_offset(r))
+                })
                 .collect();
             let pairs = crate::glm::table_correlations(matches, &weights, &shapes, &eligible);
-            if !pairs.is_empty() {
+            if !pairs.is_empty()
+                && !built
+                    .model
+                    .tables
+                    .iter()
+                    .any(|t| t.metadata.spline.is_some())
+            {
                 table_conditioning = Some(crate::glm::collective_strength(&pairs));
             }
             for pair in &pairs {
@@ -2003,7 +2323,7 @@ impl FittedModel {
     /// Convert a LightGBM model into rating tables and hold it as a `FittedModel`.
     ///
     /// `consolidation` is `"max"` for the minimal set of tables or `"analysis"` for
-    /// one per tree node. Predictions match the original model exactly.
+    /// one per tree node. Use Python `from_booster` with data for a numerical parity report.
     pub fn from_lgbm_json(model_json: &str, consolidation: &str) -> Result<Self, PolarsError> {
         let model = RatingModel::from_lgbm_json(model_json, consolidation)?;
         let family = serde_json::from_str::<serde_json::Value>(model_json)
@@ -2125,12 +2445,18 @@ impl FittedModel {
 /// model which produced them.
 fn merged_encoding(left: &Encoding, right: &Encoding) -> Encoding {
     let mut columns: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut wildcard_columns = HashSet::new();
     for source in [left, right] {
         for (column, levels) in &source.maps {
-            columns
-                .entry(column.clone())
-                .or_default()
-                .extend(levels.iter().map(|(name, _)| name.clone()));
+            if levels.iter().any(|(_, code)| *code == WILDCARD_CODE) {
+                wildcard_columns.insert(column.clone());
+            }
+            columns.entry(column.clone()).or_default().extend(
+                levels
+                    .iter()
+                    .filter(|(_, code)| *code != WILDCARD_CODE)
+                    .map(|(name, _)| name.clone()),
+            );
         }
     }
     Encoding {
@@ -2139,11 +2465,14 @@ fn merged_encoding(left: &Encoding, right: &Encoding) -> Encoding {
             .map(|(column, mut names)| {
                 names.sort();
                 names.dedup();
-                let levels = names
+                let mut levels: Vec<_> = names
                     .into_iter()
                     .enumerate()
                     .map(|(code, name)| (name, code as i32))
                     .collect();
+                if wildcard_columns.contains(&column) {
+                    levels.push(("(any other level)".to_string(), WILDCARD_CODE));
+                }
                 (column, levels)
             })
             .collect(),
@@ -2185,6 +2514,9 @@ fn remap_model_encoding(
                 .into_iter()
                 .map(|code| {
                     code.map(|old_code| {
+                        if old_code == WILDCARD_CODE {
+                            return Ok(WILDCARD_CODE);
+                        }
                         old_names
                             .get(&old_code)
                             .and_then(|name| new_codes.get(name).copied())
@@ -2240,9 +2572,21 @@ impl FittedModel {
         )
     }
 
-    /// Prepare scoring data with the encoding this model was fitted with.
+    /// Prepare validation data, including response weights and offsets, with the fitted encoding.
     pub fn prepare(&self, df: &DataFrame) -> Result<Prepared, PolarsError> {
+        self.prepare_inputs(df, true)
+    }
+
+    fn prepare_inputs(
+        &self,
+        df: &DataFrame,
+        for_validation: bool,
+    ) -> Result<Prepared, PolarsError> {
         if let Some(plan) = &self.plan {
+            let mut plan = plan.clone();
+            if !for_validation {
+                plan.exposure = None;
+            }
             return plan.prepare(df, Some(&self.encoding));
         }
 
@@ -2269,11 +2613,12 @@ impl FittedModel {
 
         let mut weight_col = None;
         let mut offset_col = None;
-        if let Some(exposure) = &self.exposure {
+        if let Some(exposure) = self.exposure.as_ref().filter(|_| for_validation) {
             let series = out
                 .column(exposure)
                 .map_err(|_| missing_column(exposure, df))?
                 .cast(&DataType::Float64)?;
+            validate_exposure(&series, exposure)?;
             out.with_column(series.clone())?;
             match self.exposure_role.unwrap_or(ExposureRole::Weight) {
                 ExposureRole::Weight => weight_col = Some(exposure.clone()),
@@ -2300,10 +2645,246 @@ impl FittedModel {
         })
     }
 
-    /// Fitted means on the response scale.
+    /// Fitted means on the response scale. Unmatched or nonfinite results raise.
     pub fn predict(&self, df: &DataFrame) -> Result<Series, PolarsError> {
-        let prepared = self.prepare(df)?;
-        self.model.predict(&prepared.df)
+        self.predict_with_offset(df, self.exposure_role == Some(ExposureRole::Offset))
+    }
+
+    /// The recorded Poisson exposure convention, or an unspecified response mean.
+    pub fn prediction_kind(&self) -> &'static str {
+        if self.family == "poisson" && self.target.is_some() && self.exposure.is_some() {
+            match self.exposure_role {
+                Some(ExposureRole::Weight) => "rate",
+                Some(ExposureRole::Offset) => "count",
+                None => "response",
+            }
+        } else {
+            "response"
+        }
+    }
+
+    fn require_count_convention(&self) -> Result<(), PolarsError> {
+        if self.prediction_kind() == "response" {
+            return Err(PolarsError::ComputeError(
+                "Rate/count conversion requires a Poisson response with a recorded exposure column and weight/offset convention. Severity, composed and unspecified means cannot be converted to counts.".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Poisson rate per exposure, without requiring an exposure column to score.
+    pub fn predict_rate(&self, df: &DataFrame) -> Result<Series, PolarsError> {
+        self.require_count_convention()?;
+        let mut result = self.predict_with_offset(df, false)?;
+        result.rename("rate".into());
+        Ok(result)
+    }
+
+    /// Expected Poisson counts, applying the recorded exposure exactly once.
+    pub fn predict_count(&self, df: &DataFrame) -> Result<Series, PolarsError> {
+        self.require_count_convention()?;
+        let mut result = self.predict_with_offset(df, true)?;
+        result.rename("expected_count".into());
+        Ok(result)
+    }
+
+    fn predict_with_offset(
+        &self,
+        df: &DataFrame,
+        apply_offset: bool,
+    ) -> Result<Series, PolarsError> {
+        let result = self.diagnostics_with_offset(df, apply_offset)?;
+        let status = result.column("status")?.str()?;
+        if let Some(row) = status.into_iter().position(|s| s != Some("ok")) {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Prediction failed at row {}: {} (tables: {}). Check predictor levels, missing values and table factors; use predict_diagnostics() to inspect all rows.",
+                    row,
+                    result.column("status")?.str()?.get(row).unwrap_or("unknown"),
+                    result.column("unmatched_tables")?.str()?.get(row).unwrap_or("")
+                ).into(),
+            ));
+        }
+        Ok(result
+            .column("predictions")?
+            .as_materialized_series()
+            .clone())
+    }
+
+    /// Preserve input row order and return null means for unmatched/nonfinite rows.
+    /// Invalid schemas or exposure values are errors even in diagnostic mode.
+    pub fn predict_diagnostics(&self, df: &DataFrame) -> Result<DataFrame, PolarsError> {
+        self.diagnostics_with_offset(df, self.exposure_role == Some(ExposureRole::Offset))
+    }
+
+    fn diagnostics_with_offset(
+        &self,
+        df: &DataFrame,
+        apply_offset: bool,
+    ) -> Result<DataFrame, PolarsError> {
+        use crate::glm::matching::{precompute_all_matches, NO_MATCH};
+        let prepared = self.prepare_inputs(df, false)?;
+        // Require the same predictor schema for fitted and loaded artifacts.
+        for table in &self.model.tables {
+            for (column, _) in table.get_feature_info() {
+                prepared
+                    .df
+                    .column(&column)
+                    .map_err(|_| missing_column(&column, df))?;
+            }
+        }
+        let matches = precompute_all_matches(&self.model, &prepared.df)?;
+        let mut eta = vec![0.0; df.height()];
+        let mut unmatched = vec![Vec::<String>::new(); df.height()];
+        for (t, table) in self.model.tables.iter().enumerate() {
+            let factors = table.data.column("Rating_Factor")?.f64()?;
+            let continuous = table.continuous_values(&prepared.df)?;
+            for row in 0..df.height() {
+                if matches[t][row] == NO_MATCH {
+                    unmatched[row].push(
+                        self.table_names
+                            .get(t)
+                            .cloned()
+                            .unwrap_or_else(|| format!("table_{}", t)),
+                    );
+                } else {
+                    eta[row] += continuous.as_ref().map(|v| v[row]).unwrap_or_else(|| {
+                        factors.get(matches[t][row] as usize).unwrap_or(f64::NAN)
+                    });
+                }
+            }
+        }
+        let finite_factors: Vec<bool> = eta.iter().map(|v| v.is_finite()).collect();
+        if apply_offset {
+            if let Some(exposure) = &self.exposure {
+                let values = df
+                    .column(exposure)
+                    .map_err(|_| missing_column(exposure, df))?
+                    .cast(&DataType::Float64)?;
+                for (row, value) in values.f64()?.into_iter().enumerate() {
+                    let value = value
+                        .filter(|v| v.is_finite() && *v >= 0.0)
+                        .ok_or_else(|| {
+                            PolarsError::ComputeError(
+                                format!(
+                                    "Exposure '{}' at row {} must be finite, non-null and nonnegative.",
+                                    exposure, row
+                                )
+                                .into(),
+                            )
+                        })?;
+                    eta[row] += value.ln();
+                }
+            }
+        }
+        let means = self.model.apply_link_function(eta);
+        let mut predictions = Vec::with_capacity(df.height());
+        let mut status = Vec::with_capacity(df.height());
+        for row in 0..df.height() {
+            let reason = if !unmatched[row].is_empty() {
+                "unmatched"
+            } else if !finite_factors[row] || !means[row].is_finite() {
+                "nonfinite"
+            } else {
+                "ok"
+            };
+            status.push(reason);
+            predictions.push(if reason == "ok" {
+                Some(means[row])
+            } else {
+                None
+            });
+        }
+        DataFrame::new(vec![
+            Series::new("row".into(), (0..df.height() as u64).collect::<Vec<_>>()).into(),
+            Series::new("predictions".into(), predictions).into(),
+            Series::new("status".into(), status).into(),
+            Series::new(
+                "unmatched_tables".into(),
+                unmatched.iter().map(|v| v.join(", ")).collect::<Vec<_>>(),
+            )
+            .into(),
+        ])
+    }
+
+    /// Policy-level table contributions on the linear-predictor scale.
+    /// The summary and long contribution table retain original row positions.
+    pub fn explain(&self, df: &DataFrame) -> Result<(DataFrame, DataFrame), PolarsError> {
+        use crate::glm::matching::precompute_all_matches;
+        // Share strict scoring validation, including invalid exposures and factors.
+        let predictions = self.predict(df)?;
+        let prepared = self.prepare_inputs(df, false)?;
+        let matches = precompute_all_matches(&self.model, &prepared.df)?;
+        let log_link = self.model.get_link_function() == "log";
+        let mut rows = Vec::new();
+        let mut names = Vec::new();
+        let mut kinds = Vec::new();
+        let mut table_rows: Vec<Option<u64>> = Vec::new();
+        let mut coefficients = Vec::new();
+        let mut multipliers: Vec<Option<f64>> = Vec::new();
+        let mut eta = vec![0.0; df.height()];
+        for (t, table) in self.model.tables.iter().enumerate() {
+            let factors = table.data.column("Rating_Factor")?.f64()?;
+            let continuous = table.continuous_values(&prepared.df)?;
+            for row in 0..df.height() {
+                let index = matches[t][row] as usize;
+                let value = continuous
+                    .as_ref()
+                    .map(|v| v[row])
+                    .unwrap_or_else(|| factors.get(index).unwrap());
+                eta[row] += value;
+                rows.push(row as u64);
+                names.push(self.table_names[t].clone());
+                kinds.push(if continuous.is_some() {
+                    "spline"
+                } else if t == 0 {
+                    "intercept"
+                } else {
+                    "table"
+                });
+                table_rows.push(if continuous.is_some() {
+                    None
+                } else {
+                    Some(index as u64)
+                });
+                coefficients.push(value);
+                multipliers.push(if log_link { Some(value.exp()) } else { None });
+            }
+        }
+        if self.exposure_role == Some(ExposureRole::Offset) {
+            if let Some(exposure) = &self.exposure {
+                let values = df.column(exposure)?.cast(&DataType::Float64)?;
+                for (row, value) in values.f64()?.into_iter().enumerate() {
+                    let value = value.unwrap();
+                    eta[row] += value.ln();
+                    rows.push(row as u64);
+                    names.push(exposure.clone());
+                    kinds.push("exposure");
+                    table_rows.push(None);
+                    coefficients.push(value.ln());
+                    multipliers.push(if log_link { Some(value) } else { None });
+                }
+            }
+        }
+        let summary = DataFrame::new(vec![
+            Series::new("row".into(), (0..df.height() as u64).collect::<Vec<_>>()).into(),
+            Series::new("linear_predictor".into(), eta).into(),
+            Series::new(
+                "link".into(),
+                vec![self.model.get_link_function(); df.height()],
+            )
+            .into(),
+            predictions.into(),
+        ])?;
+        let contributions = DataFrame::new(vec![
+            Series::new("row".into(), rows).into(),
+            Series::new("term".into(), names).into(),
+            Series::new("kind".into(), kinds).into(),
+            Series::new("table_row".into(), table_rows).into(),
+            Series::new("coefficient".into(), coefficients).into(),
+            Series::new("multiplier".into(), multipliers).into(),
+        ])?;
+        Ok((summary, contributions))
     }
 
     /// Validate against data, using the same weight and offset roles the fit used.
@@ -2369,6 +2950,15 @@ impl FittedModel {
                     code.and_then(|c| self.encoding.label_for(&name, c).map(str::to_string))
                 })
                 .collect();
+            let label_name = format!("{}_Level", name);
+            if frame.column(&label_name).is_ok() {
+                return Err(PolarsError::ComputeError(
+                    format!(
+                    "Derived review column '{label_name}' conflicts with an existing table column"
+                )
+                    .into(),
+                ));
+            }
             frame.with_column(Series::new(
                 format!("{}_Level", name).as_str().into(),
                 labels,
@@ -2394,7 +2984,11 @@ impl FittedModel {
 
         let mut out = Vec::with_capacity(self.model.tables.len());
         for (t, table) in self.model.tables.iter().enumerate() {
-            let mut data = table.data.clone();
+            table.ensure_review_columns_available(&["Coefficient", "Standard_Error", "Status"])?;
+            if self.model.get_link_function() == "log" {
+                table.ensure_review_columns_available(&["Relativity"])?;
+            }
+            let mut data = table.review_data()?;
             let coefficients: Vec<f64> = data
                 .column("Rating_Factor")?
                 .f64()?
@@ -2408,7 +3002,21 @@ impl FittedModel {
 
             let status: Vec<&str> = (0..coefficients.len())
                 .map(|r| {
-                    if unfitted.contains(&(t, r)) {
+                    if self.diagnostics.is_none() {
+                        "scoring_only"
+                    } else if self
+                        .resolved
+                        .get(t)
+                        .is_some_and(|term| term.kind == "interaction_contrast")
+                        && errors.get(r) == Some(&0.0)
+                    {
+                        "reference"
+                    } else if table.metadata.is_offset
+                        || !table.metadata.is_updatable
+                        || table.is_row_offset(r)
+                    {
+                        "locked"
+                    } else if unfitted.contains(&(t, r)) {
                         "no_data"
                     } else if aliased.contains(&(t, r)) {
                         "aliased"
@@ -2427,6 +3035,7 @@ impl FittedModel {
                     continue;
                 }
                 if let Ok(codes) = table.data.column(&name).and_then(|c| c.i32()) {
+                    table.ensure_review_columns_available(&[format!("{}_Level", name).as_str()])?;
                     let labels: Vec<Option<String>> = codes
                         .into_iter()
                         .map(|c| {

@@ -61,6 +61,9 @@ pub struct FitSummary {
     pub pseudo_r2: f64,
     pub n_parameters: Option<usize>,
     pub dispersion: Option<f64>,
+    pub covariance_method: Option<String>,
+    pub cluster_column: Option<String>,
+    pub n_clusters: Option<usize>,
     pub aic: Option<f64>,
     pub bic: Option<f64>,
     pub table_conditioning: Option<f64>,
@@ -111,6 +114,18 @@ impl FittedModel {
         };
 
         let mut findings: Vec<Finding> = Vec::new();
+        for note in &self.notes {
+            findings.push(Finding {
+                severity: if note.blocking {
+                    Severity::High
+                } else {
+                    Severity::Medium
+                },
+                code: note.code.clone(),
+                message: note.describe(),
+                stage: "artifact".to_string(),
+            });
+        }
         // The check comes from the fit rather than from the caller. Several of its
         // findings are about the plan and cannot be recovered from the fitted model,
         // so asking for it back meant forgetting produced a cleaner report.
@@ -156,6 +171,19 @@ impl FittedModel {
             }
         }
 
+        if let Some(message) = self
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.inference_error.as_ref())
+        {
+            findings.push(Finding {
+                severity: Severity::Medium,
+                code: "inference_unavailable".to_string(),
+                message: message.clone(),
+                stage: "fit".to_string(),
+            });
+        }
+
         // A finding reported before the fit and again after it is one finding.
         findings.sort_by(|a, b| b.severity.cmp(&a.severity).then(a.code.cmp(&b.code)));
         findings.dedup_by(|a, b| a.code == b.code && a.message == b.message);
@@ -179,6 +207,9 @@ impl FittedModel {
                 pseudo_r2: diagnostics.pseudo_r2(),
                 n_parameters: inference.map(|i| i.n_parameters),
                 dispersion: inference.map(|i| i.dispersion),
+                covariance_method: inference.map(|i| i.covariance_method.clone()),
+                cluster_column: inference.and_then(|i| i.cluster_column.clone()),
+                n_clusters: inference.and_then(|i| i.n_clusters),
                 aic: inference.and_then(|i| i.aic),
                 bic: inference.and_then(|i| i.bic),
                 table_conditioning: diagnostics.table_conditioning,
@@ -364,6 +395,16 @@ impl ModelReport {
             ));
             if let Some(p) = fit.n_parameters {
                 out.push_str(&format!("| Parameters | {} |\n", p));
+            }
+            if let Some(method) = &fit.covariance_method {
+                out.push_str(&format!("| Covariance | {} |\n", method));
+            }
+            if let Some(column) = &fit.cluster_column {
+                out.push_str(&format!(
+                    "| Cluster column | {} |\n| Positive-weight clusters | {} |\n",
+                    column,
+                    fit.n_clusters.unwrap_or(0)
+                ));
             }
             if let Some(d) = fit.dispersion {
                 out.push_str(&format!("| Dispersion | {:.6} |\n", d));

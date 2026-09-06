@@ -5,6 +5,10 @@ use std::collections::{HashMap, HashSet};
 use super::{FeatureValue, RatingTable};
 
 pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> RatingTable {
+    assert!(
+        table1.metadata.spline.is_none() && table2.metadata.spline.is_none(),
+        "Continuous spline tables must remain separate during consolidation"
+    );
     // Get unique feature values for each feature from both tables
     let mut numeric_values: HashMap<String, Vec<f64>> = HashMap::new();
     let mut categorical_values: HashMap<String, Vec<i32>> = HashMap::new();
@@ -45,8 +49,8 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
 
     // Dedupe and sort values
     for values in numeric_values.values_mut() {
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        values.dedup();
+        values.sort_by(f64::total_cmp);
+        values.dedup_by(|a, b| a == b || (a.is_nan() && b.is_nan()));
     }
 
     for values in categorical_values.values_mut() {
@@ -81,6 +85,11 @@ pub fn expand_and_combine_tables(table1: &RatingTable, table2: &RatingTable) -> 
             combinations.push(combo);
         }
         processed_features.insert(first_feature.clone());
+    }
+
+    // The Cartesian product over no features has one row: an intercept.
+    if numeric_values.is_empty() && categorical_values.is_empty() {
+        combinations.push(HashMap::new());
     }
 
     // Add remaining numeric features
@@ -190,6 +199,9 @@ pub fn combine_all_tables(mut tables: Vec<RatingTable>) -> Vec<RatingTable> {
             let combinations: Vec<_> = ((i + 1)..tables.len())
                 .into_par_iter()
                 .filter_map(|j| {
+                    if tables[i].metadata.spline.is_some() || tables[j].metadata.spline.is_some() {
+                        return None;
+                    }
                     let columns_i: HashSet<_> =
                         tables[i].data.get_column_names().into_iter().collect();
                     let columns_j: HashSet<_> =
@@ -241,6 +253,9 @@ pub fn combine_all_tables_exact(mut tables: Vec<RatingTable>) -> Vec<RatingTable
                 .collect();
             let mut found_index = None;
             for j in (i + 1)..tables.len() {
+                if tables[i].metadata.spline.is_some() || tables[j].metadata.spline.is_some() {
+                    continue;
+                }
                 let columns_j: HashSet<String> = tables[j]
                     .data
                     .get_column_names()

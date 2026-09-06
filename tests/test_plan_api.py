@@ -144,6 +144,12 @@ class FitAndValidateTests(unittest.TestCase):
         self.check = self.plan.check(self.df, "frequency")
         self.fitted = self.plan.fit(self.df, "frequency", GLMOptions())
 
+    def test_named_factor_tables_match_the_existing_review(self):
+        tables = self.fitted.rating_tables_by_name()
+        self.assertEqual(list(tables), self.fitted.table_names)
+        self.assertEqual(tables['region'].to_dicts(),
+                         self.fitted.rating_tables()[self.fitted.table_names.index('region')].to_dicts())
+
     def test_an_ordinary_dataframe_fits_without_a_table_built_by_hand(self):
         self.assertEqual(self.fitted.converged, True)
         self.assertEqual(

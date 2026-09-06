@@ -48,11 +48,7 @@ fn find_feature_sets(model_json: &str) -> Result<HashSet<Vec<String>>, PolarsErr
         })?;
     }
 
-    if unique_feature_sets.is_empty() {
-        return Err(PolarsError::ComputeError(
-            "No feature sets found in any tree".into(),
-        ));
-    }
+    // A valid constant ensemble has no feature sets: only its intercept table.
 
     // Consolidate feature sets by removing subsets and deduplicating features
     let consolidated: HashSet<Vec<String>> = unique_feature_sets
@@ -78,11 +74,6 @@ fn find_feature_sets(model_json: &str) -> Result<HashSet<Vec<String>>, PolarsErr
             })
         })
         .collect();
-    if consolidated.is_empty() {
-        return Err(PolarsError::ComputeError(
-            "No feature sets remained after consolidation".into(),
-        ));
-    }
 
     Ok(consolidated)
 }

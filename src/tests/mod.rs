@@ -3,6 +3,7 @@ mod composition_tests;
 mod glm_benchmarks;
 mod glm_correctness_tests;
 mod glm_distribution_tests;
+mod glm_monotonic_tests;
 mod glm_penalty_tests;
 mod glm_realistic_benchmarks;
 mod glm_reference_data;
@@ -10,6 +11,7 @@ mod glm_tests;
 mod model_tests;
 mod plan_tests;
 mod report_tests;
+mod spline_scoring_tests;
 pub mod testing_utils;
 mod validation_tests;
 mod weight_distribution_test;
@@ -32,3 +34,5 @@ use pyo3::types::PyDict;
 #[cfg(feature = "python")]
 use pyo3_polars::PyDataFrame;
 use std::collections::{HashMap, HashSet};
+
+mod glm_spline_tests;

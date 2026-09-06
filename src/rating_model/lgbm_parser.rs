@@ -14,6 +14,7 @@ pub(super) struct SplitNodeInfo {
     pub decision_type: String,
     pub is_categorical: bool,
     pub categories: Vec<i32>,
+    pub missing_left: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +51,7 @@ impl PathInfo {
                     .entry(node.feature_name.clone())
                     .or_insert_with(Vec::new);
                 values.push(node.threshold);
+                values.push(f64::NAN);
                 // Only add infinity if this is the last threshold for this feature
                 if !self
                     .path
@@ -63,10 +65,9 @@ impl PathInfo {
 
         // Sort and dedupe values
         for values in numeric_values.values_mut() {
-            values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
-            values.dedup_by(|a, b| {
-                ((*a) - (*b)).abs() < 1e-10 || ((*a).is_infinite() && (*b).is_infinite())
-            });
+            values.sort_by(f64::total_cmp);
+            // Adjacent floating-point thresholds define distinct branches.
+            values.dedup_by(|a, b| a == b || (a.is_nan() && b.is_nan()));
         }
         for values in categorical_values.values_mut() {
             values.sort_unstable();
@@ -221,11 +222,24 @@ impl LeafNodeInfo {
                 }
             } else {
                 let values = col.cast(&DataType::Float64)?;
-                let threshold_series =
-                    Series::new("threshold".into(), vec![node.threshold; values.len()]);
+                let goes_left: Vec<bool> = values
+                    .f64()?
+                    .into_iter()
+                    .map(|v| {
+                        let v = v.unwrap_or(f64::NAN);
+                        if v.is_nan() {
+                            node.missing_left
+                        } else {
+                            v <= node.threshold
+                        }
+                    })
+                    .collect();
                 match node.decision_type.as_str() {
-                    "<=" => values.lt_eq(&threshold_series.into())?.into_series(),
-                    ">" => values.gt(&threshold_series.into())?.into_series(),
+                    "<=" => Series::new("mask".into(), goes_left),
+                    ">" => Series::new(
+                        "mask".into(),
+                        goes_left.into_iter().map(|v| !v).collect::<Vec<_>>(),
+                    ),
                     _ => {
                         return Err(PolarsError::ComputeError(
                             format!("Invalid decision type: {}", node.decision_type).into(),
@@ -346,11 +360,24 @@ impl NodeInfo {
             } else {
                 // For numeric columns, cast to Float64 and compare.
                 let values = col.cast(&DataType::Float64)?;
-                let threshold_series =
-                    Series::new("threshold".into(), vec![node.threshold; values.len()]);
+                let goes_left: Vec<bool> = values
+                    .f64()?
+                    .into_iter()
+                    .map(|v| {
+                        let v = v.unwrap_or(f64::NAN);
+                        if v.is_nan() {
+                            node.missing_left
+                        } else {
+                            v <= node.threshold
+                        }
+                    })
+                    .collect();
                 match node.decision_type.as_str() {
-                    "<=" => values.lt_eq(&threshold_series.into())?.into_series(),
-                    ">" => values.gt(&threshold_series.into())?.into_series(),
+                    "<=" => Series::new("mask".into(), goes_left),
+                    ">" => Series::new(
+                        "mask".into(),
+                        goes_left.into_iter().map(|v| !v).collect::<Vec<_>>(),
+                    ),
                     _ => {
                         return Err(PolarsError::ComputeError(
                             format!("Invalid decision type: {}", node.decision_type).into(),
@@ -381,6 +408,17 @@ fn process_tree(
     mean_adjustment: f64,
     model: &Value,
 ) -> Result<Vec<RatingTable>, PolarsError> {
+    if node.get("split_feature").is_none() {
+        if let Some(value) = node.get("leaf_value").and_then(Value::as_f64) {
+            if is_first_tree {
+                return Ok(Vec::new());
+            }
+            return Ok(vec![RatingTable::new(
+                DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![value]).into()])?,
+                None,
+            )]);
+        }
+    }
     let mut tables = Vec::new();
     let mut stack = vec![(node, Vec::new(), true)];
 
@@ -463,6 +501,11 @@ fn process_tree(
                 decision_type: if is_categorical { "==" } else { "<=" }.to_string(),
                 is_categorical,
                 categories: categories.clone(),
+                missing_left: if current_node["missing_type"].as_str() == Some("NaN") {
+                    current_node["default_left"].as_bool().unwrap_or(false)
+                } else {
+                    0.0 <= threshold
+                },
             };
 
             // Process children
@@ -503,6 +546,7 @@ pub fn process_lgbm_trees(model_json: &str) -> Result<Vec<RatingTable>, PolarsEr
             // a Pareto search over that parameter walks straight into it.
             if let Some(mean) = first_tree
                 .get("internal_value")
+                .or_else(|| first_tree.get("leaf_value"))
                 .and_then(|value| value.as_f64())
             {
                 let mean_df =
@@ -549,12 +593,36 @@ fn process_tree_analysis(
     model: &Value,
     parent_value: Option<f64>,
 ) -> Result<Vec<RatingTable>, PolarsError> {
+    if node.get("split_feature").is_none() {
+        if let Some(value) = node.get("leaf_value").and_then(Value::as_f64) {
+            if is_first_tree {
+                return Ok(Vec::new());
+            }
+            return Ok(vec![RatingTable::new(
+                DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![value]).into()])?,
+                None,
+            )]);
+        }
+    }
     let mut tables = Vec::new();
 
     // Extract the internal value for the root node
     let root_internal_value = node["internal_value"]
         .as_f64()
         .ok_or_else(|| PolarsError::ComputeError("Missing internal value in root node".into()))?;
+
+    // Node effects telescope to leaf minus root. Every tree's root must
+    // therefore be included; only the first root is already in the mean table.
+    if !is_first_tree {
+        tables.push(RatingTable::new(
+            DataFrame::new(vec![Series::new(
+                "Rating_Factor".into(),
+                vec![root_internal_value],
+            )
+            .into()])?,
+            None,
+        ));
+    }
 
     // Stack holds (node, path, parent_value, tree_level)
     // tree_level helps track which level of the tree we're in (0 = root)
@@ -671,6 +739,11 @@ fn process_tree_analysis(
                 decision_type: if is_categorical { "==" } else { "<=" }.to_string(),
                 is_categorical,
                 categories: categories.clone(),
+                missing_left: if current_node["missing_type"].as_str() == Some("NaN") {
+                    current_node["default_left"].as_bool().unwrap_or(false)
+                } else {
+                    0.0 <= threshold
+                },
             };
 
             // Create split info for right branch with proper decision type
@@ -681,6 +754,11 @@ fn process_tree_analysis(
                 decision_type: if is_categorical { "!=" } else { ">" }.to_string(),
                 is_categorical,
                 categories,
+                missing_left: if current_node["missing_type"].as_str() == Some("NaN") {
+                    current_node["default_left"].as_bool().unwrap_or(false)
+                } else {
+                    0.0 <= threshold
+                },
             };
 
             // Process left child
@@ -720,8 +798,20 @@ pub fn build_consolidated_tablemodel(
     link_function: LinkFunction,
 ) -> super::RatingModel {
     use super::consolidation::combine_all_tables;
-    let mut combined_tables = vec![tables[0].clone()];
-    let consolidated = combine_all_tables(tables[1..].to_vec());
+    let mut base = 0.0;
+    let mut features = Vec::new();
+    for table in tables {
+        if table.get_feature_info().is_empty() {
+            base += table.get_rating_factor(0);
+        } else {
+            features.push(table);
+        }
+    }
+    let mut combined_tables = vec![RatingTable::new(
+        DataFrame::new(vec![Series::new("Rating_Factor".into(), vec![base]).into()]).unwrap(),
+        None,
+    )];
+    let consolidated = combine_all_tables(features);
     combined_tables.extend(consolidated);
     super::RatingModel::new(combined_tables, link_function)
 }
@@ -751,6 +841,7 @@ pub fn build_analysis_tablemodel(
             // a Pareto search over that parameter walks straight into it.
             if let Some(mean) = first_tree
                 .get("internal_value")
+                .or_else(|| first_tree.get("leaf_value"))
                 .and_then(|value| value.as_f64())
             {
                 let mean_df =

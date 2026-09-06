@@ -11,6 +11,7 @@ use std::sync::Mutex;
 // Internal modules
 mod consolidation;
 mod lgbm_parser;
+mod review;
 
 // Re-export public functions from lgbm_parser
 pub use lgbm_parser::{
@@ -100,6 +101,27 @@ impl Default for TableSemantics {
     }
 }
 
+/// Declared order of a numeric step table's fitted factors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Monotonicity {
+    Increasing,
+    Decreasing,
+}
+
+impl Monotonicity {
+    pub fn is_increasing(self) -> bool {
+        self == Self::Increasing
+    }
+}
+
+/// Exact continuous interpolation and extrapolation rules for a knot-value table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SplineKind {
+    NaturalCubicLinearTails,
+}
+
 /// Metadata for a RatingTable
 #[derive(Debug, Clone)]
 pub struct TableMetadata {
@@ -108,6 +130,8 @@ pub struct TableMetadata {
     pub is_updatable: bool, // Can GLM update this table's factors?
     /// How many free parameters this table's rows represent. See [`TableSemantics`].
     pub semantics: TableSemantics,
+    pub monotonicity: Option<Monotonicity>,
+    pub spline: Option<SplineKind>,
 }
 
 impl Default for TableMetadata {
@@ -117,6 +141,8 @@ impl Default for TableMetadata {
             is_offset: false,
             is_updatable: true,
             semantics: TableSemantics::default(),
+            monotonicity: None,
+            spline: None,
         }
     }
 }
@@ -240,6 +266,20 @@ impl RatingTable {
     }
 
     pub fn find_row_match(&self, feature_values: &HashMap<String, FeatureValue>) -> Option<usize> {
+        if self.metadata.spline.is_some() {
+            let (name, _) = self.spline_curve().ok()??;
+            return match feature_values.get(&name) {
+                Some(FeatureValue::Numeric(x)) if x.is_finite() => {
+                    let knots = self.data.column(&name).ok()?.f64().ok()?;
+                    Some(
+                        (0..knots.len() - 1)
+                            .find(|&i| *x <= knots.get(i).unwrap())
+                            .unwrap_or(knots.len() - 1),
+                    )
+                }
+                _ => None,
+            };
+        }
         // Early return if we don't have all required features
         if !self.has_all_required_features(feature_values) {
             return None;
@@ -280,11 +320,11 @@ impl RatingTable {
             .collect();
 
         let mut best_row: Option<usize> = None;
-        let mut used_wildcard = false;
+        let mut wildcard_count = usize::MAX;
 
         'row_loop: for i in 0..self.data.height() {
             let mut row_matches = true;
-            let mut this_row_used_wildcard = false;
+            let mut this_row_wildcards = 0usize;
 
             // ⭐ OPTIMIZATION 3: Direct array access instead of HashMap lookups
             // Check categorical features first
@@ -298,7 +338,7 @@ impl RatingTable {
                             break;
                         }
                         if table_cat == -999 {
-                            this_row_used_wildcard = true;
+                            this_row_wildcards += 1;
                         }
                     }
                 }
@@ -314,7 +354,7 @@ impl RatingTable {
                     let col_val = unsafe { numeric_columns_vec[idx].get_unchecked(i) };
 
                     if let Some(threshold) = col_val {
-                        if input_val > &threshold {
+                        if input_val.is_nan() != threshold.is_nan() || input_val > &threshold {
                             continue 'row_loop;
                         }
                     }
@@ -323,9 +363,9 @@ impl RatingTable {
 
             // If we get here, we found a match
             // Only update if this is the first match or if we found a more specific match
-            if best_row.is_none() || (used_wildcard && !this_row_used_wildcard) {
+            if best_row.is_none() || (this_row_wildcards < wildcard_count) {
                 best_row = Some(i);
-                used_wildcard = this_row_used_wildcard;
+                wildcard_count = this_row_wildcards;
             }
         }
 
@@ -353,6 +393,17 @@ impl RatingTable {
     }
 
     pub fn predict(&self, feature_values: &HashMap<String, FeatureValue>) -> f64 {
+        if self.metadata.spline.is_some() {
+            return self
+                .spline_curve()
+                .ok()
+                .flatten()
+                .and_then(|(name, curve)| match feature_values.get(&name) {
+                    Some(FeatureValue::Numeric(x)) => curve.evaluate(*x).ok(),
+                    _ => None,
+                })
+                .unwrap_or(f64::NAN);
+        }
         // Matches a row to the feature values and returns the rating factor, does not apply the link function
         match self.find_row_match(feature_values) {
             Some(row) => {
@@ -395,6 +446,13 @@ impl RatingTable {
     }
 
     pub fn predict_batch(&self, df: &DataFrame) -> Vec<f64> {
+        if self.metadata.spline.is_some() {
+            return self
+                .continuous_values(df)
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| vec![f64::NAN; df.height()]);
+        }
         // Predicts a batch of rows, does not apply the link function
         // Uses parallel processing if the number of rows is greater than the ROW_PARALLEL_THRESHOLD
         // Otherwise, it processes rows sequentially
@@ -482,9 +540,8 @@ impl RatingTable {
             let column = df.column(col_name)?;
             match column.dtype() {
                 DataType::Float64 => {
-                    if let Some(value) = column.f64()?.get(row_idx) {
-                        feature_values.insert(col_name.to_string(), FeatureValue::Numeric(value));
-                    }
+                    let value = column.f64()?.get(row_idx).unwrap_or(f64::NAN);
+                    feature_values.insert(col_name.to_string(), FeatureValue::Numeric(value));
                 }
                 DataType::Int32 => {
                     if let Some(value) = column.i32()?.get(row_idx) {
@@ -510,6 +567,92 @@ impl RatingTable {
     }
 
     // NEW: Offset-related methods
+
+    /// Interpret the numeric column as knots and factors as function values on
+    /// the link scale. Interpolate naturally and use endpoint-tangent linear tails.
+    /// Supports unpenalized table-sweep fitting and continuous-basis knot-value inference.
+    pub fn as_natural_cubic(mut self) -> Result<Self, PolarsError> {
+        self.metadata.spline = Some(SplineKind::NaturalCubicLinearTails);
+        self.spline_curve()?;
+        Ok(self)
+    }
+
+    pub(crate) fn spline_curve(
+        &self,
+    ) -> Result<Option<(String, crate::spline::NaturalCubicCurve)>, PolarsError> {
+        if self.metadata.spline.is_none() {
+            return Ok(None);
+        }
+        if self.numeric_columns.len() != 1
+            || !self.categorical_columns.is_empty()
+            || self.data.width() != 2
+            || self.metadata.semantics != TableSemantics::Step
+            || self.metadata.monotonicity.is_some()
+        {
+            return Err(PolarsError::ComputeError("A natural cubic table requires exactly one Float64 knot column and Rating_Factor, without variate or monotonic semantics".into()));
+        }
+        let name = self.numeric_columns.keys().next().unwrap();
+        let knots = self.data.column(name)?.f64()?;
+        let values = self.data.column("Rating_Factor")?.f64()?;
+        if knots.null_count() > 0 || values.null_count() > 0 {
+            return Err(PolarsError::ComputeError(
+                "Spline knots and factors must not contain nulls".into(),
+            ));
+        }
+        let curve = crate::spline::NaturalCubicCurve::new(
+            knots.into_no_null_iter().collect(),
+            values.into_no_null_iter().collect(),
+        )
+        .map_err(|e| PolarsError::ComputeError(e.into()))?;
+        Ok(Some((name.clone(), curve)))
+    }
+
+    /// Compile once per batch from the current editable factors. Invalid quotes
+    /// produce NaN, allowing the strict scorer to identify their row status.
+    pub(crate) fn continuous_values(
+        &self,
+        df: &DataFrame,
+    ) -> Result<Option<Vec<f64>>, PolarsError> {
+        let Some((name, curve)) = self.spline_curve()? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            df.column(&name)?
+                .f64()?
+                .into_iter()
+                .map(|x| x.and_then(|x| curve.evaluate(x).ok()).unwrap_or(f64::NAN))
+                .collect(),
+        ))
+    }
+
+    /// Declare an order constraint on one numeric step table. The factors are
+    /// updated by fitting; this declaration does not rewrite existing factors.
+    pub fn as_monotone(mut self, direction: Monotonicity) -> Result<Self, PolarsError> {
+        if self.numeric_columns.len() != 1
+            || !self.categorical_columns.is_empty()
+            || self.metadata.semantics != TableSemantics::Step
+            || self.metadata.spline.is_some()
+        {
+            return Err(PolarsError::ComputeError(
+                "Monotonicity requires a one-dimensional numeric step table".into(),
+            ));
+        }
+        let name = self.numeric_columns.keys().next().unwrap();
+        let bounds = self.data.column(name)?.f64()?;
+        let values: Vec<f64> = bounds.into_no_null_iter().collect();
+        if bounds.null_count() > 0
+            || values.is_empty()
+            || values.iter().any(|v| v.is_nan())
+            || values.windows(2).any(|v| v[0] >= v[1])
+        {
+            return Err(PolarsError::ComputeError(
+                "Monotonicity requires strictly ascending numeric bands without missing-only rows"
+                    .into(),
+            ));
+        }
+        self.metadata.monotonicity = Some(direction);
+        Ok(self)
+    }
 
     /// Mark this entire table as an offset (fixed, not updated by GLM)
     pub fn as_offset(mut self) -> Self {
@@ -584,6 +727,11 @@ impl RatingTable {
         values: Vec<f64>,
         degree: usize,
     ) -> Result<Self, PolarsError> {
+        if self.metadata.spline.is_some() {
+            return Err(PolarsError::ComputeError(
+                "A spline cannot also be a banded polynomial variate".into(),
+            ));
+        }
         let label = if self.metadata.name.is_empty() {
             "table".to_string()
         } else {
@@ -804,7 +952,9 @@ impl RatingModel {
             .get("objective")
             .and_then(|v| v.as_str())
             .unwrap_or("regression");
-        Ok(LinkFunction::from_objective(objective))
+        Ok(LinkFunction::from_objective(
+            objective.split_whitespace().next().unwrap_or(objective),
+        ))
     }
 
     //Constructor method from lgbm json
@@ -812,6 +962,76 @@ impl RatingModel {
         model_json: &str,
         consolidation_level: &str,
     ) -> Result<Self, PolarsError> {
+        let semantics: Value = serde_json::from_str(model_json).map_err(|e| {
+            PolarsError::ComputeError(format!("Invalid booster JSON: {}", e).into())
+        })?;
+        let objective = semantics
+            .get("objective")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let mut parts = objective.split_whitespace();
+        let family = parts.next().unwrap_or("");
+        if !matches!(
+            family,
+            "regression" | "gaussian" | "poisson" | "gamma" | "tweedie" | "binary"
+        ) {
+            return Err(PolarsError::ComputeError(format!("Unsupported LightGBM objective '{}'. Supported objectives: regression, gaussian, poisson, gamma, tweedie, binary.", objective).into()));
+        }
+        if semantics
+            .get("num_class")
+            .and_then(Value::as_u64)
+            .unwrap_or(1)
+            != 1
+            || semantics
+                .get("num_tree_per_iteration")
+                .and_then(Value::as_u64)
+                .unwrap_or(1)
+                != 1
+            || semantics
+                .get("average_output")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            || parts.any(|part| {
+                part.starts_with("sigmoid:") && part[8..].parse::<f64>().ok() != Some(1.0)
+            })
+        {
+            return Err(PolarsError::ComputeError("Unsupported LightGBM semantics: multiclass, averaged ensembles and non-unit binary sigmoid are not supported.".into()));
+        }
+        fn check_tree(node: &Value) -> Result<(), PolarsError> {
+            if node.get("missing_type").and_then(Value::as_str) == Some("Zero") {
+                return Err(PolarsError::ComputeError(
+                    "LightGBM zero_as_missing routing is not yet supported.".into(),
+                ));
+            }
+            if node.get("leaf_coeff").is_some() || node.get("leaf_features").is_some() {
+                return Err(PolarsError::ComputeError(
+                    "LightGBM linear leaves are not supported.".into(),
+                ));
+            }
+            if let Some(decision) = node.get("decision_type").and_then(Value::as_str) {
+                if !matches!(decision, "<=" | "==") {
+                    return Err(PolarsError::ComputeError(
+                        format!("Unsupported LightGBM decision type '{}'.", decision).into(),
+                    ));
+                }
+            }
+            for child in ["left_child", "right_child"] {
+                if let Some(child) = node.get(child) {
+                    check_tree(child)?;
+                }
+            }
+            Ok(())
+        }
+        let trees = semantics
+            .get("tree_info")
+            .and_then(Value::as_array)
+            .filter(|trees| !trees.is_empty())
+            .ok_or_else(|| {
+                PolarsError::ComputeError("LightGBM tree_info must be a nonempty array.".into())
+            })?;
+        for tree in trees {
+            check_tree(&tree["tree_structure"])?;
+        }
         let tables = lgbm_parser::process_lgbm_trees(model_json).map_err(|e| {
             PolarsError::ComputeError(format!("Error processing trees: {}", e).into())
         })?;
@@ -976,6 +1196,28 @@ impl RatingModel {
 
         let n_rows = df.height();
         let n_tables = self.tables.len();
+
+        if self.tables.iter().any(|t| t.metadata.spline.is_some()) {
+            let matches = crate::glm::matching::precompute_all_matches(self, df)?;
+            let mut eta = vec![0.0; n_rows];
+            for (t, table) in self.tables.iter().enumerate() {
+                if let Some(values) = table.continuous_values(df)? {
+                    for (sum, value) in eta.iter_mut().zip(values) {
+                        *sum += value;
+                    }
+                } else {
+                    let factors = table.data.column("Rating_Factor")?.f64()?;
+                    for row in 0..n_rows {
+                        eta[row] += if matches[t][row] == crate::glm::matching::NO_MATCH {
+                            f64::NAN
+                        } else {
+                            factors.get(matches[t][row] as usize).unwrap_or(f64::NAN)
+                        };
+                    }
+                }
+            }
+            return Ok(eta);
+        }
 
         // Thresholds could be tuned based on benchmarking
         const ROW_PARALLEL_THRESHOLD: usize = 10;

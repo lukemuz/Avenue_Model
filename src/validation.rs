@@ -295,6 +295,7 @@ pub fn validate(
     let mut unmatched_by_table = vec![0usize; n_tables];
 
     for t in 0..n_tables {
+        let continuous = model.tables[t].continuous_values(df)?;
         for i in 0..n_rows {
             let m = matches[t][i];
             if m == NO_MATCH {
@@ -303,7 +304,10 @@ pub fn validate(
                 }
                 scored[i] = false;
             } else {
-                eta[i] += factors[t][m as usize];
+                eta[i] += continuous
+                    .as_ref()
+                    .map(|v| v[i])
+                    .unwrap_or(factors[t][m as usize]);
             }
         }
     }
@@ -472,7 +476,41 @@ pub fn validate(
             })
             .collect();
 
-        let mut data = model.tables[t].data.clone();
+        if model.tables[t].metadata.spline.is_none() {
+            model.tables[t].ensure_review_columns_available(&[
+                "N", "Exposure", "Actual", "Expected", "AE_Ratio",
+            ])?;
+        }
+        let mut data = model.tables[t].review_data()?;
+        if model.tables[t].metadata.spline.is_some() {
+            warnings.push(Warning::new(Severity::Low, "spline_support_intervals",
+                format!("{}: A/E rows describe the displayed support intervals, not individual knot parameters. Interval counts do not establish whether a knot value is estimable.", table_label(options, t))));
+            let name = model.tables[t].get_numeric_columns().keys().next().unwrap();
+            let knots: Vec<f64> = data.column(name)?.f64()?.into_no_null_iter().collect();
+            let lower: Vec<f64> = std::iter::once(f64::NEG_INFINITY)
+                .chain(knots[..knots.len() - 1].iter().copied())
+                .collect();
+            let upper: Vec<f64> = knots[..knots.len() - 1]
+                .iter()
+                .copied()
+                .chain(std::iter::once(f64::INFINITY))
+                .collect();
+            // A/E groups describe intervals; a knot factor is not the rate for
+            // every observation in its support group.
+            data = DataFrame::new(vec![
+                Series::new("Spline_Feature".into(), vec![name.as_str(); n_table_rows]).into(),
+                Series::new("Support_Lower".into(), lower).into(),
+                Series::new("Support_Upper".into(), upper).into(),
+                Series::new("Lower_Inclusive".into(), vec![false; n_table_rows]).into(),
+                Series::new(
+                    "Upper_Inclusive".into(),
+                    (0..n_table_rows)
+                        .map(|r| r + 1 < n_table_rows)
+                        .collect::<Vec<_>>(),
+                )
+                .into(),
+            ])?;
+        }
         data.with_column(Series::new("N".into(), row_count))?;
         data.with_column(Series::new("Exposure".into(), row_weight))?;
         data.with_column(Series::new("Actual".into(), row_actual))?;
@@ -522,9 +560,10 @@ pub fn validate(
                     Severity::Medium,
                     "unfitted_levels",
                     format!(
-                        "{} table rows saw no exposure during fitting and kept their \
-                         starting factor. They were not estimated from data, so any \
-                         business written into them will be priced off a placeholder.",
+                        "{} table rows saw no exposure during fitting. Their factors \
+                         follow the model's fallback or shape constraints, not experience \
+                         in those rows. Penalized ordinary step rows use the reference \
+                         relativity; review these assumptions before pricing new business.",
                         diag.unfitted_rows.len()
                     ),
                 )
@@ -545,14 +584,10 @@ pub fn validate(
             severity,
             "calibration_drift",
             format!(
-                "Overall actual over expected is {:.4}: the model predicts {:.2}% {} than \
-                 this data shows in aggregate ({:.4} actual against {:.4} expected). \
-                 Rebase the intercept before using these relativities to set a rate level.",
-                ae_ratio,
-                100.0 * drift,
-                if ae_ratio > 1.0 { "less" } else { "more" },
-                total_actual,
-                total_expected
+                "Overall actual over expected is {:.4} ({:.4} actual against {:.4} expected). \
+                 Investigate population differences, loss volatility and model specification \
+                 before changing the rate level.",
+                ae_ratio, total_actual, total_expected
             ),
         ));
     }
@@ -564,11 +599,11 @@ pub fn validate(
                 "bucket_miscalibration",
                 format!(
                     "{} of {} equal-exposure buckets have actual over expected outside \
-                     {:.0}%: buckets {}. The model is calibrated in aggregate but not \
-                     across the risk range, which is the pattern a missing interaction or \
-                     a mis-specified band produces.",
+                     {:.0}%: buckets {}. These are descriptive flags: review exposure, \
+                     claim support and loss volatility before attributing the pattern to \
+                     a missing interaction or a mis-specified band.",
                     bad.len(),
-                    options.bins,
+                    calibration.height(),
                     100.0 * options.bucket_tolerance,
                     bad.iter()
                         .map(|b| b.to_string())

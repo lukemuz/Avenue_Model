@@ -14,6 +14,45 @@ mod plan_tests {
     use crate::validation::{Severity, ValidationOptions};
     use polars::prelude::*;
 
+    #[test]
+    fn scoring_preserves_wildcards_and_rejects_nonfinite_factors() {
+        use crate::plan::{Encoding, FittedModel};
+        use crate::rating_model::{LinkFunction, RatingModel, RatingTable};
+        let quotes = df!("group" => &[0i32, 99, -1]).unwrap();
+        let make_model = |base| {
+            FittedModel::from_model(
+                RatingModel::new(
+                    vec![
+                        RatingTable::new(df!("Rating_Factor" => &[base]).unwrap(), None),
+                        RatingTable::new(
+                            df!("group" => &[0i32, -999], "Rating_Factor" => &[0.0, 0.5]).unwrap(),
+                            None,
+                        ),
+                    ],
+                    LinkFunction::Log,
+                ),
+                "poisson",
+                vec!["intercept".into(), "group".into()],
+                Encoding::default(),
+            )
+        };
+        let model = make_model(0.0);
+        let means = model.predict(&quotes).unwrap();
+        assert_eq!(means.f64().unwrap().get(0), Some(1.0));
+        assert_eq!(means.f64().unwrap().get(1), Some(0.5f64.exp()));
+        assert_eq!(means.f64().unwrap().get(2), Some(0.5f64.exp()));
+        for factor in [1000.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let invalid = make_model(factor);
+            assert!(invalid
+                .predict(&quotes)
+                .unwrap_err()
+                .to_string()
+                .contains("nonfinite"));
+            let result = invalid.predict_diagnostics(&quotes).unwrap();
+            assert_eq!(result.column("predictions").unwrap().null_count(), 3);
+        }
+    }
+
     /// Motor-shaped data: an age band and a region drive the rate, exposure varies.
     ///
     /// Region arrives as a *string*, and age as `Int64` — numpy's default integer and
@@ -569,12 +608,13 @@ mod plan_tests {
     }
 
     #[test]
-    fn an_empty_plan_and_a_missing_column_both_explain_themselves() {
+    fn an_intercept_only_plan_builds_and_a_missing_column_explains_itself() {
         let df = motor(120);
 
         let empty = Plan::frequency("exposure");
-        let err = expect_err(empty.build(&empty.prepare(&df, None).unwrap()));
-        assert!(err.contains("at least one term"), "{}", err);
+        let built = empty.build(&empty.prepare(&df, None).unwrap()).unwrap();
+        assert_eq!(built.model.tables.len(), 1);
+        assert_eq!(built.table_names, vec!["intercept"]);
 
         let missing = Plan::frequency("exposure").with(Term::categorical("postcode"));
         let err = expect_err(missing.prepare(&df, None));

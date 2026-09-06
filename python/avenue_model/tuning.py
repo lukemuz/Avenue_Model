@@ -1,16 +1,16 @@
 """Tune a LightGBM model for accuracy *and* for how many rating tables it becomes.
 
-A booster converts into rating tables exactly, whatever its shape — but the number of
-tables grows with the number of distinct feature combinations the ensemble uses, and an
-unconstrained booster converts into more tables than anyone will read. That count is a
-modelling choice, not a fact of the data, so it belongs in the search rather than in a
-post-hoc apology.
+Table count is an inexpensive complexity proxy. It grows with the distinct feature
+combinations in an ensemble, but does not describe table rows, support or scoring cost.
+Conversion supports a subset of booster semantics; use `from_booster` with quote data
+to retain numerical parity evidence for the supplied inputs.
 
 `tune_lgbm` runs an Optuna study with two objectives — cross-validated loss and the
-median consolidated table count — and returns the Pareto frontier, so the trade-off is
-chosen rather than stumbled into. The table count comes from `estimate_num_tables`,
-which reads a LightGBM dump and reports what the conversion would produce without
-performing it, cheaply enough to call on every fold of every trial.
+mean consolidated table count — and returns the Pareto frontier, so the trade-off is
+chosen rather than stumbled into. Each selected fold prefix is converted with maximum
+consolidation to measure table count, total rows, largest table and interaction order.
+Conversion cost is recorded separately. These are actual fold artifacts, not promises
+about a later full-data refit or estimates of statistical rank and training support.
 
 Two of the levers only exist in `avenue-lightgbm`, a small fork that adds penalties
 aimed at the table count directly rather than at tree size:
@@ -99,11 +99,6 @@ _DEFAULT_METRIC = {
     "mape": "mape",
     "l1": "l1",
 }
-
-# What a trial scores when its booster has no usable trees at all — LightGBM can find no
-# beneficial split under a heavy penalty and return a stump. Scoring that as "one table"
-# would make it a Pareto winner, which is the opposite of the truth.
-_DEGENERATE_TABLES = 10_000
 
 
 def resolve_lightgbm(dataset=None):
@@ -217,8 +212,8 @@ def supports_interaction_penalties(dataset=None) -> bool:
                    for line in probe.lines)
 
 
-def _model_json(booster) -> str:
-    return json.dumps(booster.dump_model())
+def _model_json(booster, num_iteration=None) -> str:
+    return json.dumps(booster.dump_model(num_iteration=num_iteration))
 
 
 @dataclass
@@ -229,6 +224,8 @@ class Trial:
     cv_loss: float
     tables: float
     num_iterations: int
+    fold_tables: list[float] = field(default_factory=list)
+    fold_complexity: list[dict[str, Any]] = field(default_factory=list)
 
     def dominates(self, other: "Trial") -> bool:
         no_worse = self.cv_loss <= other.cv_loss and self.tables <= other.tables
@@ -240,9 +237,9 @@ class Trial:
 class TuningResult:
     """Every trial, and the non-dominated ones.
 
-    `frontier` is sorted by table count, so the first entry is the most interpretable
-    model found and the last is the most accurate. Picking from it is the point: the
-    study does not decide the trade-off for you.
+    `frontier` is sorted by table count. Fewer tables do not necessarily mean fewer
+    rows or easier review; inspect fold_complexity as well. The study does not decide
+    the trade-off for you.
     """
 
     trials: list[Trial]
@@ -262,7 +259,7 @@ class TuningResult:
         return min(self.trials, key=lambda t: t.cv_loss)
 
     def select(self, max_tables: float | None = None) -> Trial:
-        """The most accurate model on the frontier within a table budget."""
+        """Pick by mean CV table count; this does not constrain the final artifact."""
         candidates = self.frontier
         if max_tables is not None:
             within = [t for t in candidates if t.tables <= max_tables]
@@ -284,13 +281,20 @@ class TuningResult:
         if not self.tuned_interaction_penalties:
             lines.append(f"  interaction penalties were NOT tuned - {self.lightgbm} "
                          f"does not accept them")
-        lines.append(f"  {'tables':>8}{'cv loss':>14}   parameters")
+        lines.append(f"  {'mean tables':>12}{'mean rows':>12}{'largest':>10}{'order':>7}{'cv loss':>14}   parameters")
         for t in self.frontier:
             shown = {k: v for k, v in t.params.items() if k in DEFAULT_SPACE}
             rendered = ", ".join(
                 f"{k}={v:.3g}" if isinstance(v, float) else f"{k}={v}"
                 for k, v in sorted(shown.items()))
-            lines.append(f"  {t.tables:>8.0f}{t.cv_loss:>14.6f}   {rendered}")
+            if t.fold_complexity:
+                mean_rows = sum(c['total_rows'] for c in t.fold_complexity) / len(t.fold_complexity)
+                largest = max(c['largest_table'] for c in t.fold_complexity)
+                order = max(c['largest_interaction_order'] for c in t.fold_complexity)
+                complexity = f"{mean_rows:>12.1f}{largest:>10}{order:>7}"
+            else:
+                complexity = f"{'unknown':>12}{'unknown':>10}{'unknown':>7}"
+            lines.append(f"  {t.tables:>12.2f}{complexity}{t.cv_loss:>14.6f}   {rendered}")
         return "\n".join(lines)
 
 
@@ -327,11 +331,10 @@ def tune_lgbm(
 
     Returns:
         A `TuningResult`. Use `.frontier` to see the trade-off, `.select(max_tables=N)`
-        to pick under a budget, and `.best_cv` for the most accurate configuration
+        to screen by mean CV table count (not a final-artifact limit), and `.best_cv` for the most accurate configuration
         regardless of size.
     """
     lightgbm, optuna, module_name = _require_deps(dataset)
-
     if "objective" not in params:
         raise ValueError("params must include 'objective'")
     objective_name = params["objective"]
@@ -388,9 +391,16 @@ def tune_lgbm(
                 "lgb.Dataset(..., params={'feature_pre_filter': False}), or drop "
                 "'min_data_in_leaf' from `tunable`.")
 
-    # `estimate_num_tables` comes from the compiled engine; importing it here rather
+    # Conversion comes from the compiled engine; importing it here rather
     # than at module scope keeps this module importable from a source checkout.
-    from .avenue_model import estimate_num_tables
+    from .avenue_model import FittedModel
+    import time
+
+    # Materialize one-shot fold iterators once so every trial sees the same split.
+    if folds is not None and not hasattr(folds, 'split'):
+        folds = list(folds)
+        if not folds:
+            raise ValueError('folds must contain at least one train/validation pair')
 
     stratified = objective_name in ("binary", "multiclass")
     curve_key = f"valid {metric}-mean"
@@ -407,6 +417,8 @@ def tune_lgbm(
 
         cv_args = dict(params=trial_params, train_set=dataset, metrics=metric,
                        stratified=stratified, return_cvbooster=True)
+        if seed is not None:
+            cv_args["seed"] = seed
         if folds is not None:
             cv_args["folds"] = folds
         else:
@@ -422,24 +434,28 @@ def tune_lgbm(
         best_round = int(min(range(len(curve)), key=curve.__getitem__))
         cv_loss = float(curve[best_round])
 
-        counts = []
+        # Complexity must describe the same boosting prefix as the selected loss.
+        # Constant ensembles legitimately have one intercept table. Invalid dumps
+        # raise their real error instead of becoming an invented complexity score.
+        complexity = []
         for booster in result["cvbooster"].boosters:
-            try:
-                counts.append(float(estimate_num_tables(_model_json(booster))))
-            except BaseException:  # noqa: BLE001 - see below
-                # A booster with no usable trees — every split rejected under a heavy
-                # penalty — is not a one-table model, it is a failed fit, and a search
-                # that scored it as one would drive straight at it.
-                #
-                # BaseException rather than Exception on purpose: the conversion path
-                # raises pyo3_runtime.PanicException on this input, which derives from
-                # BaseException, so `except Exception` does not catch it and one
-                # degenerate trial would abort the whole study.
-                counts.append(float(_DEGENERATE_TABLES))
+            started = time.perf_counter()
+            converted = FittedModel.from_lgbm_json(_model_json(booster, best_round + 1), consolidation='max')
+            artifact = converted.to_workbook(scale='factor').tables
+            rows = [table.height for table in artifact]
+            orders = [table.width - 1 for table in artifact]
+            complexity.append({'tables': len(artifact), 'total_rows': sum(rows),
+                               'largest_table': max(rows), 'largest_interaction_order': max(orders),
+                               'coefficient_cells': sum(rows),
+                               'conversion_seconds': time.perf_counter() - started,
+                               'consolidation': 'max', 'num_iterations': best_round + 1,
+                               })
+            del converted, artifact
+        counts = [float(c['tables']) for c in complexity]
         tables = sum(counts) / len(counts)
 
         record = Trial(params=dict(trial_params), cv_loss=cv_loss, tables=tables,
-                       num_iterations=best_round + 1)
+                       num_iterations=best_round + 1, fold_tables=counts, fold_complexity=complexity)
         trials.append(record)
         if callback is not None:
             callback(record)

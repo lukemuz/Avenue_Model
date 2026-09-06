@@ -1,0 +1,111 @@
+[
+  {
+    "model": "frequency",
+    "train_rows": 508509,
+    "holdout_rows": 169504,
+    "fit_seconds": 6.6338708009934635,
+    "raw_score_seconds": 0.018007004997343756,
+    "reference_native_category_prepare_seconds": 0.22634842899424257,
+    "reference_fit_seconds": 0.31918812799995067,
+    "reference_iterations": 6,
+    "max_relative_difference": 9.081496032958825e-08,
+    "parameters": 33,
+    "converged": true,
+    "resolved_knots": {
+      "age": [
+        18.0,
+        34.0,
+        44.0,
+        55.0,
+        100.0
+      ],
+      "vehicle_age": [
+        0.0,
+        2.0,
+        6.0,
+        11.0,
+        100.0
+      ],
+      "bonus": [
+        50.0,
+        64.0,
+        230.0
+      ]
+    },
+    "iterations": 68,
+    "covariance_method": "model_based"
+  },
+  {
+    "model": "severity",
+    "train_rows": 18671,
+    "holdout_rows": 6273,
+    "fit_seconds": 0.0999202780003543,
+    "raw_score_seconds": 0.001141533997724764,
+    "reference_native_category_prepare_seconds": 0.008624793001217768,
+    "reference_fit_seconds": 0.01520154199533863,
+    "reference_iterations": 8,
+    "max_relative_difference": 2.0920023491299844e-09,
+    "parameters": 34,
+    "converged": true,
+    "resolved_knots": {
+      "age": [
+        18.0,
+        34.0,
+        45.0,
+        54.0,
+        99.0
+      ],
+      "vehicle_age": [
+        0.0,
+        3.0,
+        7.0,
+        11.0,
+        69.0
+      ],
+      "bonus": [
+        50.0,
+        55.0,
+        76.0,
+        228.0
+      ]
+    },
+    "iterations": 27,
+    "covariance_method": "model_based"
+  },
+  {
+    "model": "premium",
+    "train_rows": 508509,
+    "holdout_rows": 169504,
+    "fit_seconds": 6.29248491099861,
+    "raw_score_seconds": 0.016825555998366326,
+    "reference_native_category_prepare_seconds": 0.2079467610019492,
+    "reference_fit_seconds": 0.25847452499874635,
+    "reference_iterations": 5,
+    "max_relative_difference": 4.065237035888458e-10,
+    "parameters": 33,
+    "converged": true,
+    "resolved_knots": {
+      "age": [
+        18.0,
+        34.0,
+        44.0,
+        55.0,
+        100.0
+      ],
+      "vehicle_age": [
+        0.0,
+        2.0,
+        6.0,
+        11.0,
+        100.0
+      ],
+      "bonus": [
+        50.0,
+        64.0,
+        230.0
+      ]
+    },
+    "iterations": 53,
+    "covariance_method": "model_based"
+  }
+]

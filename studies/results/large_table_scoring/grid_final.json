@@ -1,0 +1,46 @@
+{
+  "source_commit": "fbc192d59f55593d4b576c53e4d8d07af7175f0f",
+  "matching_sha256": "5fcf0b518f1c9bdbc53d454f761b40ce34f43c79a44695e57bd1fe6919fd8d37",
+  "script_sha256": "922e2e6d06f893745c9a288471d393da88633f2ec37d35cfe5555fe36655b01c",
+  "extension_sha256": "1a21f937e1a163af3b1f4c7f072763afb115d9c172090e4ffe5784a067577e28",
+  "inputs": {
+    "data/freMTPL2freq.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f",
+    "fork_results/fork_numeric/selected_booster.txt": "98cc39b552de9aa00472edbff9b7dce1a11a5abb6834844e68443423bfac6174",
+    "fork_results/fork_numeric/selected/00_intercept.csv": "2bae62fc91a3fb189123aff79ee490ca2db607f9887936d6f0242c1475470c6c",
+    "fork_results/fork_numeric/selected/01_table_1.csv": "ef656ed3c1fc77d1b02535de7cbf1e5817006bd313ebe22bed42dbd68516f5fe",
+    "fork_results/fork_numeric/selected/02_table_2.csv": "35416cffb2ec5f1c67a0dc62be2b43f336f39f3cd7905a55f5d8bd2fb6dd90fe",
+    "fork_results/fork_numeric/selected/03_table_3.csv": "3e47cdd62b21636229d33b0bc839ffea5595bbfc6282cb12f9ee45a58a9af721",
+    "fork_results/fork_numeric/selected/manifest.json": "192fbdf2984b43c0280d4db7b450011d5c917e21d71c3c78d1e2f778dbb967c3"
+  },
+  "versions": {
+    "avenue_model": "0.1.0",
+    "lightgbm": "4.6.0.99",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "polars": "1.31.0"
+  },
+  "threads": {
+    "OMP_NUM_THREADS": "4",
+    "POLARS_MAX_THREADS": "4",
+    "RAYON_NUM_THREADS": "4"
+  },
+  "train_rows": 508509,
+  "quote_rows": 169504,
+  "quote_sha256": "a964dabbf7f89ba9b373df78f1e0700b9450e53562294caad3821bddde6e204a",
+  "tables": 4,
+  "table_rows": 19181,
+  "largest_table": 18810,
+  "seconds": [
+    0.010524773002543952,
+    0.009815745004743803,
+    0.00916575799783459,
+    0.00885103399923537,
+    0.008559354006138165
+  ],
+  "median_seconds": 0.00916575799783459,
+  "max_relative_error": 4.9960036108132044e-15,
+  "prediction_sha256": "68961c5cf61d0ccfc75db5aa7ba9f78cb1972453300215ff8237f4ce63adac50",
+  "process_peak_rss_kib": 662172,
+  "interpretation": "Repeated public scoring including frame preparation and matching; no reusable cache. Peak RSS includes inputs, booster and workbook, not isolated scoring memory.",
+  "passed": true
+}

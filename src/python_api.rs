@@ -12,7 +12,7 @@
 #![cfg(feature = "python")]
 
 use crate::plan::{
-    Base, Breaks, ExposureRole, FittedModel, GivenRole, Plan, PlanCheck, ResolvedTerm, Term,
+    Base, Breaks, ExposureRole, FittedModel, GivenRole, Knots, Plan, PlanCheck, ResolvedTerm, Term,
 };
 use crate::report::{ModelReport, Verdict};
 use crate::validation::{Severity, Validation, ValidationOptions};
@@ -79,6 +79,9 @@ fn resolved_to_dict<'py>(py: Python<'py>, term: &ResolvedTerm) -> PyResult<Bound
     dict.set_item("edges", term.edges.clone())?;
     dict.set_item("base_level", term.base_level.clone())?;
     dict.set_item("variate_values", term.variate_values.clone())?;
+    if let Some(knots) = &term.knots {
+        dict.set_item("knots", knots.clone())?;
+    }
     Ok(dict)
 }
 
@@ -166,6 +169,63 @@ impl PyPlan {
         let breaks = breaks_from(breaks, quantile, equal_width)?;
         Ok(PyPlan {
             inner: self.inner.clone().with(Term::banded(column, breaks)),
+        })
+    }
+
+    /// Exact natural-cubic effect with linear tails. Quantile/equal_width count
+    /// includes both boundary knots; default is five quantile knots, resolved on
+    /// positive-weight training rows. Supports unpenalized fitting and knot-value inference.
+    #[pyo3(signature = (column, knots=None, quantile=None, equal_width=None))]
+    fn spline(
+        &self,
+        column: &str,
+        knots: Option<Vec<f64>>,
+        quantile: Option<usize>,
+        equal_width: Option<usize>,
+    ) -> PyResult<Self> {
+        let spec = match (knots, quantile, equal_width) {
+            (Some(values), None, None) => Knots::Explicit { values },
+            (None, Some(n), None) => Knots::Quantile { n },
+            (None, None, Some(n)) => Knots::EqualWidth { n },
+            (None, None, None) => Knots::Quantile { n: 5 },
+            _ => {
+                return Err(value_error(
+                    "Give only one of knots, quantile or equal_width for a spline",
+                ))
+            }
+        };
+        Ok(Self {
+            inner: self.inner.clone().with(Term::spline(column, spec)),
+        })
+    }
+
+    /// Numeric bands constrained to an explicit increasing or decreasing direction.
+    /// Empty bands extend adjacent supported values. Uses the unpenalized table
+    /// solver; ordinary coefficient inference is unavailable for constrained fits.
+    #[pyo3(signature = (column, direction, breaks=None, quantile=None, equal_width=None))]
+    fn monotone(
+        &self,
+        column: &str,
+        direction: &str,
+        breaks: Option<Vec<f64>>,
+        quantile: Option<usize>,
+        equal_width: Option<usize>,
+    ) -> PyResult<Self> {
+        let direction = match direction {
+            "increasing" => crate::rating_model::Monotonicity::Increasing,
+            "decreasing" => crate::rating_model::Monotonicity::Decreasing,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "direction must be 'increasing' or 'decreasing'",
+                ))
+            }
+        };
+        Ok(Self {
+            inner: self.inner.clone().with(Term::monotone(
+                column,
+                breaks_from(breaks, quantile, equal_width)?,
+                direction,
+            )),
         })
     }
 
@@ -601,11 +661,148 @@ impl PyFittedModel {
         })
     }
 
+    /// Complete effective GLMOptions arguments; empty for loaded/converted scorers.
+    #[getter]
+    fn fit_options<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let out = PyDict::new(py);
+        if let Some(d) = &self.inner.diagnostics {
+            let o = &d.options;
+            out.set_item("max_iterations", o.max_iterations)?;
+            out.set_item("tolerance", o.tolerance)?;
+            out.set_item("verbose", o.verbose)?;
+            out.set_item("tweedie_power", o.tweedie_power)?;
+            out.set_item(
+                "normalization",
+                match o.normalization {
+                    crate::glm::Normalization::BaseLevel => "base_level",
+                    crate::glm::Normalization::WeightedMean => "weighted_mean",
+                    crate::glm::Normalization::None => "none",
+                },
+            )?;
+            out.set_item("compute_standard_errors", o.compute_standard_errors)?;
+            out.set_item("accelerate", o.accelerate)?;
+            out.set_item("solve_aliased_pairs_jointly", o.solve_aliased_pairs_jointly)?;
+            out.set_item("alpha", o.alpha)?;
+            out.set_item("l1_ratio", o.l1_ratio)?;
+            out.set_item(
+                "solver",
+                match o.solver {
+                    crate::glm::GLMSolver::Auto => "auto",
+                    crate::glm::GLMSolver::Global => "global",
+                    crate::glm::GLMSolver::Table => "table",
+                },
+            )?;
+            out.set_item(
+                "covariance",
+                if o.covariance_cluster.is_some() {
+                    "cluster"
+                } else if o.robust_standard_errors {
+                    "hc0"
+                } else {
+                    "model_based"
+                },
+            )?;
+            out.set_item("cluster", &o.covariance_cluster)?;
+        }
+        Ok(out)
+    }
+
+    /// Actual solver chosen, rather than merely the requested 'auto' policy.
+    #[getter]
+    fn solver_used(&self) -> Option<&'static str> {
+        self.inner
+            .diagnostics
+            .as_ref()
+            .map(|d| match d.solver_used {
+                crate::glm::GLMSolver::Global => "global",
+                crate::glm::GLMSolver::Table => "table",
+                crate::glm::GLMSolver::Auto => "auto",
+            })
+    }
+
+    /// Inference evidence from the original fit; absent for loaded/converted scorers.
+    #[getter]
+    fn inference_summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let out = PyDict::new(py);
+        if let Some(info) = self
+            .inner
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.inference.as_ref())
+        {
+            out.set_item("dispersion", info.dispersion)?;
+            out.set_item("covariance_method", &info.covariance_method)?;
+            out.set_item("cluster_column", &info.cluster_column)?;
+            out.set_item("n_clusters", info.n_clusters)?;
+            out.set_item("pearson_chi2", info.pearson_chi2)?;
+            out.set_item("df_residual", info.df_residual)?;
+            out.set_item("n_parameters", info.n_parameters)?;
+            out.set_item("effective_parameters", info.effective_parameters)?;
+            out.set_item("standard_errors_note", &info.standard_errors_note)?;
+        } else if let Some(message) = self
+            .inner
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.inference_error.as_ref())
+        {
+            for key in [
+                "dispersion",
+                "covariance_method",
+                "cluster_column",
+                "n_clusters",
+                "pearson_chi2",
+                "df_residual",
+                "n_parameters",
+                "effective_parameters",
+            ] {
+                out.set_item(key, py.None())?;
+            }
+            out.set_item("standard_errors_note", message)?;
+        }
+        Ok(out)
+    }
+
     /// Whether the fit converged. `None` when this model was not fitted here, so a
     /// caller cannot mistake "not fitted" for "did not converge".
     #[getter]
     fn converged(&self) -> Option<bool> {
         self.inner.converged()
+    }
+
+    /// Internal numerical joint tests; the public Python helper adds tail
+    /// probabilities, dispersion conventions and interpretation metadata.
+    fn _term_wald_statistics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let info = self
+            .inner
+            .diagnostics
+            .as_ref()
+            .and_then(|d| d.inference.as_ref())
+            .ok_or_else(|| {
+                pyo3::exceptions::PyValueError::new_err("Original fit covariance is unavailable")
+            })?;
+        let out = PyList::empty(py);
+        for term in &info.term_covariances {
+            let record = PyDict::new(py);
+            record.set_item("term", &self.inner.table_names[term.table_index])?;
+            record.set_item("table_index", term.table_index)?;
+            record.set_item("df", term.coefficients.len())?;
+            record.set_item("null_hypothesis", &term.null_hypothesis)?;
+            record.set_item("excluded_rows", &term.excluded_rows)?;
+            match term.wald_statistic() {
+                Ok(statistic) => {
+                    record.set_item("statistic", statistic)?;
+                    record.set_item("status", "available")?;
+                    record.set_item("note", py.None())?;
+                }
+                Err(reason) => {
+                    record.set_item("statistic", py.None())?;
+                    record.set_item("status", "unavailable")?;
+                    record.set_item("note", reason)?;
+                }
+            }
+            out.append(record)?;
+        }
+        Ok(out)
     }
 
     /// True when this model was fitted here, rather than loaded or converted.
@@ -650,7 +847,7 @@ impl PyFittedModel {
         Ok(list)
     }
 
-    /// Convert a LightGBM model into rating tables. Predictions match it exactly.
+    /// Convert supported LightGBM structure into rating tables. No numerical parity check is performed.
     ///
     /// `consolidation` is `"max"` for the minimal set of tables, `"analysis"` for one
     /// per tree node.
@@ -777,6 +974,93 @@ impl PyFittedModel {
             .map_err(value_error)
     }
 
+    /// Recorded Poisson prediction kind: rate, count, or unspecified response.
+    #[getter]
+    fn prediction_kind(&self) -> &str {
+        self.inner.prediction_kind()
+    }
+
+    /// Separate predictor, prediction and validation column requirements.
+    #[getter]
+    fn input_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let schema = PyDict::new(py);
+        let mut features = std::collections::BTreeMap::new();
+        for table in &self.inner.model.tables {
+            for (name, dtype) in table.get_feature_info() {
+                features.insert(name, dtype);
+            }
+        }
+        let predictors = PyDict::new(py);
+        for (name, dtype) in &features {
+            let info = PyDict::new(py);
+            info.set_item(
+                "kind",
+                if *dtype == DataType::Float64 {
+                    "numeric"
+                } else {
+                    "categorical"
+                },
+            )?;
+            info.set_item("internal_dtype", format!("{:?}", dtype))?;
+            if let Some(levels) = self.inner.encoding.maps.get(name) {
+                info.set_item("levels", levels.clone())?;
+            }
+            predictors.set_item(name, info)?;
+        }
+        let mut prediction: std::collections::BTreeSet<String> = features.keys().cloned().collect();
+        let mut validation = prediction.clone();
+        if let Some(exposure) = &self.inner.exposure {
+            validation.insert(exposure.clone());
+            if self.inner.exposure_role == Some(ExposureRole::Offset) {
+                prediction.insert(exposure.clone());
+            }
+        }
+        if let Some(target) = &self.inner.target {
+            validation.insert(target.clone());
+        }
+        schema.set_item("predictors", predictors)?;
+        schema.set_item(
+            "prediction_columns",
+            prediction.into_iter().collect::<Vec<_>>(),
+        )?;
+        schema.set_item(
+            "validation_columns",
+            validation.into_iter().collect::<Vec<_>>(),
+        )?;
+        schema.set_item("target", self.inner.target.clone())?;
+        schema.set_item("exposure", self.inner.exposure.clone())?;
+        schema.set_item("prediction_kind", self.inner.prediction_kind())?;
+        Ok(schema)
+    }
+
+    /// Poisson rates. Exposure is not required on the scoring frame.
+    fn predict_rate(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = df.into();
+        let values = self.inner.predict_rate(&df).map_err(value_error)?;
+        DataFrame::new(vec![values.into()])
+            .map(PyDataFrame)
+            .map_err(value_error)
+    }
+
+    /// Expected Poisson counts, with recorded exposure applied exactly once.
+    fn predict_count(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = df.into();
+        let values = self.inner.predict_count(&df).map_err(value_error)?;
+        DataFrame::new(vec![values.into()])
+            .map(PyDataFrame)
+            .map_err(value_error)
+    }
+
+    /// Row-level scoring results: row, predictions, status and unmatched_tables.
+    /// Unmatched/nonfinite means are null. Invalid input schemas/exposures raise.
+    fn predict_diagnostics(&self, df: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = df.into();
+        self.inner
+            .predict_diagnostics(&df)
+            .map(PyDataFrame)
+            .map_err(value_error)
+    }
+
     /// Rating tables with `Coefficient`, `Standard_Error`, `Status` and, for log
     /// links, `Relativity`. Categorical codes carry their level text back as a
     /// `<column>_Level` column.
@@ -788,6 +1072,26 @@ impl PyFittedModel {
             .into_iter()
             .map(PyDataFrame)
             .collect())
+    }
+
+    /// Policy-level summary and long factor contributions, keyed by input row.
+    fn explain<'py>(&self, py: Python<'py>, df: PyDataFrame) -> PyResult<Bound<'py, PyDict>> {
+        let df: DataFrame = df.into();
+        let (summary, contributions) = self.inner.explain(&df).map_err(value_error)?;
+        let result = PyDict::new(py);
+        result.set_item("summary", PyDataFrame(summary))?;
+        result.set_item("contributions", PyDataFrame(contributions))?;
+        Ok(result)
+    }
+
+    /// Estimated factor tables keyed by stable table names.
+    fn rating_tables_by_name<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let result = PyDict::new(py);
+        let tables = self.inner.rating_tables().map_err(value_error)?;
+        for (name, table) in self.inner.table_names.iter().zip(tables) {
+            result.set_item(name, PyDataFrame(table))?;
+        }
+        Ok(result)
     }
 
     /// The fitted model as an editable, portable artifact.
@@ -925,6 +1229,9 @@ impl PyModelReport {
         dict.set_item("pseudo_r2", fit.pseudo_r2)?;
         dict.set_item("n_parameters", fit.n_parameters)?;
         dict.set_item("dispersion", fit.dispersion)?;
+        dict.set_item("covariance_method", &fit.covariance_method)?;
+        dict.set_item("cluster_column", &fit.cluster_column)?;
+        dict.set_item("n_clusters", fit.n_clusters)?;
         dict.set_item("aic", fit.aic)?;
         dict.set_item("bic", fit.bic)?;
         dict.set_item("table_conditioning", fit.table_conditioning)?;

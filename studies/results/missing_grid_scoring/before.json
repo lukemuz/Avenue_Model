@@ -1,0 +1,44 @@
+{
+  "source_commit": "57aa8d0f48738b701ab7fce2252f3bd19613cd23",
+  "matching_sha256": "9a65ea5f059182e4bb478029e01f8c6e9a088c6ec3bf5db9421ad9cc7c279454",
+  "script_sha256": "7f184ba13f32feb1a2fd8d3a825bc8aebfc949ba81e90e9b6953ba3acf81994f",
+  "extension_sha256": "458ddd5905f2a53bee5602973dd7da9e63001b1f815b419b0bb295cc0120a92b",
+  "artifact_source": "fresh_conversion",
+  "artifact_setup_seconds": 3.855724162000115,
+  "model_json_sha256": "6bfc03b06cfc9f116ec1bf2d7fdced37d9f8bff405069fa31ed8d7aa95df537d",
+  "inputs": {
+    "data/freMTPL2freq.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f",
+    "fork_results/fork_numeric/selected_booster.txt": "98cc39b552de9aa00472edbff9b7dce1a11a5abb6834844e68443423bfac6174"
+  },
+  "versions": {
+    "avenue_model": "0.1.0",
+    "lightgbm": "4.6.0.99",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "polars": "1.31.0"
+  },
+  "threads": {
+    "OMP_NUM_THREADS": "4",
+    "POLARS_MAX_THREADS": "4",
+    "RAYON_NUM_THREADS": "4"
+  },
+  "train_rows": 508509,
+  "quote_rows": 169504,
+  "quote_sha256": "a964dabbf7f89ba9b373df78f1e0700b9450e53562294caad3821bddde6e204a",
+  "tables": 4,
+  "table_rows": 21723,
+  "largest_table": 21080,
+  "seconds": [
+    0.7604212590013049,
+    0.7560294319991954,
+    0.7565531299987924,
+    0.7505723649956053,
+    0.7583291319970158
+  ],
+  "median_seconds": 0.7565531299987924,
+  "max_relative_error": 4.9960036108132044e-15,
+  "prediction_sha256": "c7556920360c38edabb2621e112c9d4731713482a9a78941c5750e1bab94417c",
+  "process_peak_rss_kib": 693080,
+  "interpretation": "Repeated public scoring including frame preparation and matching; no reusable cache. Peak RSS includes inputs, booster and workbook, not isolated scoring memory.",
+  "passed": true
+}

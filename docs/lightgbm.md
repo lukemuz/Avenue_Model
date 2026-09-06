@@ -78,12 +78,34 @@ from avenue_model import tune_lgbm
 result = tune_lgbm(dataset, {"objective": "poisson"}, n_trials=50)
 print(result.summary())
 
-trial = result.select(max_tables=10)     # most accurate model within a budget
-booster = lgb.train({**base, **trial.params}, dataset)
+trial = result.select(max_tables=10)     # screen by mean CV table count
+booster = lgb.train({**trial.params, "num_iterations": trial.num_iterations}, dataset)
 ```
 
 `result.frontier` is sorted by table count, `result.best_cv` ignores size entirely, and
-`select(max_tables=...)` raises rather than quietly returning something over budget. When
+`result.trials` retains every trial. Each trial's `fold_complexity` records the actual
+maximum-consolidation artifact for each CV fold at `num_iterations`: table count,
+total rows, largest table, largest interaction order and coefficient cells. The text
+summary shows mean rows across folds, the largest individual table across folds and
+the maximum interaction order alongside mean table count and loss. Thus equal table
+counts no longer hide different row counts. The Pareto objectives remain loss and
+table count; row count does not silently change the selection rule.
+
+These measurements require conversion of each selected fold prefix. The recorded
+`conversion_seconds` includes dump creation, conversion and extraction of table data;
+it is not scoring latency. Models are released after each fold's measurement. Large
+artifacts can make this materially more expensive than the standalone inexpensive
+`estimate_num_tables` helper. Conversion errors propagate instead of becoming invented
+complexity scores. No prediction-parity claim is inferred from measuring structure.
+`coefficient_cells` counts stored factor values, not independent fitted parameters.
+Final full-data refits can differ from these CV artifacts and need separate review.
+Measure scoring performance on your representative quotes outside the tuning loop.
+
+`select(max_tables=...)` screens the mean CV table count at the selected iteration.
+It does not enforce a limit on the final converted artifact. Inspect the final
+`from_booster` result's `metadata['complexity']` and apply your delivery requirements
+([conversion guide](CONVERSION.md)). `trial.fold_tables` retains
+the fold distribution; a constant booster is a valid one-table artifact. When
 the LightGBM in play is stock, the two interaction penalties are dropped from the search
 with a warning instead of being tuned silently — LightGBM ignores an unknown parameter
 with only a log line, so a search over one would otherwise spend its whole budget on a
@@ -171,3 +193,5 @@ chosen by hand by nearly 3%.
 The unpenalised refit also carries Wald standard errors and reference levels, which a
 converted model does not. A penalised fit omits the standard errors, so the ridge row
 is the better model and the unpenalised row is the one to quote errors from.
+
+See the [executable stock/fork study](../examples/booster_pricing_study.py) for tuning through raw-quote reload and an audited rate change.

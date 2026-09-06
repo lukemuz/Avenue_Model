@@ -1,8 +1,12 @@
-use super::inference::{compute_inference, solve_spd, GLMInference};
+use super::inference::{
+    compute_inference_with_clusters, compute_inference_with_splines, solve_spd, GLMInference,
+};
+use super::isotonic::{fit_ordered_log_blocks, ordered_score_residual};
 use super::loss::{pow_special, LossFunction, MAX_STEP};
 use super::matching::{precompute_all_matches, NO_MATCH};
 use super::penalty::{soft_threshold, PenaltyPlan, TablePenalty, ANCHOR_ROW};
 use super::redundancy::{collective_strength, table_correlations, TablePair};
+use super::spline::SplineBlock;
 use crate::rating_model::{variate_basis_params, RatingModel, RatingTable, TableSemantics};
 use polars::prelude::*;
 use rayon::prelude::*;
@@ -60,12 +64,11 @@ impl Default for GLMSolver {
 pub struct GLMOptions {
     pub solver: GLMSolver,
     pub max_iterations: usize,
-    /// Convergence threshold on the largest absolute score component, scaled by the
-    /// total prior weight.
-    ///
-    /// At the optimum every free parameter's score is zero, so this measures how far
-    /// the fitted factors still have to move. It is the same criterion glum applies
-    /// (`gradient_tol`), on the same scale, so the two are comparable.
+    /// Convergence threshold on the largest absolute free-parameter score, divided
+    /// by the sum of per-row reference score magnitudes: the larger of the absolute
+    /// residual score and the absolute mean score contribution (score at y=0).
+    /// This remains defined near exact fits and scales with response units.
+    /// It is not numerically identical to glum's weight-normalized gradient_tol.
     ///
     /// This replaced a test on the relative change in deviance, which was far weaker
     /// than it appeared: deviance is quadratic in the parameter error near the
@@ -84,6 +87,10 @@ pub struct GLMOptions {
     /// is the number of free parameters. Negligible for ordinary rating models; turn
     /// it off for models with thousands of levels.
     pub compute_standard_errors: bool,
+    /// Independent-observation HC0 expected-information sandwich; unpenalized only.
+    pub robust_standard_errors: bool,
+    /// One-way independent clusters for uncorrected CR0 sandwich covariance.
+    pub covariance_cluster: Option<String>,
     /// Accelerate the sweep with SQUAREM extrapolation. See [`squarem_steplength`].
     ///
     /// Costs three parameter vectors of memory and pays for itself many times over on
@@ -139,6 +146,8 @@ impl Default for GLMOptions {
             tweedie_power: 1.5,
             normalization: Normalization::default(),
             compute_standard_errors: true,
+            robust_standard_errors: false,
+            covariance_cluster: None,
             accelerate: true,
             solve_aliased_pairs_jointly: true,
             alpha: 0.0,
@@ -150,9 +159,14 @@ impl Default for GLMOptions {
 /// What happened during a fit, alongside the fitted model.
 #[derive(Debug, Clone)]
 pub struct GLMDiagnostics {
+    /// Effective options after plan-owned family/power resolution.
+    pub options: GLMOptions,
+    /// Actual numerical path selected, including automatic fallback.
+    pub solver_used: GLMSolver,
     /// Sweeps performed over the full set of tables.
     pub iterations: usize,
-    /// Whether the largest absolute score fell to `tolerance`.
+    /// Whether the largest optimality residual fell to `tolerance` (ordered-cone
+    /// directional scores for monotonic terms, ordinary scores otherwise).
     ///
     /// False means the returned factors are not at the optimum. Check
     /// [`max_gradient`](Self::max_gradient) to see how far off they are.
@@ -169,8 +183,10 @@ pub struct GLMDiagnostics {
     pub null_deviance: f64,
     /// Deviance after each sweep, in order.
     pub deviance_history: Vec<f64>,
-    /// Table rows that received no exposure and so kept their starting factor,
-    /// as `(table_index, row_index)`.
+    /// Table rows that received no exposure, as `(table_index, row_index)`.
+    /// Penalized step rows use the reference factor; unpenalized rows keep their
+    /// starting factors subject to normalization. Monotonic rows extend adjacent
+    /// supported factors and remain flagged as having no data.
     pub unfitted_rows: Vec<(usize, usize)>,
     /// How strongly the tables share a single common direction: 1.0 when they are
     /// orthogonal, rising to the number of tables when they all carry the same
@@ -218,6 +234,9 @@ struct FitContext<'a> {
     tables: &'a [RatingTable],
     updatable: &'a [bool],
     row_exposure: &'a [Vec<f64>],
+    normalization_weights: &'a [Vec<f64>],
+    splines: &'a [Option<SplineBlock>],
+    discrete_updatable: &'a [bool],
     variate_values: &'a [Option<(Vec<f64>, usize)>],
     normalization: Normalization,
     /// Near-aliased table pairs to update as one block, primary first. Disjoint: a table
@@ -243,7 +262,7 @@ impl<'a> FitContext<'a> {
         means: &mut [f64],
         numer: &mut Vec<f64>,
         denom: &mut Vec<f64>,
-    ) {
+    ) -> Result<(), PolarsError> {
         let mut paired = vec![false; self.tables.len()];
         for (t, u) in self.joint_pairs {
             update_pair(
@@ -269,6 +288,18 @@ impl<'a> FitContext<'a> {
             if !self.updatable[t] || paired[t] {
                 continue;
             }
+            if let Some(spline) = &self.splines[t] {
+                spline.update(
+                    &mut factors[t],
+                    eta,
+                    means,
+                    self.target,
+                    self.weights,
+                    self.offset,
+                    self.loss_fn,
+                )?;
+                continue;
+            }
             update_table(
                 t,
                 factors,
@@ -284,13 +315,13 @@ impl<'a> FitContext<'a> {
                 self.penalty,
                 numer,
                 denom,
-            );
+            )?;
         }
 
         if self.normalization != Normalization::None {
             normalize(
                 factors,
-                self.row_exposure,
+                self.normalization_weights,
                 self.tables,
                 self.updatable,
                 self.normalization,
@@ -303,6 +334,7 @@ impl<'a> FitContext<'a> {
         // what a single table update used to, and it bounds the rounding those
         // increments can accumulate to a single sweep's worth.
         self.relink(eta, means);
+        Ok(())
     }
 
     /// Rebuilds `eta` from the factors and `means` from `eta`.
@@ -310,9 +342,20 @@ impl<'a> FitContext<'a> {
     /// The sweep maintains both incrementally, so this is only needed where the factors
     /// are written directly rather than reached by a sweep — which is exactly what the
     /// accelerator does.
-    fn refresh(&self, factors: &[Vec<f64>], eta: &mut [f64], means: &mut [f64]) {
+    fn refresh(
+        &self,
+        factors: &[Vec<f64>],
+        eta: &mut [f64],
+        means: &mut [f64],
+    ) -> Result<(), PolarsError> {
         eta.iter_mut().for_each(|v| *v = 0.0);
         for (t, table_matches) in self.matches.iter().enumerate() {
+            if let Some(spline) = &self.splines[t] {
+                for (sum, value) in eta.iter_mut().zip(spline.evaluate(&factors[t])?) {
+                    *sum += value;
+                }
+                continue;
+            }
             for (i, m) in table_matches.iter().enumerate() {
                 if *m != NO_MATCH {
                     eta[i] += factors[t][*m as usize];
@@ -320,6 +363,7 @@ impl<'a> FitContext<'a> {
             }
         }
         self.relink(eta, means);
+        Ok(())
     }
 
     fn relink(&self, eta: &[f64], means: &mut [f64]) {
@@ -345,21 +389,40 @@ impl<'a> FitContext<'a> {
         self.deviance(means) + self.penalty.map_or(0.0, |p| p.total(factors))
     }
 
-    fn max_score(&self, factors: &[Vec<f64>], means: &[f64], scratch: &mut [Vec<f64>]) -> f64 {
-        max_abs_score(
+    fn max_score(
+        &self,
+        factors: &[Vec<f64>],
+        means: &[f64],
+        scratch: &mut [Vec<f64>],
+    ) -> Result<f64, PolarsError> {
+        let mut score = max_abs_score(
             self.loss_fn,
             self.target,
             self.weights,
             means,
             self.matches,
             self.tables,
-            self.updatable,
+            self.discrete_updatable,
             self.row_exposure,
             self.variate_values,
             factors,
             self.penalty,
+            false,
             scratch,
-        )
+        );
+        for (t, spline) in self.splines.iter().enumerate() {
+            if self.updatable[t] {
+                if let Some(spline) = spline {
+                    score = score.max(spline.relative_score(
+                        self.loss_fn,
+                        self.target,
+                        self.weights,
+                        means,
+                    )?);
+                }
+            }
+        }
+        Ok(score)
     }
 }
 
@@ -607,13 +670,85 @@ pub fn fit_glm_with_diagnostics(
     offset_col: Option<&str>,
     options: GLMOptions,
 ) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
+    let has_spline = model.tables.iter().any(|t| t.metadata.spline.is_some());
+    if has_spline && (options.alpha != 0. || options.solver == GLMSolver::Global) {
+        return Err(PolarsError::ComputeError(
+            "Continuous splines currently require unpenalized table solving; global solving is not implemented".into()));
+    }
+    for table in &model.tables {
+        if table.metadata.spline.is_some()
+            && (0..table.data.height()).any(|r| table.is_row_offset(r))
+        {
+            return Err(PolarsError::ComputeError(
+                "Individual locked spline knots are not implemented".into(),
+            ));
+        }
+    }
     validate_inputs(model, df, target_col, weight_col, offset_col)?;
+    let covariance_label = if options.covariance_cluster.is_some() {
+        "Cluster"
+    } else {
+        "HC0"
+    };
+    if (options.robust_standard_errors || options.covariance_cluster.is_some())
+        && (options.alpha != 0.0 || !options.compute_standard_errors)
+    {
+        return Err(PolarsError::ComputeError(
+            format!(
+                "{} covariance requires an unpenalized fit with inference enabled",
+                covariance_label
+            )
+            .into(),
+        ));
+    }
+
+    if (options.robust_standard_errors || options.covariance_cluster.is_some())
+        && options.normalization == Normalization::None
+    {
+        return Err(PolarsError::ComputeError(
+            format!(
+                "{} covariance requires base-level or weighted-mean normalization",
+                covariance_label
+            )
+            .into(),
+        ));
+    }
 
     // Initialize loss function from required objective
     let mut loss_fn = LossFunction::from_objective(&options.objective);
     // Override Tweedie power if specified
     if let LossFunction::Tweedie(_) = loss_fn {
         loss_fn = LossFunction::Tweedie(options.tweedie_power);
+    }
+
+    let has_monotone = model
+        .tables
+        .iter()
+        .any(|t| t.metadata.monotonicity.is_some());
+    if has_monotone {
+        if !loss_fn
+            .log_link_variance_power()
+            .is_some_and(|p| (1.0..=2.0).contains(&p))
+            || options.alpha != 0.0
+            || options.solver == GLMSolver::Global
+            || options.robust_standard_errors
+            || options.covariance_cluster.is_some()
+        {
+            return Err(PolarsError::ComputeError("Monotonic fitting requires an unpenalized Poisson, Gamma or Tweedie (1 <= power <= 2) table solver; global solving and robust covariance are not supported".into()));
+        }
+        for table in &model.tables {
+            if let Some(direction) = table.metadata.monotonicity {
+                table.clone().as_monotone(direction)?;
+                if table.metadata.is_offset
+                    || !table.metadata.is_updatable
+                    || (0..table.data.height()).any(|r| table.is_row_offset(r))
+                {
+                    return Err(PolarsError::ComputeError(
+                        "Monotonic fitting does not yet support locked tables or rows".into(),
+                    ));
+                }
+            }
+        }
     }
 
     // A penalty is defined on each level's contrast against its table's base level,
@@ -667,6 +802,44 @@ pub fn fit_glm_with_diagnostics(
         }
         None => vec![1.0; n],
     };
+    let cluster_ids = if let Some(column) = &options.covariance_cluster {
+        let values = df.column(column)?;
+        if values.null_count() > 0
+            || !(values.dtype().is_integer() || values.dtype() == &DataType::String)
+        {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Cluster column '{}' requires non-null integer or string IDs",
+                    column
+                )
+                .into(),
+            ));
+        }
+        let strings = values.cast(&DataType::String)?;
+        let mut codes = std::collections::HashMap::new();
+        let ids: Vec<usize> = strings
+            .str()?
+            .into_no_null_iter()
+            .map(|label| {
+                let next = codes.len();
+                *codes.entry(label.to_string()).or_insert(next)
+            })
+            .collect();
+        let active: std::collections::HashSet<usize> = ids
+            .iter()
+            .zip(&weights)
+            .filter(|(_, w)| **w > 0.0)
+            .map(|(id, _)| *id)
+            .collect();
+        if active.len() < 2 {
+            return Err(PolarsError::ComputeError(
+                "Cluster covariance requires at least two positive-weight clusters".into(),
+            ));
+        }
+        Some(ids)
+    } else {
+        None
+    };
     let offset = match offset_col {
         Some(col) => read_f64_column(df, col, "offset")?,
         None => vec![0.0; n],
@@ -679,6 +852,17 @@ pub fn fit_glm_with_diagnostics(
     }
     let matches = precompute_all_matches(&working_model, df)?;
     validate_matches(&working_model, &matches, n)?;
+    let splines: Vec<Option<SplineBlock>> = working_model
+        .tables
+        .iter()
+        .map(|table| {
+            if table.metadata.spline.is_some() {
+                SplineBlock::new(table, df).map(Some)
+            } else {
+                Ok(None)
+            }
+        })
+        .collect::<Result<_, PolarsError>>()?;
     if options.verbose {
         println!("Matches computed. Starting iterations...");
     }
@@ -729,6 +913,12 @@ pub fn fit_glm_with_diagnostics(
     // Running linear predictor from the tables only; `offset` is added where used.
     let mut eta = vec![0.0; n];
     for t in 0..n_tables {
+        if let Some(spline) = &splines[t] {
+            for (sum, value) in eta.iter_mut().zip(spline.evaluate(&factors[t])?) {
+                *sum += value;
+            }
+            continue;
+        }
         for (i, m) in matches[t].iter().enumerate() {
             if *m != NO_MATCH {
                 eta[i] += factors[t][*m as usize];
@@ -770,7 +960,9 @@ pub fn fit_glm_with_diagnostics(
         &is_variate,
     );
 
-    let global_supported = options.normalization == Normalization::BaseLevel
+    let global_supported = !has_monotone
+        && !has_spline
+        && options.normalization == Normalization::BaseLevel
         && !factors.is_empty()
         && factors[0].len() == 1
         && updatable[0]
@@ -811,12 +1003,18 @@ pub fn fit_glm_with_diagnostics(
             row_exposure,
             penalty,
             null_deviance,
+            cluster_ids,
             options,
         );
     }
 
     let pairable: Vec<bool> = (0..n_tables)
-        .map(|t| updatable[t] && variate_values[t].is_none())
+        .map(|t| {
+            updatable[t]
+                && variate_values[t].is_none()
+                && working_model.tables[t].metadata.monotonicity.is_none()
+                && splines[t].is_none()
+        })
         .collect();
     let correlations = if options.solve_aliased_pairs_jointly {
         table_correlations(&matches, &weights, &table_shapes, &pairable)
@@ -846,7 +1044,7 @@ pub fn fit_glm_with_diagnostics(
     // because the case it warns about is precisely the one where none of them does - a
     // plan whose tables are individually only mildly correlated but collectively cover
     // one shared direction converges at a crawl with nothing for the pair solve to find.
-    let table_conditioning = if options.solve_aliased_pairs_jointly {
+    let table_conditioning = if options.solve_aliased_pairs_jointly && !has_spline {
         Some(collective_strength(&correlations))
     } else {
         None
@@ -877,6 +1075,17 @@ pub fn fit_glm_with_diagnostics(
         }
     }
 
+    let mut normalization_weights = row_exposure.clone();
+    for (t, spline) in splines.iter().enumerate() {
+        if let Some(spline) = spline {
+            normalization_weights[t] = spline.loadings(&weights)?;
+        }
+    }
+    let discrete_updatable: Vec<bool> = updatable
+        .iter()
+        .enumerate()
+        .map(|(t, active)| *active && splines[t].is_none())
+        .collect();
     let ctx = FitContext {
         loss_fn: &loss_fn,
         target: &target,
@@ -886,6 +1095,9 @@ pub fn fit_glm_with_diagnostics(
         tables: &working_model.tables,
         updatable: &updatable,
         row_exposure: &row_exposure,
+        normalization_weights: &normalization_weights,
+        splines: &splines,
+        discrete_updatable: &discrete_updatable,
         variate_values: &variate_values,
         normalization: options.normalization,
         joint_pairs: &joint_pairs,
@@ -918,32 +1130,32 @@ pub fn fit_glm_with_diagnostics(
 
     'fitting: loop {
         // ---------------------------------------------------------- two plain sweeps
-        if options.accelerate {
+        if options.accelerate && !has_monotone && !has_spline {
             flatten_factors(&factors, &mut theta0);
         }
-        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
+        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom)?;
         if let Status::Stop = progress.record(
             ctx.objective(&factors, &means),
             ctx.deviance(&means),
-            ctx.max_score(&factors, &means, &mut score_scratch),
+            ctx.max_score(&factors, &means, &mut score_scratch)?,
             &options,
         ) {
             break 'fitting;
         }
 
-        if !options.accelerate {
+        if !options.accelerate || has_monotone || has_spline {
             continue;
         }
 
         flatten_factors(&factors, &mut theta1);
-        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
+        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom)?;
         let deviance2 = ctx.deviance(&means);
         // Judged on the penalised objective, which is what the sweep is descending.
         // Equal to the deviance whenever no penalty is on.
         let objective2 = ctx.objective(&factors, &means);
         // What plain iteration achieved. An extrapolated jump has to beat this on the
         // same quantity the fit converges on, or it is not worth taking.
-        let score2 = ctx.max_score(&factors, &means, &mut score_scratch);
+        let score2 = ctx.max_score(&factors, &means, &mut score_scratch)?;
         if let Status::Stop = progress.record(objective2, deviance2, score2, &options) {
             break 'fitting;
         }
@@ -968,7 +1180,7 @@ pub fn fit_glm_with_diagnostics(
         for _ in 0..SQUAREM_BACKTRACKS {
             squarem_extrapolate(&theta0, &theta1, &theta2, alpha, eta_limit, &mut candidate);
             unflatten_factors(&candidate, &mut factors);
-            ctx.refresh(&factors, &mut eta, &mut means);
+            ctx.refresh(&factors, &mut eta, &mut means)?;
             // The extrapolated point is not normalised, which is exactly why the penalty
             // reads its anchor out of the factors rather than assuming it is zero.
             let d = ctx.objective(&factors, &means);
@@ -986,7 +1198,7 @@ pub fn fit_glm_with_diagnostics(
             // Nothing better than plain iteration was found. Put theta2 back, let the
             // next cycle sweep on from there, and wait longer before trying again.
             unflatten_factors(&theta2, &mut factors);
-            ctx.refresh(&factors, &mut eta, &mut means);
+            ctx.refresh(&factors, &mut eta, &mut means)?;
             consecutive_failures = (consecutive_failures + 1).min(SQUAREM_MAX_BACKOFF);
             cycles_to_skip = (1usize << consecutive_failures) - 1;
             continue;
@@ -1005,13 +1217,13 @@ pub fn fit_glm_with_diagnostics(
         // after 5,000.
         //
         // `score3` is computed either way, to hand to `record` - so this costs nothing.
-        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom);
+        ctx.sweep(&mut factors, &mut eta, &mut means, &mut numer, &mut denom)?;
         let deviance3 = ctx.deviance(&means);
         let objective3 = ctx.objective(&factors, &means);
-        let score3 = ctx.max_score(&factors, &means, &mut score_scratch);
+        let score3 = ctx.max_score(&factors, &means, &mut score_scratch)?;
         if !(objective3.is_finite() && objective3 <= accept_at) || !(score3 <= score2) {
             unflatten_factors(&theta2, &mut factors);
-            ctx.refresh(&factors, &mut eta, &mut means);
+            ctx.refresh(&factors, &mut eta, &mut means)?;
             consecutive_failures = (consecutive_failures + 1).min(SQUAREM_MAX_BACKOFF);
             cycles_to_skip = (1usize << consecutive_failures) - 1;
             continue;
@@ -1051,8 +1263,11 @@ pub fn fit_glm_with_diagnostics(
     // collinear still has perfectly good predictions, so a failure here is recorded
     // rather than allowed to discard the fit the caller asked for.
     let mut inference_error: Option<String> = None;
-    let inference = if options.compute_standard_errors {
-        match compute_inference(
+    let inference = if has_monotone {
+        inference_error = Some("Monotonic constraints: ordinary coefficient covariance and likelihood parameter counts are unavailable; constrained inference is not implemented".to_string());
+        None
+    } else if options.compute_standard_errors {
+        match compute_inference_with_splines(
             &loss_fn,
             &target,
             &weights,
@@ -1064,6 +1279,21 @@ pub fn fit_glm_with_diagnostics(
             &variate_values,
             options.normalization,
             penalty.as_ref(),
+            &working_model
+                .tables
+                .iter()
+                .map(|table| {
+                    (0..table.data.height())
+                        .map(|r| table.is_row_offset(r))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
+            options.robust_standard_errors,
+            options
+                .covariance_cluster
+                .as_deref()
+                .zip(cluster_ids.as_deref()),
+            Some(&splines),
         ) {
             Ok(inf) => Some(inf),
             Err(e) => {
@@ -1083,12 +1313,16 @@ pub fn fit_glm_with_diagnostics(
         write_back_factors(&mut working_model.tables[t], &factors[t])?;
     }
 
-    // A step row with no exposure keeps whatever factor it started with, so callers
-    // need to know. A variate row with no exposure is still fitted — it reads its
+    // Empty penalized step rows use the reference; unpenalized rows keep starting
+    // factors subject to normalization. Empty monotonic rows extend
+    // supported factors. Both need a no-data flag. A variate row with no exposure reads its
     // factor off the table's slope — so it is not listed here.
     let mut unfitted_rows = Vec::new();
     for t in 0..n_tables {
-        if !updatable[t] || working_model.tables[t].variate_values().is_some() {
+        if !updatable[t]
+            || working_model.tables[t].variate_values().is_some()
+            || splines[t].is_some()
+        {
             continue;
         }
         for (r, e) in row_exposure[t].iter().enumerate() {
@@ -1099,6 +1333,8 @@ pub fn fit_glm_with_diagnostics(
     }
 
     let diagnostics = GLMDiagnostics {
+        options: options.clone(),
+        solver_used: GLMSolver::Table,
         iterations,
         converged,
         max_gradient,
@@ -1148,7 +1384,7 @@ fn update_table(
     penalty: Option<&PenaltyPlan>,
     numer: &mut Vec<f64>,
     denom: &mut Vec<f64>,
-) {
+) -> Result<(), PolarsError> {
     if let TableSemantics::Variate { values, degree } = table.semantics() {
         update_variate_table(
             t,
@@ -1163,7 +1399,7 @@ fn update_table(
             *degree,
             loss_fn,
         );
-        return;
+        return Ok(());
     }
     let n_rows = factors[t].len();
     numer.clear();
@@ -1217,6 +1453,33 @@ fn update_table(
     let step_limit = loss_fn.step_limit();
     let eta_limit = loss_fn.eta_limit();
 
+    if let Some(direction) = table.metadata.monotonicity {
+        let p = power.expect("monotonic family checked before fitting");
+        let a: Vec<f64> = numer
+            .iter()
+            .zip(&factors[t])
+            .map(|(a, old)| a.ln() + (p - 1.0) * old)
+            .collect();
+        let b: Vec<f64> = denom
+            .iter()
+            .zip(&factors[t])
+            .map(|(b, old)| b.ln() + (p - 2.0) * old)
+            .collect();
+        let fitted =
+            fit_ordered_log_blocks(&a, &b, direction.is_increasing(), -eta_limit, eta_limit)
+                .map_err(|message| {
+                    PolarsError::ComputeError(
+                        format!("Monotonic table '{}': {}", table.metadata.name, message).into(),
+                    )
+                })?;
+        for r in 0..n_rows {
+            numer[r] = fitted[r] - factors[t][r];
+            factors[t][r] = fitted[r];
+        }
+        apply_row_deltas(loss_fn, table_matches, &numer[..n_rows], offset, eta, means);
+        return Ok(());
+    }
+
     // Every level of a penalised table is shrunk toward this one. Read from the factors
     // rather than assumed to be zero, so the penalty stays invariant to the anchoring
     // `normalize` performs - see [`crate::glm::penalty`].
@@ -1242,9 +1505,12 @@ fn update_table(
             None => 0.0,
         };
 
-        // Rows with no exposure, locked rows, and degenerate denominators keep whatever
-        // factor they started with.
-        let new = if row_exposure[r] <= 0.0
+        // Without data the only varying objective term is the contrast penalty,
+        // minimized at the reference for both L1 and L2. Keep the no-data flag:
+        // this fallback is supplied by the penalty, not estimated from experience.
+        let new = if row_exposure[r] <= 0.0 && !table.is_row_offset(r) && penalty.is_some() {
+            anchor
+        } else if row_exposure[r] <= 0.0
             || table.is_row_offset(r)
             || !(denom[r] > 0.0)
             || !denom[r].is_finite()
@@ -1296,6 +1562,7 @@ fn update_table(
     // Fold the changes into the running linear predictor and mean. Reusing `numer` as
     // the per-row delta keeps this to a single pass with no extra allocation.
     apply_row_deltas(loss_fn, table_matches, &numer[..n_rows], offset, eta, means);
+    Ok(())
 }
 
 /// Where one level of a step table moves to, or `None` if the step is unusable.
@@ -1450,6 +1717,7 @@ fn fit_global_irls(
     row_exposure: Vec<Vec<f64>>,
     penalty: Option<PenaltyPlan>,
     null_deviance: f64,
+    cluster_ids: Option<Vec<usize>>,
     options: GLMOptions,
 ) -> Result<(RatingModel, GLMDiagnostics), PolarsError> {
     if options.normalization != Normalization::BaseLevel {
@@ -1522,6 +1790,10 @@ fn fit_global_irls(
         for r in 1..factors[t].len() {
             if let Some(c) = layout.columns[t][r] {
                 beta[c] = factors[t][r] - base;
+            } else if penalty.as_ref().and_then(|plan| plan.row(t, r)).is_some() {
+                // Unsupported contrasts have a penalty-only optimum of zero. They
+                // are omitted from the data design and remain marked no_data.
+                factors[t][r] = 0.0;
             }
         }
     }
@@ -1674,6 +1946,7 @@ fn fit_global_irls(
             &variate_values,
             &factors,
             penalty.as_ref(),
+            true,
             &mut score_scratch,
         );
         if let Status::Stop = progress.record(objective, deviance, gradient, &options) {
@@ -1683,7 +1956,7 @@ fn fit_global_irls(
 
     let mut inference_error = None;
     let inference = if options.compute_standard_errors {
-        match compute_inference(
+        match compute_inference_with_clusters(
             &loss_fn,
             &target,
             &weights,
@@ -1695,6 +1968,20 @@ fn fit_global_irls(
             &variate_values,
             options.normalization,
             penalty.as_ref(),
+            &model
+                .tables
+                .iter()
+                .map(|table| {
+                    (0..table.data.height())
+                        .map(|r| table.is_row_offset(r))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
+            options.robust_standard_errors,
+            options
+                .covariance_cluster
+                .as_deref()
+                .zip(cluster_ids.as_deref()),
         ) {
             Ok(value) => Some(value),
             Err(error) => {
@@ -1722,6 +2009,8 @@ fn fit_global_irls(
     Ok((
         model,
         GLMDiagnostics {
+            options: options.clone(),
+            solver_used: GLMSolver::Global,
             iterations: progress.iterations,
             converged: progress.converged,
             max_gradient: progress.max_gradient,
@@ -2260,6 +2549,20 @@ fn update_pair(
         delta_u[s] = new - old;
     }
 
+    // The paired ridge solve omits unsupported coordinates from its data system.
+    // Complete their penalty-only minimization against the updated reference too.
+    for (table, delta, pen) in [(t, &mut delta_t, pen_t), (u, &mut delta_u, pen_u)] {
+        if pen.is_some() {
+            let anchor = factors[table][ANCHOR_ROW];
+            for r in 0..factors[table].len() {
+                if row_exposure[table][r] <= 0.0 && !tables[table].is_row_offset(r) {
+                    delta[r] = anchor - factors[table][r];
+                    factors[table][r] = anchor;
+                }
+            }
+        }
+    }
+
     apply_row_deltas(loss_fn, &matches[t], &delta_t, offset, eta, means);
     apply_row_deltas(loss_fn, &matches[u], &delta_u, offset, eta, means);
 }
@@ -2670,7 +2973,7 @@ fn normalize(
 }
 
 /// Scatters one observation's score contribution into every table it touches, and
-/// returns its absolute value for the scaling denominator.
+/// returns a response-scale reference magnitude for the convergence denominator.
 ///
 /// The contribution is the same quantity the IRLS step already uses, `a * w * r`, which
 /// for the log-link families is `a * mu^(1-p) * (y - mu)` — the `A - E` of the exact
@@ -2701,7 +3004,12 @@ fn score_row(
             rows[t][m as usize] += s;
         }
     }
+    // Residual-only normalization degenerates on exact fits: numerator and
+    // denominator both reach rounding noise and their ratio can remain one.
+    // Include the mean's score scale so the criterion remains a relative score
+    // residual at a perfect fit, with the same response-unit equivariance.
     s.abs()
+        .max((a * loss_fn.weighted_link_residual(0.0, means[i])).abs())
 }
 
 /// Relative improvement in the deviance, per sweep, below which a sweep counts as having
@@ -2735,9 +3043,9 @@ const STALL_SWEEPS: usize = 12;
 /// while still visibly wrong. That is not a hypothetical: on the French motor data the
 /// deviance test declared victory 1.1e-04 away from the answer.
 ///
-/// The scaling by total weight matches what glum reports, so the tolerances mean
-/// roughly the same thing in both. Without it the threshold would depend on the number
-/// of observations.
+/// The reference score magnitude removes dependence on observation count and
+/// response-unit scaling. It is not glum's weight-normalized gradient convention;
+/// compare fitted means and explicit score residuals rather than equating tolerances.
 ///
 /// `scratch` is per-table row storage, reused across sweeps.
 #[allow(clippy::too_many_arguments)]
@@ -2753,6 +3061,7 @@ fn max_abs_score(
     variate_values: &[Option<(Vec<f64>, usize)>],
     factors: &[Vec<f64>],
     penalty: Option<&PenaltyPlan>,
+    fixed_reference: bool,
     scratch: &mut [Vec<f64>],
 ) -> f64 {
     for rows in scratch.iter_mut() {
@@ -2834,6 +3143,15 @@ fn max_abs_score(
             continue;
         }
 
+        if let Some(direction) = tables[t].metadata.monotonicity {
+            worst = worst.max(ordered_score_residual(
+                &factors[t],
+                &scratch[t],
+                direction.is_increasing(),
+            ));
+            continue;
+        }
+
         match &variate_values[t] {
             // A variate table's free parameters are its polynomial coefficients, not
             // its rows, so the row scores have to be projected onto the basis the fit
@@ -2874,9 +3192,19 @@ fn max_abs_score(
                 };
 
                 for r in 0..scratch[t].len() {
-                    // A locked row or one with no exposure carries no free parameter,
-                    // so its score is not ours to drive to zero.
-                    if row_exposure[t][r] <= 0.0 || tables[t].is_row_offset(r) {
+                    // The global solver uses treatment coding: non-intercept base
+                    // rows are fixed at zero, not free coordinates. Their redundant
+                    // table-sweep score can include penalties on frozen empty rows
+                    // and need not vanish at the global solution.
+                    if fixed_reference && t > 0 && r == ANCHOR_ROW {
+                        continue;
+                    }
+                    // An unsupported penalized row has a penalty-only optimum;
+                    // check it too, including after accelerated extrapolation.
+                    // Locked rows and unsupported unpenalized rows remain fixed.
+                    if (row_exposure[t][r] <= 0.0 && table_penalty.is_none())
+                        || tables[t].is_row_offset(r)
+                    {
                         continue;
                     }
                     let g = match (table_penalty, r == ANCHOR_ROW) {
@@ -2895,15 +3223,10 @@ fn max_abs_score(
         }
     }
 
-    // Scale by the total absolute residual, not by the weight. Both make the threshold
-    // independent of the number of observations, but only this one makes it
-    // independent of the units the response is measured in: the score carries the
-    // response's scale, and dividing by a bare weight leaves it there. A Gaussian fit
-    // on currency would otherwise need a different tolerance from one on log-odds.
-    //
-    // Read it as: the fraction of the residual signal still concentrated in the worst
-    // single parameter. At the optimum the signed residuals cancel within every level,
-    // so this goes to zero while the denominator stays put.
+    // Normalize by the sum of max(abs(score residual), abs(mean score scale)).
+    // This is invariant to response-unit scaling for each supported family and
+    // does not collapse to zero as a fit interpolates its observations. It also
+    // retains residual scaling where residuals dominate the mean contribution.
     if total_abs > 0.0 {
         worst / total_abs
     } else {
@@ -3144,10 +3467,10 @@ fn validate_inputs(
         }
     }
 
-    // Check that model has at least 2 tables (mean + at least one feature table)
-    if model.tables.len() < 2 {
+    // An intercept alone is a valid GLM; only a model without any tables is invalid.
+    if model.tables.is_empty() {
         return Err(PolarsError::ComputeError(
-            "Model must have at least 2 tables (mean + feature tables)".into(),
+            "Model must have at least an intercept table".into(),
         ));
     }
 

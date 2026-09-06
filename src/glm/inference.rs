@@ -14,6 +14,9 @@
 //! table row is the standard error of the contrast that row actually represents under
 //! the model's anchoring.
 //!
+//! Joint term covariance is retained for lazy Wald tests. A full null-space check
+//! prevents retained-but-confounded columns receiving individual or joint inference.
+//!
 //! Under [`Normalization::BaseLevel`](super::Normalization::BaseLevel) that contrast is
 //! simply the reduced parameter itself, so the numbers line up directly with what a
 //! treatment-coded GLM reports.
@@ -34,6 +37,10 @@ const MAX_PARAMETERS: usize = 5000;
 /// Standard errors and fit statistics for a fitted model.
 #[derive(Debug, Clone)]
 pub struct GLMInference {
+    /// Within-term reduced coefficient covariance, retained for lazy joint tests.
+    /// Cross-term covariance is not retained. No inversion for a joint test is
+    /// performed until it is requested.
+    pub term_covariances: Vec<TermCovariance>,
     /// Standard error of each table's rows, matching the model's table layout.
     ///
     /// A row that is the anchoring reference has a standard error of exactly 0 — it
@@ -69,6 +76,10 @@ pub struct GLMInference {
     /// Estimated dispersion. Fixed at 1 for Poisson and Binomial; Pearson chi-squared
     /// over residual degrees of freedom for Gaussian, Gamma and Tweedie.
     pub dispersion: f64,
+    /// Covariance used for standard errors, independently of likelihood dispersion.
+    pub covariance_method: String,
+    pub cluster_column: Option<String>,
+    pub n_clusters: Option<usize>,
     /// Free parameters in the reduced basis, i.e. the model's rank.
     pub n_parameters: usize,
     /// Effective parameters actually spent, which is what `aic`, `bic` and
@@ -107,6 +118,60 @@ pub struct GLMInference {
     pub bic: Option<f64>,
     /// The fitted polynomial behind each variate table, one entry per variate table.
     pub variate_terms: Vec<VariateTerms>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TermCovariance {
+    pub table_index: usize,
+    pub coefficients: Vec<f64>,
+    pub covariance: Vec<f64>,
+    pub null_hypothesis: String,
+    pub excluded_rows: Vec<usize>,
+    pub unavailable_reason: Option<String>,
+}
+
+impl TermCovariance {
+    pub fn wald_statistic(&self) -> Result<f64, String> {
+        if let Some(reason) = &self.unavailable_reason {
+            return Err(reason.clone());
+        }
+        let df = self.coefficients.len();
+        if df == 0 {
+            return Err("No free supported contrasts in this term".to_string());
+        }
+        let solution = solve_spd(&self.covariance, &self.coefficients, df)
+            .ok_or_else(|| "Joint covariance is singular or not positive definite; no reduced-rank test is substituted".to_string())?;
+        let statistic: f64 = self
+            .coefficients
+            .iter()
+            .zip(solution)
+            .map(|(b, x)| b * x)
+            .sum();
+        if !statistic.is_finite() || statistic < 0.0 {
+            return Err("Joint Wald statistic is nonfinite or negative".to_string());
+        }
+        Ok(statistic)
+    }
+}
+
+/// A contrast is estimable only if it is orthogonal to every numerical null
+/// direction, including directions involving columns retained by the rank solver.
+fn contrast_estimable(contrast: &[(usize, f64)], null_relations: &[Vec<(usize, f64)>]) -> bool {
+    let norm = contrast.iter().map(|(_, v)| v * v).sum::<f64>().sqrt();
+    null_relations.iter().all(|relation| {
+        let dot: f64 = contrast
+            .iter()
+            .map(|(column, weight)| {
+                weight
+                    * relation
+                        .iter()
+                        .find(|(c, _)| c == column)
+                        .map_or(0.0, |(_, v)| *v)
+            })
+            .sum();
+        let relation_norm = relation.iter().map(|(_, v)| v * v).sum::<f64>().sqrt();
+        dot.abs() <= 1e-8 * norm * relation_norm
+    })
 }
 
 impl GLMInference {
@@ -194,8 +259,162 @@ pub fn compute_inference(
     normalization: Normalization,
     penalty: Option<&PenaltyPlan>,
 ) -> Result<GLMInference, PolarsError> {
+    let locked_rows: Vec<Vec<bool>> = factors.iter().map(|rows| vec![false; rows.len()]).collect();
+    compute_inference_with_locks(
+        loss_fn,
+        target,
+        weights,
+        means,
+        matches,
+        factors,
+        row_exposure,
+        updatable,
+        variate_values,
+        normalization,
+        penalty,
+        &locked_rows,
+    )
+}
+
+/// Covariance on the actual free-parameter design, respecting fixed table rows.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_inference_with_locks(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    factors: &[Vec<f64>],
+    row_exposure: &[Vec<f64>],
+    updatable: &[bool],
+    variate_values: &[Option<(Vec<f64>, usize)>],
+    normalization: Normalization,
+    penalty: Option<&PenaltyPlan>,
+    locked_rows: &[Vec<bool>],
+) -> Result<GLMInference, PolarsError> {
+    compute_inference_with_covariance(
+        loss_fn,
+        target,
+        weights,
+        means,
+        matches,
+        factors,
+        row_exposure,
+        updatable,
+        variate_values,
+        normalization,
+        penalty,
+        locked_rows,
+        false,
+    )
+}
+
+/// Expected-information sandwich covariance when HC0 is requested.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_inference_with_covariance(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    factors: &[Vec<f64>],
+    row_exposure: &[Vec<f64>],
+    updatable: &[bool],
+    variate_values: &[Option<(Vec<f64>, usize)>],
+    normalization: Normalization,
+    penalty: Option<&PenaltyPlan>,
+    locked_rows: &[Vec<bool>],
+    hc0: bool,
+) -> Result<GLMInference, PolarsError> {
+    compute_inference_with_clusters(
+        loss_fn,
+        target,
+        weights,
+        means,
+        matches,
+        factors,
+        row_exposure,
+        updatable,
+        variate_values,
+        normalization,
+        penalty,
+        locked_rows,
+        hc0,
+        None,
+    )
+}
+
+/// One-way CR0 uses summed scores for each independent cluster.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_inference_with_clusters(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    factors: &[Vec<f64>],
+    row_exposure: &[Vec<f64>],
+    updatable: &[bool],
+    variate_values: &[Option<(Vec<f64>, usize)>],
+    normalization: Normalization,
+    penalty: Option<&PenaltyPlan>,
+    locked_rows: &[Vec<bool>],
+    hc0: bool,
+    clusters: Option<(&str, &[usize])>,
+) -> Result<GLMInference, PolarsError> {
+    compute_inference_with_splines(
+        loss_fn,
+        target,
+        weights,
+        means,
+        matches,
+        factors,
+        row_exposure,
+        updatable,
+        variate_values,
+        normalization,
+        penalty,
+        locked_rows,
+        hc0,
+        clusters,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn compute_inference_with_splines(
+    loss_fn: &LossFunction,
+    target: &[f64],
+    weights: &[f64],
+    means: &[f64],
+    matches: &[Vec<u32>],
+    factors: &[Vec<f64>],
+    row_exposure: &[Vec<f64>],
+    updatable: &[bool],
+    variate_values: &[Option<(Vec<f64>, usize)>],
+    normalization: Normalization,
+    penalty: Option<&PenaltyPlan>,
+    locked_rows: &[Vec<bool>],
+    hc0: bool,
+    clusters: Option<(&str, &[usize])>,
+    splines: Option<&[Option<super::spline::SplineBlock>]>,
+) -> Result<GLMInference, PolarsError> {
     let n_obs = target.len();
     let n_tables = factors.len();
+    let spline_at = |t: usize| splines.and_then(|tables| tables[t].as_ref());
+    let mut normalization_weights = row_exposure.to_vec();
+    for t in 0..n_tables {
+        if let Some(spline) = spline_at(t) {
+            normalization_weights[t] = spline.loadings(weights)?;
+        }
+    }
+
+    let hc0 = hc0 || clusters.is_some();
+    if clusters.is_some_and(|(_, ids)| ids.len() != n_obs) {
+        return Err(PolarsError::ComputeError(
+            "Cluster IDs must align with observations".into(),
+        ));
+    }
 
     // ---- 1. Lay out the reduced basis -----------------------------------------
     //
@@ -212,7 +431,7 @@ pub fn compute_inference(
         if t == 0 {
             // The intercept table itself is column 0.
             for r in 0..n_rows {
-                table_layout.push(if r == 0 && updatable[0] {
+                table_layout.push(if r == 0 && updatable[0] && !locked_rows[0][r] {
                     ReducedColumn::Loadings(vec![(0, 1.0)])
                 } else {
                     ReducedColumn::Excluded
@@ -221,6 +440,14 @@ pub fn compute_inference(
         } else if !updatable[t] {
             for _ in 0..n_rows {
                 table_layout.push(ReducedColumn::Excluded);
+            }
+        } else if spline_at(t).is_some() {
+            // Knot zero identifies the constant direction. Empty support bins do
+            // not remove knot parameters; identification is assessed from X'WX.
+            table_layout.push(ReducedColumn::Reference);
+            for _ in 1..n_rows {
+                table_layout.push(ReducedColumn::Loadings(vec![(n_params, 1.0)]));
+                n_params += 1;
             }
         } else if let Some((values, degree)) = &variate_values[t] {
             // `degree` shared columns for the whole table. Loadings are the powers of
@@ -265,13 +492,15 @@ pub fn compute_inference(
             // A penalised table's reference is its base level, because that is the level
             // the fit actually held still and shrank the others toward. An unpenalised
             // table is free to anchor on the first level carrying any exposure.
-            let reference = if penalty.is_some_and(|p| p.covers(t)) {
+            let reference = if locked_rows[t].iter().any(|locked| *locked) {
+                None
+            } else if penalty.is_some_and(|p| p.covers(t)) {
                 Some(ANCHOR_ROW)
             } else {
                 reference_row(&row_exposure[t])
             };
             for r in 0..n_rows {
-                if Some(r) == reference {
+                if locked_rows[t][r] || Some(r) == reference {
                     table_layout.push(ReducedColumn::Reference);
                 } else if row_exposure[t][r] <= 0.0 {
                     table_layout.push(ReducedColumn::Excluded);
@@ -321,10 +550,48 @@ pub fn compute_inference(
 
     // ---- 2. Accumulate X'WX ----------------------------------------------------
     //
-    // Every row of X is an indicator pattern: a 1 in the intercept column and a 1 in
-    // at most one column per table. So the outer product is just a handful of
-    // increments, and the whole accumulation is O(n * tables^2).
+    // Ordinary tables contribute sparse row loadings. Continuous splines contribute
+    // cardinal-basis weights at the actual observation, without storing an n-by-p
+    // design matrix. The same loadings form HC0 and cluster score contributions.
+    if hc0 && penalty.is_some_and(|p| p.is_active()) {
+        return Err(PolarsError::ComputeError(
+            "HC0 covariance is unavailable for penalized fits".into(),
+        ));
+    }
+    let observation_loadings =
+        |i: usize, cols: &mut Vec<(usize, f64)>| -> Result<(), PolarsError> {
+            cols.clear();
+            for t in 0..n_tables {
+                if !updatable[t] {
+                    continue;
+                }
+                if let Some(spline) = spline_at(t) {
+                    for (r, value) in spline.weights_at(i)?.into_iter().enumerate() {
+                        if let ReducedColumn::Loadings(loadings) = &layout[t][r] {
+                            cols.extend(
+                                loadings
+                                    .iter()
+                                    .map(|(column, coefficient)| (*column, coefficient * value)),
+                            );
+                        }
+                    }
+                } else {
+                    let m = matches[t][i];
+                    if m != NO_MATCH {
+                        if let ReducedColumn::Loadings(loadings) = &layout[t][m as usize] {
+                            cols.extend_from_slice(loadings);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        };
     let mut xtwx = vec![0.0f64; n_params * n_params];
+    let mut meat = if hc0 {
+        vec![0.0; n_params * n_params]
+    } else {
+        Vec::new()
+    };
     let mut pearson_chi2 = 0.0f64;
     let mut active_obs = 0usize;
     let mut cols: Vec<(usize, f64)> = Vec::with_capacity(n_tables + 1);
@@ -349,24 +616,88 @@ pub fn compute_inference(
             continue;
         }
 
-        cols.clear();
-        for t in 0..n_tables {
-            let m = matches[t][i];
-            if m != NO_MATCH {
-                if let ReducedColumn::Loadings(loadings) = &layout[t][m as usize] {
-                    cols.extend_from_slice(loadings);
-                }
-            }
-        }
+        observation_loadings(i, &mut cols)?;
 
+        let score_squared = if hc0 {
+            (a * loss_fn.weighted_link_residual(target[i], mu)).powi(2)
+        } else {
+            0.0
+        };
+        if hc0 && !score_squared.is_finite() {
+            return Err(PolarsError::ComputeError(
+                "HC0 observation score is nonfinite".into(),
+            ));
+        }
         for (a_idx, &(u, cu)) in cols.iter().enumerate() {
             xtwx[u * n_params + u] += w * cu * cu;
+            if hc0 && clusters.is_none() {
+                meat[u * n_params + u] += score_squared * cu * cu;
+            }
             for &(v_col, cv) in cols.iter().skip(a_idx + 1) {
                 let contribution = w * cu * cv;
                 xtwx[u * n_params + v_col] += contribution;
                 xtwx[v_col * n_params + u] += contribution;
+                if hc0 && clusters.is_none() {
+                    let contribution = score_squared * cu * cv;
+                    meat[u * n_params + v_col] += contribution;
+                    meat[v_col * n_params + u] += contribution;
+                }
             }
         }
+    }
+
+    // Sort row indices by cluster and hold only one cluster's score vector.
+    // Memory is O(n + p^2), rather than a dense clusters-by-parameters matrix.
+    let mut n_clusters = None;
+    if let Some((_, ids)) = clusters {
+        let mut order: Vec<usize> = (0..n_obs).filter(|i| weights[*i] > 0.0).collect();
+        order.sort_by_key(|i| ids[*i]);
+        let mut cluster_score = vec![0.0; n_params];
+        let mut start = 0;
+        let mut count = 0;
+        while start < order.len() {
+            let cluster = ids[order[start]];
+            let mut end = start;
+            cluster_score.fill(0.0);
+            while end < order.len() && ids[order[end]] == cluster {
+                let i = order[end];
+                let score = weights[i] * loss_fn.weighted_link_residual(target[i], means[i]);
+                if !score.is_finite() {
+                    return Err(PolarsError::ComputeError(
+                        "Cluster observation score is nonfinite".into(),
+                    ));
+                }
+                observation_loadings(i, &mut cols)?;
+                for (column, loading) in &cols {
+                    cluster_score[*column] += score * loading;
+                }
+                end += 1;
+            }
+            let nonzero: Vec<(usize, f64)> = cluster_score
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, value)| *value != 0.0)
+                .collect();
+            for &(u, su) in &nonzero {
+                for &(v, sv) in &nonzero {
+                    meat[u * n_params + v] += su * sv;
+                }
+            }
+            count += 1;
+            start = end;
+        }
+        if count < 2 {
+            return Err(PolarsError::ComputeError(
+                "Cluster covariance requires at least two positive-weight clusters".into(),
+            ));
+        }
+        if meat.iter().any(|v| !v.is_finite()) {
+            return Err(PolarsError::ComputeError(
+                "Cluster score covariance is nonfinite".into(),
+            ));
+        }
+        n_clusters = Some(count);
     }
 
     // ---- 3. Rank ---------------------------------------------------------------
@@ -399,6 +730,7 @@ pub fn compute_inference(
     // `GLMInference::standard_errors_note`.
     let penalty_active = penalty.is_some_and(|p| p.is_active());
     let ridge_active = p_diag.iter().any(|v| *v > 0.0);
+    let mut null_relations = Vec::new();
     let (compact_cov, spent) = if ridge_active {
         let mut a = compact.clone();
         for (c, &j) in active.iter().enumerate() {
@@ -414,7 +746,33 @@ pub fn compute_inference(
         // unavailable on every penalised fit.
         (None, rank as f64)
     } else {
-        (Some(invert_spd(&compact, k)?), rank as f64)
+        let bread = invert_spd(&compact, k)?;
+        for dropped in (0..n_params).filter(|j| aliased[*j]) {
+            let mut relation = vec![(dropped, 1.0)];
+            for (ci, &column) in active.iter().enumerate() {
+                let coefficient: f64 = active
+                    .iter()
+                    .enumerate()
+                    .map(|(cj, &other)| bread[ci * k + cj] * xtwx[other * n_params + dropped])
+                    .sum();
+                if coefficient != 0.0 {
+                    relation.push((column, -coefficient));
+                }
+            }
+            null_relations.push(relation);
+        }
+        let covariance = if hc0 {
+            let mut compact_meat = vec![0.0; k * k];
+            for (ci, &i) in active.iter().enumerate() {
+                for (cj, &j) in active.iter().enumerate() {
+                    compact_meat[ci * k + cj] = meat[i * n_params + j];
+                }
+            }
+            matmul(&matmul(&bread, &compact_meat, k), &bread, k)
+        } else {
+            bread
+        };
+        (Some(covariance), rank as f64)
     };
 
     // An L1 penalty adds no curvature, so it leaves no trace in the hat matrix above.
@@ -439,6 +797,8 @@ pub fn compute_inference(
         f64::NAN
     };
 
+    let covariance_scale = if hc0 { 1.0 } else { dispersion };
+
     // Scatter back into full-size coordinates; dropped columns stay zero and are
     // caught by the `compact_of` check when contrasts are formed.
     let mut cov = vec![0.0f64; n_params * n_params];
@@ -460,10 +820,13 @@ pub fn compute_inference(
         // Under WeightedMean anchoring a reported factor is the level's parameter
         // minus the table's exposure-weighted average, so the contrast touches every
         // level of the table rather than just one.
-        let shares: Option<Vec<f64>> = if t > 0 && normalization == Normalization::WeightedMean {
-            let total: f64 = row_exposure[t].iter().sum();
+        let shares: Option<Vec<f64>> = if t > 0
+            && normalization == Normalization::WeightedMean
+            && !locked_rows[t].iter().any(|locked| *locked)
+        {
+            let total: f64 = normalization_weights[t].iter().sum();
             if total > 0.0 {
-                Some(row_exposure[t].iter().map(|e| e / total).collect())
+                Some(normalization_weights[t].iter().map(|e| e / total).collect())
             } else {
                 None
             }
@@ -479,6 +842,31 @@ pub fn compute_inference(
                     let mut contrast: Vec<(usize, f64)> = Vec::new();
                     if let ReducedColumn::Loadings(loadings) = &layout[t][r] {
                         contrast.extend_from_slice(loadings);
+                    }
+                    // Weighted-mean anchoring moves each table's weighted average
+                    // into the intercept. Its reported coefficient needs that same
+                    // contrast, not the treatment-coded baseline's standard error.
+                    if t == 0 && normalization == Normalization::WeightedMean {
+                        for source in 1..n_tables {
+                            if !updatable[source] || locked_rows[source].iter().any(|v| *v) {
+                                continue;
+                            }
+                            let total: f64 = normalization_weights[source].iter().sum();
+                            if total <= 0.0 {
+                                continue;
+                            }
+                            for (row, support) in normalization_weights[source].iter().enumerate() {
+                                if let ReducedColumn::Loadings(loadings) = &layout[source][row] {
+                                    for (column, loading) in loadings {
+                                        let adjustment = support / total * loading;
+                                        match contrast.iter_mut().find(|(c, _)| c == column) {
+                                            Some(entry) => entry.1 += adjustment,
+                                            None => contrast.push((*column, adjustment)),
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     if let Some(p) = &shares {
                         for (s, share) in p.iter().enumerate() {
@@ -520,6 +908,7 @@ pub fn compute_inference(
                     if contrast
                         .iter()
                         .any(|(c, w)| *w != 0.0 && compact_of[*c].is_none())
+                        || !contrast_estimable(&contrast, &null_relations)
                     {
                         ses[r] = f64::NAN;
                         aliased_rows.push((t, r));
@@ -534,7 +923,7 @@ pub fn compute_inference(
                         }
                     }
                     ses[r] = if quad >= 0.0 {
-                        (dispersion * quad).sqrt()
+                        (covariance_scale * quad).sqrt()
                     } else {
                         f64::NAN
                     };
@@ -558,6 +947,8 @@ pub fn compute_inference(
              and is what aic and bic charge."
                 .to_string(),
         )
+    } else if normalization == Normalization::None {
+        Some("Per-row standard errors are unavailable with normalization='none': the split between intercept and table factors is not identified. Refit with base_level or weighted_mean anchoring for coefficient intervals.".to_string())
     } else {
         None
     };
@@ -636,10 +1027,12 @@ pub fn compute_inference(
                     return f64::NAN;
                 }
                 let c = first_col + m;
-                if compact_of.get(c).copied().flatten().is_none() {
+                if compact_of.get(c).copied().flatten().is_none()
+                    || !contrast_estimable(&[(c, 1.0)], &null_relations)
+                {
                     return f64::NAN;
                 }
-                let var = dispersion * cov[c * n_params + c];
+                let var = covariance_scale * cov[c * n_params + c];
                 if var >= 0.0 {
                     var.sqrt()
                 } else {
@@ -657,10 +1050,113 @@ pub fn compute_inference(
         });
     }
 
+    let mut term_covariances = Vec::new();
+    for t in 1..n_tables {
+        let mut columns: Vec<usize> = layout[t]
+            .iter()
+            .flat_map(|row| match row {
+                ReducedColumn::Loadings(loadings) => {
+                    loadings.iter().map(|(c, _)| *c).collect::<Vec<_>>()
+                }
+                _ => Vec::new(),
+            })
+            .collect();
+        columns.sort_unstable();
+        columns.dedup();
+        let locked = locked_rows[t].iter().any(|v| *v);
+        let null_hypothesis = if variate_values[t].is_some() {
+            "all nonconstant polynomial coefficients are zero"
+        } else if locked {
+            "all free row factors are zero, conditional on locked rows and other terms"
+        } else {
+            "all supported levels have equal factors, conditional on other terms"
+        }
+        .to_string();
+        let mut coefficients = vec![0.0; columns.len()];
+        if let Some(variate) = variate_terms.iter().find(|v| v.table_index == t) {
+            coefficients.clone_from(&variate.scaled_coefficients);
+        } else if variate_values[t].is_none() {
+            let reference = if locked {
+                0.0
+            } else {
+                if spline_at(t).is_some() {
+                    factors[t][0]
+                } else {
+                    reference_row(&row_exposure[t]).map_or(0.0, |r| factors[t][r])
+                }
+            };
+            for (r, row) in layout[t].iter().enumerate() {
+                if let ReducedColumn::Loadings(loadings) = row {
+                    for (column, _) in loadings {
+                        coefficients[columns.binary_search(column).unwrap()] =
+                            factors[t][r] - reference;
+                    }
+                }
+            }
+        }
+        let unavailable_reason = if penalty_active {
+            Some("Joint Wald tests are unavailable for penalized fits".to_string())
+        } else if !updatable[t] {
+            Some("This table is fixed, not estimated".to_string())
+        } else if n_clusters.is_some_and(|count| count <= columns.len()) {
+            Some("Too few independent cluster scores for this joint test; no reduced-rank test is substituted".to_string())
+        } else if columns
+            .iter()
+            .any(|column| !contrast_estimable(&[(*column, 1.0)], &null_relations))
+        {
+            Some("The complete term is not separately estimable from the other terms".to_string())
+        } else if variate_values[t].is_some() && !variate_terms.iter().any(|v| v.table_index == t) {
+            Some("Polynomial coefficients could not be recovered".to_string())
+        } else {
+            None
+        };
+        let mut covariance = Vec::new();
+        if unavailable_reason.is_none() {
+            covariance.reserve(columns.len() * columns.len());
+            for &i in &columns {
+                for &j in &columns {
+                    covariance.push(covariance_scale * cov[i * n_params + j]);
+                }
+            }
+        }
+        term_covariances.push(TermCovariance {
+            table_index: t,
+            coefficients,
+            covariance,
+            null_hypothesis: if spline_at(t).is_some() {
+                "all knot values are equal (constant spline), conditional on other terms".into()
+            } else {
+                null_hypothesis
+            },
+            excluded_rows: if spline_at(t).is_some() {
+                Vec::new()
+            } else {
+                row_exposure[t]
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, w)| **w <= 0.0)
+                    .map(|(r, _)| r)
+                    .collect()
+            },
+            unavailable_reason,
+        });
+    }
+
     Ok(GLMInference {
+        term_covariances,
         standard_errors,
         aliased_rows,
         dispersion,
+        covariance_method: if clusters.is_some() {
+            "cluster_cr0"
+        } else if hc0 {
+            "hc0"
+        } else {
+            "model_based"
+        }
+        .to_string(),
+        cluster_column: clusters.map(|(column, _)| column.to_string()),
+        n_clusters,
         variate_terms,
         n_parameters: rank,
         effective_parameters,
@@ -755,8 +1251,7 @@ const ALIAS_DESIGN_TOL: f64 = 1e-12;
 ///
 /// `a * b` for two dense `n x n` matrices in row-major order.
 ///
-/// Only reached on a penalised fit, to form the hat matrix whose trace is the effective
-/// parameter count, alongside the `n^3` inversion that was happening anyway.
+/// Used for sandwich covariance and the penalized hat matrix's effective rank.
 fn matmul(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
     let mut out = vec![0.0f64; n * n];
     for i in 0..n {
@@ -958,6 +1453,50 @@ fn invert_spd(a: &[f64], n: usize) -> Result<Vec<f64>, PolarsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn joint_terms_keep_unrelated_information_when_nuisance_tables_alias() {
+        let first = vec![0, 0, 1, 1, 0, 0, 1, 1];
+        let second = vec![0, 1, 0, 1, 0, 1, 0, 1];
+        let means: Vec<f64> = first
+            .iter()
+            .zip(&second)
+            .map(|(a, b)| (0.2 * (*a as f64) + 0.3 * (*b as f64)).exp())
+            .collect();
+        let info = compute_inference(
+            &LossFunction::Poisson,
+            &means,
+            &[1.0; 8],
+            &means,
+            &[vec![0; 8], first.clone(), first, second],
+            &[vec![0.0], vec![0.0, 0.1], vec![0.0, 0.1], vec![0.0, 0.3]],
+            &[vec![8.0], vec![4.0; 2], vec![4.0; 2], vec![4.0; 2]],
+            &[true; 4],
+            &[None, None, None, None],
+            Normalization::BaseLevel,
+            None,
+        )
+        .unwrap();
+        assert!(info.term_covariances[0].wald_statistic().is_err());
+        assert!(info.term_covariances[1].wald_statistic().is_err());
+        assert!(info.term_covariances[2].wald_statistic().unwrap() > 0.0);
+        assert!(info.standard_errors[1][1].is_nan());
+        assert!(info.standard_errors[2][1].is_nan());
+        assert!(info.standard_errors[3][1].is_finite());
+    }
+
+    #[test]
+    fn singular_joint_covariance_is_not_a_smaller_hypothesis() {
+        let term = TermCovariance {
+            table_index: 1,
+            coefficients: vec![0.2, 0.3],
+            covariance: vec![1.0; 4],
+            null_hypothesis: "both coefficients zero".into(),
+            excluded_rows: Vec::new(),
+            unavailable_reason: None,
+        };
+        assert!(term.wald_statistic().unwrap_err().contains("singular"));
+    }
 
     #[test]
     fn inverts_a_known_matrix() {
