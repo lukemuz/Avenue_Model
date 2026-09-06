@@ -406,6 +406,7 @@ impl<'a> FitContext<'a> {
             self.variate_values,
             factors,
             self.penalty,
+            false,
             scratch,
         );
         for (t, spline) in self.splines.iter().enumerate() {
@@ -1936,6 +1937,7 @@ fn fit_global_irls(
             &variate_values,
             &factors,
             penalty.as_ref(),
+            true,
             &mut score_scratch,
         );
         if let Status::Stop = progress.record(objective, deviance, gradient, &options) {
@@ -3036,6 +3038,7 @@ fn max_abs_score(
     variate_values: &[Option<(Vec<f64>, usize)>],
     factors: &[Vec<f64>],
     penalty: Option<&PenaltyPlan>,
+    fixed_reference: bool,
     scratch: &mut [Vec<f64>],
 ) -> f64 {
     for rows in scratch.iter_mut() {
@@ -3166,6 +3169,13 @@ fn max_abs_score(
                 };
 
                 for r in 0..scratch[t].len() {
+                    // The global solver uses treatment coding: non-intercept base
+                    // rows are fixed at zero, not free coordinates. Their redundant
+                    // table-sweep score can include penalties on frozen empty rows
+                    // and need not vanish at the global solution.
+                    if fixed_reference && t > 0 && r == ANCHOR_ROW {
+                        continue;
+                    }
                     // A locked row or one with no exposure carries no free parameter,
                     // so its score is not ours to drive to zero.
                     if row_exposure[t][r] <= 0.0 || tables[t].is_row_offset(r) {
