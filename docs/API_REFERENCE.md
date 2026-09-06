@@ -25,15 +25,14 @@ These checks prevent silently omitting an exported native class or method. They 
 prove that every docstring fully explains its parameters or statistical assumptions.
 The linked user guides explain the modeling assumptions and supported combinations.
 
-## CI and Pages
+## CI artifacts
 
 `.github/workflows/docs.yml` builds the wheel and reference on pull requests and main
-branch updates, and uploads the generated HTML as the `api-reference` artifact. Only
-a main-branch build can deploy the Pages artifact. PR builds have read-only repository
-permissions; Pages write permission and the identity token are limited to the separate
-deployment job. No repository write credential is persisted by checkout.
+branch updates, and uploads the generated HTML as the `api-reference` artifact.
+The workflow uses read-only repository permissions, and no repository write credential
+is persisted by checkout. It does not deploy a public site or require a PyPI release.
 
-The repository's Pages source must be set to **GitHub Actions**, following
+Use the local build or download and extract the `api-reference` workflow artifact
+to browse the generated HTML. Public hosting can be added later by enabling GitHub
+Pages and restoring a deployment job, following
 [pdoc's hosting instructions](https://pdoc.dev/docs/pdoc.html#how-can-i-host-the-documentation-i-generated).
-The deployment job reports the hosted URL after a successful run. Until then, use
-the local build or download the `api-reference` workflow artifact.
