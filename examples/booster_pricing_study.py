@@ -11,13 +11,13 @@ import time
 
 import numpy as np
 import polars as pl
-from avenue_model import (Candidate, Plan, SplitSpec, Workbook, compare_changes,
+from avenue_model import (Candidate, GLMOptions, Plan, SplitSpec, Workbook, compare_changes,
                           compare_models, from_booster, prepare_pricing,
-                          resolve_lightgbm, tune_lgbm)
+                          resolve_lightgbm, save_bundle, tune_lgbm)
 from auto_pricing_study import synthetic
 
 
-def run(output, data_path=None):
+def run(output, data_path=None, refit_glm=False):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     if data_path is None:
@@ -70,12 +70,52 @@ def run(output, data_path=None):
     baseline = Plan.frequency('exposure').banded('age', breaks=[25., 50.]).categorical('region').fit(train, 'avenue_frequency')
     if baseline.converged is not True:
         raise RuntimeError('Baseline GLM did not converge')
-    comparison = compare_models(holdout, {
+    candidates = {
         'glm': Candidate(baseline, 'claims/exposure'),
         # The selected schedule completed and conversion/reload parity passed above.
         # This is training evidence, not a GLM score-convergence certificate.
         'booster': Candidate(model, 'claims/exposure', training_status='completed'),
-    }, target='avenue_frequency', unit='claims/exposure', metric='poisson', weight='exposure',
+    }
+    if refit_glm:
+        # Re-estimate supported rows of the converted shapes. Unsupported rows keep
+        # starting factors and are flagged by check/report. Category labels in
+        # rating_tables are already decoded for this raw-data Plan.
+        plan = Plan.frequency('exposure')
+        features = set(model.input_schema['predictors'])
+        for name, table in model.rating_tables_by_name().items():
+            columns = [column for column in table.columns if column in features]
+            if columns:  # Plan supplies a new, freely fitted intercept.
+                plan = plan.given(name, table.select(columns + ['Rating_Factor']))
+        check = plan.check(train, 'avenue_frequency')
+        (output / 'refit_check.json').write_text(json.dumps({
+            'is_fittable': check.is_fittable, 'parameters': check.parameters,
+            'rows': check.rows, 'issues': check.issues,
+            'table_conditioning': check.table_conditioning}, indent=2))
+        if not check.is_fittable:
+            raise RuntimeError('Booster structure is not fittable; inspect refit_check.json')
+        # Fixed before seeing the final holdout. Tuning on this already selected
+        # structure would not evaluate the full structure-selection procedure.
+        refitted = plan.fit(train, 'avenue_frequency',
+                            GLMOptions(alpha=1e-4, l1_ratio=0., max_iterations=500))
+        if refitted.converged is not True:
+            raise RuntimeError('Booster-structure GLM did not converge')
+        (output / 'refit_review.md').write_text(refitted.report(holdout).markdown)
+        bundle = save_bundle(refitted, output / 'refit_bundle', fold=fold,
+            training_id='booster-training-pre-2022', validation_data=holdout,
+            validation_id='booster-holdout-2022',
+            lineage={'structure': 'converted', 'booster': 'booster.txt',
+                     'method': 'Poisson GLM refit with prespecified ridge alpha=1e-4',
+                     'inference_scope': 'No post-selection confidence claim; penalized errors withheld'})
+        np.testing.assert_allclose(bundle.model.predict(quotes)['predictions'],
+                                   refitted.predict(quotes)['predictions'], atol=1e-12, rtol=1e-12)
+        change = compare_changes(model, refitted, holdout, unit='claims/exposure',
+                                 weight='exposure', segments=['region'])
+        change.totals.write_csv(output / 'refit_change_totals.csv')
+        change.segments['region'].write_csv(output / 'refit_change_region.csv')
+        refitted.explain(quotes.head(10))['contributions'].write_csv(output / 'refit_explanations.csv')
+        candidates['booster_structure_glm'] = Candidate(refitted, 'claims/exposure')
+    comparison = compare_models(holdout, candidates,
+       target='avenue_frequency', unit='claims/exposure', metric='poisson', weight='exposure',
        segments=['region', 'year'], bootstrap=50, seed=47)
     comparison.summary.write_csv(output / 'comparison.csv')
     booster_status = comparison.summary.filter(pl.col('candidate') == 'booster').row(0, named=True)
@@ -110,5 +150,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True)
     parser.add_argument('--data')
+    parser.add_argument('--refit-glm', action='store_true',
+                        help='Refit booster table shapes with a prespecified ridge Poisson GLM')
     args = parser.parse_args()
-    run(args.output, args.data)
+    run(args.output, args.data, args.refit_glm)

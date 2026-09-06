@@ -1,0 +1,18 @@
+{
+  "module": "lightgbm",
+  "version": "4.7.0",
+  "device": "cpu",
+  "cv_mean_tables": 2.0,
+  "cv_fold_tables": [
+    2.0,
+    2.0,
+    2.0
+  ],
+  "selected_iterations": 20,
+  "final_tables": 2,
+  "total_rows": 13,
+  "largest_table": 12,
+  "scoring_rows": 1000,
+  "observed_scoring_seconds": 0.00020506700093392283,
+  "timing_note": "one warm batch observation, not a benchmark"
+}

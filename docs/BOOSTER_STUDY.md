@@ -33,8 +33,32 @@ convergence certificate or classical coefficient inference. After the selected s
 and parity checks finish, the tutorial explicitly supplies `training_status="completed"`
 to comparison. The booster becomes eligible under the same holdout loss criterion while
 its `converged` value stays null. Completion is distinct from predictive quality and
-never overrides a reported failure. Optional GLM refitting is demonstrated separately in `refit_as_glm.py`;
-its data-selected structure does not justify unconditional Wald inference.
+never overrides a reported failure.
+
+Add `--refit-glm` to run the optional booster-structure Poisson GLM branch:
+
+```sh
+python examples/booster_pricing_study.py --output /tmp/booster-refit-study --refit-glm
+```
+
+This uses `Plan.given` to re-estimate supported table rows on the pre-2022 training
+population, with a new intercept and a prespecified ridge penalty (`alpha=1e-4`,
+`l1_ratio=0`). It retains the pre-fit parameter count and support warnings in
+`refit_check.json`, requires convergence, and compares the new model on the same
+untouched final year as the GLM and booster. Rows with no training exposure retain
+their starting factors and remain flagged as unsupported; refitting does not create
+evidence for those rows. A report, quote explanations, portfolio/region change tables,
+and an analytical `refit_bundle` preserve the fit, split, validation and lineage.
+Raw-label quote predictions must survive bundle reload at `atol=rtol=1e-12`.
+
+Refitting changes predictions and is not exact conversion. The selected structure
+depends on training outcomes; neither classical post-selection confidence intervals
+nor uncertainty about the structure selection is supplied. Penalized coefficient
+standard errors are withheld. The fixed penalty is an example specification, not a
+tuned optimum. Selecting it using CV on this already learned structure would omit
+structure-selection uncertainty and leakage from that performance estimate; evaluating
+the full procedure requires learning the booster structure within each training fold.
+Ordinary CI and the installed-wheel acceptance runner exercise this optional branch.
 
 The complexity report distinguishes mean CV table count and its fold distribution from
 final table count, total rows and largest table. It records one warm batch timing as an

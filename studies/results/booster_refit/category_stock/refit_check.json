@@ -1,0 +1,14 @@
+{
+  "is_fittable": true,
+  "parameters": 12,
+  "rows": 13,
+  "issues": [
+    {
+      "severity": "medium",
+      "code": "empty_levels",
+      "message": "2 of 12 rows in table 'table_1' carry no exposure. They cannot be estimated and will keep their starting factor.",
+      "column": null
+    }
+  ],
+  "table_conditioning": null
+}

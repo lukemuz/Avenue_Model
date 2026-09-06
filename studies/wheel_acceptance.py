@@ -52,6 +52,8 @@ def main():
                              ('booster', 'booster_pricing_study.py')]:
             path = ROOT / 'examples' / script
             command = [sys.executable, str(path), '--output', str(output / name)]
+            if name == 'booster':
+                command.append('--refit-glm')
             start = time.perf_counter()
             with (output / f'{name}.log').open('w', encoding='utf-8') as log:
                 completed = subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
