@@ -23,6 +23,23 @@ An empty term list now means an intercept-only model. For example,
 `Plan.frequency("exposure").fit(data, "frequency")` estimates the exposure-weighted
 portfolio frequency and exports an ordinary one-table workbook.
 
+## Unsupported rows in a penalized refit
+
+An existing table may contain rows with zero training exposure, including explicit
+missing-value routes imported from a booster. In an unlocked ordinary step table
+with an active L1 or L2 penalty, these rows take the reference relativity (log factor
+zero after base-level normalization). Their data contribution is zero, so this is
+the penalty-only optimum. Both table and global solvers use this rule, including
+paired ridge updates. Review still marks these rows `no_data`; the value is not a
+data-supported estimate or an uncertainty statement.
+
+This corrects solver-dependent unused-row predictions in earlier penalized refits.
+It does not add a route for an unmatched quote: strict matching still applies.
+Locked factors remain fixed. Unpenalized unused rows retain their starting factors
+subject to normalization; monotonic and smooth terms have their own documented
+extrapolation rules. Existing saved scoring workbooks retain their saved values;
+the new rule applies when fitting again.
+
 ## Migration from 0.1.0 evaluation behavior
 
 Offset models previously returned rates from `predict()` while validation used counts.

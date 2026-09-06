@@ -45,8 +45,8 @@ This uses `Plan.given` to re-estimate supported table rows on the pre-2022 train
 population, with a new intercept and a prespecified ridge penalty (`alpha=1e-4`,
 `l1_ratio=0`). It retains the pre-fit parameter count and support warnings in
 `refit_check.json`, requires convergence, and compares the new model on the same
-untouched final year as the GLM and booster. Rows with no training exposure retain
-their starting factors and remain flagged as unsupported; refitting does not create
+untouched final year as the GLM and booster. Penalized rows with no training exposure
+use the reference relativity and remain flagged as unsupported; refitting does not create
 evidence for those rows. A report, quote explanations, portfolio/region change tables,
 and an analytical `refit_bundle` preserve the fit, split, validation and lineage.
 Raw-label quote predictions must survive bundle reload at `atol=rtol=1e-12`.

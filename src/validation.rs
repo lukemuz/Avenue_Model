@@ -560,9 +560,10 @@ pub fn validate(
                     Severity::Medium,
                     "unfitted_levels",
                     format!(
-                        "{} table rows saw no exposure during fitting and kept their \
-                         starting factor. They were not estimated from data, so any \
-                         business written into them will be priced off a placeholder.",
+                        "{} table rows saw no exposure during fitting. Their factors \
+                         follow the model's fallback or shape constraints, not experience \
+                         in those rows. Penalized ordinary step rows use the reference \
+                         relativity; review these assumptions before pricing new business.",
                         diag.unfitted_rows.len()
                     ),
                 )

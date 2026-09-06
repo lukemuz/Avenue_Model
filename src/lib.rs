@@ -817,8 +817,8 @@ struct PyGLMDiagnostics {
     null_deviance: f64,
     #[pyo3(get)]
     deviance_history: Vec<f64>,
-    /// Table rows that received no exposure and kept their starting factor,
-    /// as (table_index, row_index) pairs.
+    /// Table rows that received no exposure, as (table_index, row_index) pairs.
+    /// Factors follow the model's fallback or shape constraints, not row experience.
     #[pyo3(get)]
     unfitted_rows: Vec<(usize, usize)>,
     /// How strongly the tables share a single common direction: 1.0 when they are

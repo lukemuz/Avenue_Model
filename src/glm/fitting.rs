@@ -184,7 +184,8 @@ pub struct GLMDiagnostics {
     /// Deviance after each sweep, in order.
     pub deviance_history: Vec<f64>,
     /// Table rows that received no exposure, as `(table_index, row_index)`.
-    /// Ordinary step rows keep starting factors; monotonic rows extend adjacent
+    /// Penalized step rows use the reference factor; unpenalized rows keep their
+    /// starting factors subject to normalization. Monotonic rows extend adjacent
     /// supported factors and remain flagged as having no data.
     pub unfitted_rows: Vec<(usize, usize)>,
     /// How strongly the tables share a single common direction: 1.0 when they are
@@ -1312,7 +1313,8 @@ pub fn fit_glm_with_diagnostics(
         write_back_factors(&mut working_model.tables[t], &factors[t])?;
     }
 
-    // Empty ordinary step rows keep starting factors; empty monotonic rows extend
+    // Empty penalized step rows use the reference; unpenalized rows keep starting
+    // factors subject to normalization. Empty monotonic rows extend
     // supported factors. Both need a no-data flag. A variate row with no exposure reads its
     // factor off the table's slope — so it is not listed here.
     let mut unfitted_rows = Vec::new();
@@ -1503,9 +1505,12 @@ fn update_table(
             None => 0.0,
         };
 
-        // Rows with no exposure, locked rows, and degenerate denominators keep whatever
-        // factor they started with.
-        let new = if row_exposure[r] <= 0.0
+        // Without data the only varying objective term is the contrast penalty,
+        // minimized at the reference for both L1 and L2. Keep the no-data flag:
+        // this fallback is supplied by the penalty, not estimated from experience.
+        let new = if row_exposure[r] <= 0.0 && !table.is_row_offset(r) && penalty.is_some() {
+            anchor
+        } else if row_exposure[r] <= 0.0
             || table.is_row_offset(r)
             || !(denom[r] > 0.0)
             || !denom[r].is_finite()
@@ -1785,6 +1790,10 @@ fn fit_global_irls(
         for r in 1..factors[t].len() {
             if let Some(c) = layout.columns[t][r] {
                 beta[c] = factors[t][r] - base;
+            } else if penalty.as_ref().and_then(|plan| plan.row(t, r)).is_some() {
+                // Unsupported contrasts have a penalty-only optimum of zero. They
+                // are omitted from the data design and remain marked no_data.
+                factors[t][r] = 0.0;
             }
         }
     }
@@ -2540,6 +2549,20 @@ fn update_pair(
         delta_u[s] = new - old;
     }
 
+    // The paired ridge solve omits unsupported coordinates from its data system.
+    // Complete their penalty-only minimization against the updated reference too.
+    for (table, delta, pen) in [(t, &mut delta_t, pen_t), (u, &mut delta_u, pen_u)] {
+        if pen.is_some() {
+            let anchor = factors[table][ANCHOR_ROW];
+            for r in 0..factors[table].len() {
+                if row_exposure[table][r] <= 0.0 && !tables[table].is_row_offset(r) {
+                    delta[r] = anchor - factors[table][r];
+                    factors[table][r] = anchor;
+                }
+            }
+        }
+    }
+
     apply_row_deltas(loss_fn, &matches[t], &delta_t, offset, eta, means);
     apply_row_deltas(loss_fn, &matches[u], &delta_u, offset, eta, means);
 }
@@ -3176,9 +3199,12 @@ fn max_abs_score(
                     if fixed_reference && t > 0 && r == ANCHOR_ROW {
                         continue;
                     }
-                    // A locked row or one with no exposure carries no free parameter,
-                    // so its score is not ours to drive to zero.
-                    if row_exposure[t][r] <= 0.0 || tables[t].is_row_offset(r) {
+                    // An unsupported penalized row has a penalty-only optimum;
+                    // check it too, including after accelerated extrapolation.
+                    // Locked rows and unsupported unpenalized rows remain fixed.
+                    if (row_exposure[t][r] <= 0.0 && table_penalty.is_none())
+                        || tables[t].is_row_offset(r)
+                    {
                         continue;
                     }
                     let g = match (table_penalty, r == ANCHOR_ROW) {

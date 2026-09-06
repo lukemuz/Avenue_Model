@@ -2044,7 +2044,7 @@ impl Plan {
                                 } else if table.variate_values().is_some() {
                                     "Their factors are determined by the variate curve, not observations in those bands."
                                 } else {
-                                    "They cannot be estimated and will keep their starting factor."
+                                    "They cannot be estimated from these data. Penalized step fits use the reference relativity; unpenalized fits retain starting factors subject to normalization."
                                 }
                             ),
                         ));

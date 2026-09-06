@@ -77,8 +77,8 @@ def run(output, data_path=None, refit_glm=False):
         'booster': Candidate(model, 'claims/exposure', training_status='completed'),
     }
     if refit_glm:
-        # Re-estimate supported rows of the converted shapes. Unsupported rows keep
-        # starting factors and are flagged by check/report. Category labels in
+        # Re-estimate supported rows of the converted shapes. The penalty sends
+        # unsupported rows to the reference; check/report flags them. Category labels in
         # rating_tables are already decoded for this raw-data Plan.
         plan = Plan.frequency('exposure')
         features = set(model.input_schema['predictors'])

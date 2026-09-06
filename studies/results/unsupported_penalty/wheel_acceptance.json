@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+  "machine": "x86_64",
+  "source_commit": "f76c23d5f8f703300117f6899885d098d916c608",
+  "script_sha256": "8a0669cc20eba1657a09e342c580941f86b2e429368ec9cf314dc9d4103d05d3",
+  "test_files_sha256": {
+    "tests/fixtures/categorical_tree.json": "d94264a6ecae79cf7145a0ce94a881d9cd97948c96e257ba1e7392aab9b901dd",
+    "tests/fixtures/natural_spline.json": "6ffe6d78f4fe2b4912f7a47905a10e5ff6c45ac35edaf9013e99754eb233b30d",
+    "tests/fixtures/spline_fit.json": "83d93f836d7aaed10dd7fc9b8c2fc3607834cfd62193b76081611e0e96e81d6a",
+    "tests/test_adapters.py": "1d94954d317f19362c431693cfacb0adc6897568ca97a6b47aec7fc04790ccb0",
+    "tests/test_band_review.py": "a35656f0dea5cdad1182cbe8ec0f208bc2cb50b5c7f0c003d62dfb44e00465da",
+    "tests/test_bootstrap_stability.py": "cd1846a97b42557849167c737a00eabfca28f9945dae62d6956d6b4a2b26725e",
+    "tests/test_bundle.py": "bea31e07be435b05438a392c11d2e6fd37fbf3e068bf23a3cae1a000383969e5",
+    "tests/test_cluster_inference.py": "3a61763ae61680e6479e1f289cc2ab2c5d4f8e83f75f92e697e8a8e40cf80b18",
+    "tests/test_coefficient_intervals.py": "3f385419c3eccf21f13941b496572902f9bccaf20b1430264444f9aeee8cbff5",
+    "tests/test_comparison.py": "c240f46712a5ffb854dcc433ffcda1fee7b240dd6f852a1bcd2bcce98928c966",
+    "tests/test_composed_bundle.py": "a7e31efc67825be5c74f1c1f0c4e06d00aec3d3ccef56a670054c6cfd997a9ed",
+    "tests/test_conversion_contract.py": "729dbfc7f741f2ac1d6ba1e6f1d6ce362c3c2e7e6ef5b93446e12110c099a985",
+    "tests/test_conversion_resources.py": "063054c7ad63537618951cb5e9d59aecf745bcbeea0a99697cd40f95f653d5c9",
+    "tests/test_credibility.py": "e9bc8f8b5b891188d4ca231c02cd12a5308d7b21f403f598591e1b1619d0eba9",
+    "tests/test_exact_fit.py": "102633573a4d00f65684521323bdd57177171dc8960b71a9daba169ffbc3340c",
+    "tests/test_explanations.py": "a81debaf277d8ff69235a3df5752568f1bffabc9b500d5e2d28d5b8c231c6dc2",
+    "tests/test_fit_provenance.py": "1f1845b0f07cbf702914aa3a24943f3ea9b88c37537f90bbc95b09038440bb16",
+    "tests/test_glm_selection.py": "6e5833bf898d283e0341e2337f4b6903260ca6e811158d5102f370cd4044b102",
+    "tests/test_global_empty_row_convergence.py": "a9b72dba7a4c82bd18dc470d12d9255ebd3b4e0fac12d34436e01c83d07734eb",
+    "tests/test_hierarchical_interactions.py": "0d3e9bb849ae89a77936b4455b306cbd04b531074f9bec458b5efc58256c91e6",
+    "tests/test_monotonic.py": "374e5ad4e153352e39d4e9fbc6055770a49e9f77b3da6810986f58d966e46e16",
+    "tests/test_named_composition.py": "8839de64a949dc2b4aad78bdd02d29c212313171e273071272bf2b82dc087b6a",
+    "tests/test_plan_api.py": "338bc7be4ffddab2b67b4fb24a66f52a6e47dcefa40715879c8e5d95627f4e89",
+    "tests/test_preparation.py": "f98f8ea0b004c1b196d2d28d6c668e64409af45615d72d4e2be12a53b8523479",
+    "tests/test_python_api.py": "c8e4ff2cf6c2261d7c9bcc7bd963e98171750e5179231b65359b0636ddbc771b",
+    "tests/test_review_calibration.py": "5b5984d1637833b73dbd48a494faed0a92958200a70119cef3d032a66b436a0c",
+    "tests/test_robust_inference.py": "927333f1ce445bb4b5923e45a23569f800820289753e843f9dea6967d5cd14e5",
+    "tests/test_scoring_contract.py": "6638641bed68503ab8cfc7939e9d2bb282abf504e49ab434d5b13e71764aa487",
+    "tests/test_spline_inference.py": "7cdf4eab6feb06d4303abae80cf983754b39a5077e1be7579e65d4d2d60ad3e7",
+    "tests/test_spline_plan.py": "f184da5a3bc245e397c32a260c29c4c5d6cbd22b305d2f89f8a267ed4597a799",
+    "tests/test_spline_prior.py": "95a098e54bdbd67bfd4c26bc832f4e6f35fb11731a7f3cf77f0bd9cf02eff7fd",
+    "tests/test_spline_scoring.py": "abae9afc132c315f0dafe46a4d11d15b7275a3988442313bc423d01e38e53a96",
+    "tests/test_splitting.py": "36541270d99b2da371e0ffd07afec1d87072f4cec55e9faf23a6afcc8552f1d7",
+    "tests/test_term_tests.py": "80bee69e955e40271650b7b12e0b13f464b697f238aa86cdbfe52f2c5515a390",
+    "tests/test_tuning_contract.py": "e19b535a2876bccd34b60cf4af74ae9762951e3f2986136ad1640898b847fb53",
+    "tests/test_workbook_api.py": "a375b8993bee0c00ed4fb9343ff5cee284f84838eb1de86a8bfa2264d1d42551"
+  },
+  "steps": [
+    {
+      "name": "python_tests",
+      "passed": true,
+      "tests": 153,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 1.0946930349964532
+    },
+    {
+      "name": "auto",
+      "command": [
+        "/tmp/avenue-release-gate-venv/bin/python",
+        "/home/luke/Projects/avenue_model/examples/auto_pricing_study.py",
+        "--output",
+        "/tmp/avenue-empty-penalty-wheel-acceptance/auto"
+      ],
+      "script_sha256": "79e70a46f63b4a74af5e2de07136c2afffd3e35c3ee2dd00d5d1e3b2981edbf7",
+      "exit_code": 0,
+      "seconds": 0.2170542050007498
+    },
+    {
+      "name": "homeowners",
+      "command": [
+        "/tmp/avenue-release-gate-venv/bin/python",
+        "/home/luke/Projects/avenue_model/examples/homeowners_perils.py",
+        "--output",
+        "/tmp/avenue-empty-penalty-wheel-acceptance/homeowners"
+      ],
+      "script_sha256": "57ecf357a498563f0005cff9cc40980758423c12c1cafac12c473afb5b288826",
+      "exit_code": 0,
+      "seconds": 0.19365931799984537
+    },
+    {
+      "name": "booster",
+      "command": [
+        "/tmp/avenue-release-gate-venv/bin/python",
+        "/home/luke/Projects/avenue_model/examples/booster_pricing_study.py",
+        "--output",
+        "/tmp/avenue-empty-penalty-wheel-acceptance/booster",
+        "--refit-glm"
+      ],
+      "script_sha256": "3b021e1118646e4d4aed104fbea72ab75dd9e8c96ae96cc11f26d0497e47567c",
+      "exit_code": 0,
+      "seconds": 0.7165421739991871
+    }
+  ],
+  "wheel": {
+    "path": "/tmp/avenue-empty-penalty-wheels/avenue_model-0.1.0-cp312-abi3-manylinux_2_39_x86_64.whl",
+    "sha256": "30c2dc69a47d73fb7da6d4282da0bca406842a125279805910382859e7023ad8",
+    "import_origin": "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/avenue_model/__init__.py",
+    "installed_payload_files_verified": 15,
+    "direct_url": {
+      "url": "file:///tmp/avenue-empty-penalty-wheels/avenue_model-0.1.0-cp312-abi3-manylinux_2_39_x86_64.whl",
+      "archive_info": {}
+    }
+  },
+  "versions": {
+    "avenue_model": "0.1.0",
+    "polars": "1.31.0",
+    "pyarrow": "25.0.1",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.0",
+    "lightgbm": "4.7.0",
+    "optuna": "4.9.0"
+  }
+}

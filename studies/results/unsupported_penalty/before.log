@@ -1,0 +1,251 @@
+FFFFFFFFFFFF
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.001, solver='auto', empty_factor=0.7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 3.052925536557949 (ACTUAL), 1.516037955024176 (DESIRED)
+ [1]: 0.7528421684549901 (ACTUAL), 1.516037955024176 (DESIRED)
+ [2]: 0.7528421684549901 (ACTUAL), 1.516037955024176 (DESIRED)
+Max absolute difference among violations: 1.53688758
+Max relative difference among violations: 1.01375271
+ ACTUAL: array([3.052926, 0.752842, 0.752842])
+ DESIRED: array(1.516038)
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.001, solver='auto', empty_factor=-2.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 0.2051734260406526 (ACTUAL), 1.516037955024176 (DESIRED)
+ [1]: 11.202089497781772 (ACTUAL), 1.516037955024176 (DESIRED)
+ [2]: 11.202089497781772 (ACTUAL), 1.516037955024176 (DESIRED)
+Max absolute difference among violations: 9.68605154
+Max relative difference among violations: 6.3890561
+ ACTUAL: array([ 0.205173, 11.202089, 11.202089])
+ DESIRED: array(1.516038)
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.001, solver='global', empty_factor=0.7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 3.052925536557949 (ACTUAL), 1.516037955024176 (DESIRED)
+ [1]: 0.7528421684549901 (ACTUAL), 1.516037955024176 (DESIRED)
+ [2]: 0.7528421684549901 (ACTUAL), 1.516037955024176 (DESIRED)
+Max absolute difference among violations: 1.53688758
+Max relative difference among violations: 1.01375271
+ ACTUAL: array([3.052926, 0.752842, 0.752842])
+ DESIRED: array(1.516038)
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.001, solver='global', empty_factor=-2.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 0.2051734260406526 (ACTUAL), 1.516037955024176 (DESIRED)
+ [1]: 11.202089497781772 (ACTUAL), 1.516037955024176 (DESIRED)
+ [2]: 11.202089497781772 (ACTUAL), 1.516037955024176 (DESIRED)
+Max absolute difference among violations: 9.68605154
+Max relative difference among violations: 6.3890561
+ ACTUAL: array([ 0.205173, 11.202089, 11.202089])
+ DESIRED: array(1.516038)
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.001, solver='table', empty_factor=0.7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 35, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    self.assertTrue(fitted.converged, fitted.report().fit_summary)
+AssertionError: False is not true : {'converged': False, 'iterations': 100, 'max_gradient': 3.239458515456398e-05, 'deviance': 9.34895406887843, 'null_deviance': 129.9528268670341, 'pseudo_r2': 0.9280588634024549, 'n_parameters': 3, 'dispersion': 1.0, 'covariance_method': 'model_based', 'cluster_column': None, 'n_clusters': None, 'aic': 485.21594509784615, 'bic': 493.5494275282439, 'table_conditioning': 1.0}
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.001, solver='table', empty_factor=-2.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 35, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    self.assertTrue(fitted.converged, fitted.report().fit_summary)
+AssertionError: False is not true : {'converged': False, 'iterations': 100, 'max_gradient': 3.239460849067362e-05, 'deviance': 9.34895406923891, 'null_deviance': 129.9528268670341, 'pseudo_r2': 0.9280588633996809, 'n_parameters': 3, 'dispersion': 1.0, 'covariance_method': 'model_based', 'cluster_column': None, 'n_clusters': None, 'aic': 485.215945098216, 'bic': 493.54942752862706, 'table_conditioning': 1.0}
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.1, solver='auto', empty_factor=0.7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 4.857256811047228 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [1]: 1.1977847826889358 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [2]: 1.1977847826889358 (ACTUAL), 2.4120423491067786 (DESIRED)
+Max absolute difference among violations: 2.44521446
+Max relative difference among violations: 1.01375271
+ ACTUAL: array([4.857257, 1.197785, 1.197785])
+ DESIRED: array(2.412042)
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.1, solver='auto', empty_factor=-2.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 0.3264344344950708 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [1]: 17.822716230546472 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [2]: 17.822716230546472 (ACTUAL), 2.4120423491067786 (DESIRED)
+Max absolute difference among violations: 15.41067388
+Max relative difference among violations: 6.3890561
+ ACTUAL: array([ 0.326434, 17.822716, 17.822716])
+ DESIRED: array(2.412042)
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.1, solver='global', empty_factor=0.7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 4.857256811047228 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [1]: 1.1977847826889358 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [2]: 1.1977847826889358 (ACTUAL), 2.4120423491067786 (DESIRED)
+Max absolute difference among violations: 2.44521446
+Max relative difference among violations: 1.01375271
+ ACTUAL: array([4.857257, 1.197785, 1.197785])
+ DESIRED: array(2.412042)
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.1, solver='global', empty_factor=-2.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 0.3264344344950708 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [1]: 17.822716230546472 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [2]: 17.822716230546472 (ACTUAL), 2.4120423491067786 (DESIRED)
+Max absolute difference among violations: 15.41067388
+Max relative difference among violations: 6.3890561
+ ACTUAL: array([ 0.326434, 17.822716, 17.822716])
+ DESIRED: array(2.412042)
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.1, solver='table', empty_factor=0.7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 4.857256822497506 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [1]: 1.1977847855125396 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [2]: 1.1977847855125396 (ACTUAL), 2.4120423491067786 (DESIRED)
+Max absolute difference among violations: 2.44521447
+Max relative difference among violations: 1.01375271
+ ACTUAL: array([4.857257, 1.197785, 1.197785])
+ DESIRED: array(2.412042)
+
+======================================================================
+FAIL: test_ridge_with_nonzero_empty_row_matches_independent_free_score (test_global_empty_row_convergence.GlobalEmptyRowConvergenceTests.test_ridge_with_nonzero_empty_row_matches_independent_free_score) (alpha=0.1, solver='table', empty_factor=-2.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/luke/Projects/avenue_model/tests/test_global_empty_row_convergence.py", line 40, in test_ridge_with_nonzero_empty_row_matches_independent_free_score
+    np.testing.assert_allclose(fitted.predict(quotes)['predictions'],
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/tmp/avenue-release-gate-venv/lib/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-08, atol=1e-08
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 0.32643443526409854 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [1]: 17.822716272538752 (ACTUAL), 2.4120423491067786 (DESIRED)
+ [2]: 17.822716272538752 (ACTUAL), 2.4120423491067786 (DESIRED)
+Max absolute difference among violations: 15.41067392
+Max relative difference among violations: 6.38905612
+ ACTUAL: array([ 0.326434, 17.822716, 17.822716])
+ DESIRED: array(2.412042)
+
+----------------------------------------------------------------------
+Ran 1 test in 0.022s
+
+FAILED (failures=12)
