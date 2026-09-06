@@ -53,7 +53,7 @@ at fitting time. [HC0 robust covariance](ROBUST_INFERENCE.md)
 can be selected at fitting time; it is labeled separately and is not dispersion-scaled. Penalized fits,
 nonconverged fits, and fits without computed inference are rejected. Loaded/edited
 workbooks cannot acquire the source fit's intervals. The original numerical evidence
-is available as `model.inference_summary` and is preserved in analytical bundles.
+is available as `model.inference_summary`.
 
 The auto tutorial exports ordinary intervals for its fixed GLMs and separate
 quasi-Poisson frequency intervals. Independent tests verify OLS intervals and

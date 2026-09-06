@@ -7,8 +7,10 @@ import time
 
 import numpy as np
 import polars as pl
-from avenue_model import (Candidate, SplitSpec, Workbook, compare_changes, compare_models,
-                          from_booster, resolve_lightgbm, save_bundle, tune_lgbm)
+from avenue_model import Workbook, from_booster, resolve_lightgbm, tune_lgbm
+from sklearn.model_selection import GroupKFold
+from sklearn.metrics import mean_poisson_deviance
+
 
 FEATURES = ['age', 'vehicle_age', 'bonus', 'region', 'fuel']
 
@@ -26,14 +28,13 @@ def run_challenger(train, holdout, baseline, directory):
     dataset = lgb.Dataset(training_codes.to_numpy(), label=train['avenue_frequency'].to_numpy(),
                           weight=train['exposure'].to_numpy(), feature_name=FEATURES,
                           categorical_feature=['region', 'fuel'])
-    folds = SplitSpec.grouped('policy_id', n_splits=3, seed=20260905).split(train)
-    (out / 'cv_splits.json').write_text(json.dumps([json.loads(f.to_json()) for f in folds]))
+    folds = list(GroupKFold(n_splits=3).split(train, groups=train['policy_id'].to_numpy()))
     started = time.perf_counter()
     tuning = tune_lgbm(dataset, {'objective': 'poisson', 'num_iterations': 80,
         'num_leaves': 4, 'max_depth': 2, 'min_data_in_leaf': 2000,
         'num_threads': 4, 'verbosity': -1, 'deterministic': True, 'force_col_wise': True,
         'seed': 20260905}, n_trials=4, seed=20260905,
-        folds=[(list(f.train_rows), list(f.validation_rows)) for f in folds],
+        folds=folds,
         tunable=['learning_rate', 'interaction_penalty', 'interaction_complexity'],
         space={'learning_rate': (.05, .2), 'interaction_penalty': (0., 5.),
                'interaction_complexity': (0., 10.)})
@@ -101,15 +102,11 @@ def run_challenger(train, holdout, baseline, directory):
                          'single_quote_median_seconds': statistics.median(quote_times)}
         if mode == 'max':
             selected_model = model
-            save_bundle(model, out / 'bundle', validation_data=holdout,
-                        training_id=folds[0].fingerprint, unit='paid_claims/exposure',
-                        lineage={'conversion': converted.metadata, 'trial': asdict(selected)})
-    comparison = compare_models(holdout, {
-        'glm_frequency': Candidate(baseline, 'paid_claims/exposure'),
-        'booster_frequency': Candidate(selected_model, 'paid_claims/exposure', training_status='completed'),
-    }, target='avenue_frequency', weight='exposure', unit='paid_claims/exposure', metric='poisson',
-       segments=['region', 'fuel'], bootstrap=20, seed=20260905)
-    comparison.summary.write_csv(out / 'frequency_comparison.csv')
+    y, w = holdout['avenue_frequency'].to_numpy(), holdout['exposure'].to_numpy()
+    comparison = pl.DataFrame([{'model': name, 'mean_poisson_deviance': mean_poisson_deviance(
+        y, model.predict(holdout).to_series().to_numpy(), sample_weight=w)}
+        for name, model in [('glm_frequency', baseline), ('booster_frequency', selected_model)]])
+    comparison.write_csv(out / 'frequency_comparison.csv')
     selected_model.explain(holdout.select(FEATURES).head(20))['contributions'].write_csv(out / 'quote_explanations.csv')
     edited_dir = out / 'edited'
     selected_model.to_workbook().save_csv_dir(str(edited_dir))
@@ -120,8 +117,6 @@ def run_challenger(train, holdout, baseline, directory):
     np.testing.assert_allclose(edited.predict(holdout.select(FEATURES)).to_series(),
                                selected_model.predict(holdout.select(FEATURES)).to_series() * 1.05,
                                rtol=1e-12, atol=1e-12)
-    changes = compare_changes(selected_model, edited, holdout.head(1000), unit='paid_claims/exposure', weight='exposure')
-    changes.totals.write_csv(out / 'sample_edit_totals.csv')
     (out / 'edited_report.md').write_text(edited.report(holdout).markdown)
     result = {'module': module_name, 'version': lgb.__version__, 'device': 'cpu',
               'tuned_interaction_penalties': tuning.tuned_interaction_penalties,
@@ -130,7 +125,6 @@ def run_challenger(train, holdout, baseline, directory):
               'booster_convergence': 'finite schedule completed; no GLM score-convergence certificate',
               'limitations': ['four-trial study; not an exhaustive predictive search',
                               'inner LightGBM CV shares training Dataset bins; final holdout excluded',
-                              'timings are local observations, not isolated comparative benchmarks',
-                              '20 bootstrap replicates exercise mechanics, not stable uncertainty estimation']}
+                              'timings are local observations, not isolated comparative benchmarks']}
     (out / 'result.json').write_text(json.dumps(result, indent=2, allow_nan=False))
     return selected_model

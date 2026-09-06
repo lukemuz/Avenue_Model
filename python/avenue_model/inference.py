@@ -96,7 +96,9 @@ def coefficient_intervals(model, *, confidence=.95, dispersion='model'):
 
     ``dispersion='quasi_poisson'`` uses Pearson chi-square / residual degrees of
     freedom from the original Poisson fit. Point estimates are unchanged. Neither
-    route accounts for clustering, model selection or regularization.
+    route accounts for model selection or regularization. With the default
+    dispersion='model', intervals use the fit's recorded covariance, including HC0
+    or one-way clustered covariance when requested during fitting.
     """
     if not isinstance(model, FittedModel) or model.converged is not True:
         raise ValueError('Intervals require an original, converged FittedModel')

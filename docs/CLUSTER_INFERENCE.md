@@ -46,7 +46,7 @@ are rejected. Invalid cluster definitions fail before fitting. Numerical inferen
 failures remain visible in diagnostics while retaining the scorer, as with other
 inference methods.
 
-Reports, diagnostics, intervals and analytical bundle source evidence record
+Reports, diagnostics and intervals record
 `covariance_method='cluster_cr0'`, `cluster_column` and `n_clusters`. Cluster identities
 are not added to quote requirements or copied into source evidence as data rows.
 The source column/count do not replace a training-data identifier or reproducible split.

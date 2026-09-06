@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 import polars as pl
-from avenue_model import GLMOptions, Plan, coefficient_intervals, save_bundle
+from avenue_model import GLMOptions, Plan, coefficient_intervals
 
 
 class FitProvenanceTests(unittest.TestCase):
@@ -26,13 +26,9 @@ class FitProvenanceTests(unittest.TestCase):
         self.assertEqual(model.solver_used, 'global')
         reproduced = model.plan.fit(self.data, 'y', GLMOptions(**options))
         np.testing.assert_array_equal(model.predict(self.data).to_numpy(), reproduced.predict(self.data).to_numpy())
-        with tempfile.TemporaryDirectory() as path:
-            bundle = save_bundle(model, path + '/bundle', fit_options={'max_iterations': 999})
-            self.assertEqual(bundle.source_evidence['effective_fit_options'], options)
-            self.assertEqual(bundle.source_evidence['solver_used'], 'global')
-            self.assertEqual(bundle.source_evidence['caller_context']['fit_options'], {'max_iterations': 999})
-            self.assertEqual(bundle.model.fit_options, {})
-            self.assertIsNone(bundle.model.solver_used)
+        loaded = model.to_workbook().to_model()
+        self.assertEqual(loaded.fit_options, {})
+        self.assertIsNone(loaded.solver_used)
 
     def test_unanchored_intervals_have_an_explanation_and_preserve_means(self):
         plan = Plan('poisson').categorical('g')

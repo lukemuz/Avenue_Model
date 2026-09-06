@@ -1,16 +1,15 @@
-"""Executable synthetic auto study. Run: python examples/auto_pricing_study.py --output /tmp/auto-study
+"""Synthetic auto pricing using Plan, validation and editable workbooks.
 
-Generates and loads CSV data when --data is omitted. Supplied CSVs must have the same
-columns. Loss is assumed already developed/trended to the selected cost level; no
-limits, deductibles, trend or development adjustment is inferred here.
+Requires numpy and scikit-learn for example checks/comparisons. Supplied losses
+must already have the intended development, trend, limits and deductible basis.
 """
 import argparse
-import json
 from pathlib import Path
 import random
-
+import numpy as np
 import polars as pl
-from avenue_model import coefficient_intervals, term_tests, GLMTrial, select_glm, save_bundle, Candidate, Plan, SplitSpec, Workbook, compare_models, prepare_pricing, compare_changes, frequency_severity
+from sklearn.metrics import mean_tweedie_deviance
+from avenue_model import Plan, Workbook
 
 
 def synthetic(path):
@@ -30,114 +29,60 @@ def synthetic(path):
 
 def run(output, data_path=None):
     output = Path(output)
-    output.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=False)
     if data_path is None:
         data_path = output / 'synthetic_auto.csv'
         synthetic(data_path)
     raw = pl.read_csv(data_path)
-    prepared = prepare_pricing(raw, exposure='exposure', claims='claims', loss='loss',
-                               predictors=['age', 'region'], large_loss=10000.)
-    prepared.audit.write_csv(output / 'preparation_audit.csv')
-    prepared.summary.write_csv(output / 'populations.csv')
-    prepared.experience('region').write_csv(output / 'region_experience.csv')
-    data = prepared.frequency
-    fold, = SplitSpec.out_of_time('year', 2022).split(data)
-    (output / 'split.json').write_text(fold.to_json())
-    train, holdout = fold.frames(data)
-    shape = lambda plan: plan.banded('age', breaks=[25., 50.]).categorical('region')
-    frequency = shape(Plan.frequency('exposure')).fit(train, 'avenue_frequency')
-    severity_train = prepared.severity.filter(pl.col('year') < 2022)
-    severity = shape(Plan.severity('claims')).fit(severity_train, 'avenue_severity')
-    premium = shape(Plan.pure_premium('exposure')).fit(train, 'avenue_pure_premium')
-    # Selection uses only pre-2022 data. Every fitting power is evaluated at the
-    # same prespecified power; the final year is never used to choose this grid.
-    selection = select_glm(train, {
-        f'power={power},alpha={alpha}': GLMTrial(
-            shape(Plan('tweedie', exposure='exposure', exposure_role='weight', tweedie_power=power)),
-            {'alpha': alpha, 'l1_ratio': .5})
-        for power in (1.3, 1.7) for alpha in (0., .01)
-    }, target='avenue_pure_premium', unit='loss_per_exposure', metric='tweedie',
-       tweedie_power=1.5, weight='exposure', split=SplitSpec.grouped('policy_id', 3, seed=47))
-    selection.save(output / 'glm_selection')
-    selected_premium = selection.refit(train)
-    save_bundle(selected_premium, output / 'selected_premium_bundle',
-                fit_options=selection.metadata['trials'][selection.recommended]['options'],
-                training_id='auto-pre-2022', validation_data=holdout, validation_id='auto-2022',
-                unit='loss_per_exposure', lineage={'selection': 'glm_selection/selection.json',
-                                                   'trial': selection.recommended})
-    for name, model, validation in (
-        ('frequency', frequency, holdout),
-        ('severity', severity, prepared.severity.filter(pl.col('year') >= 2022)),
-        ('pure_premium', premium, holdout),
-    ):
-        if not model.converged:
+    # Study definitions are explicit dataframe operations, not a library pipeline.
+    if raw.filter((pl.col('exposure') <= 0) | (pl.col('claims') < 0) | (pl.col('loss') < 0)).height:
+        raise ValueError('This example requires positive exposures and nonnegative claims/losses')
+    data = raw.with_columns((pl.col('claims') / pl.col('exposure')).alias('frequency'),
+                           (pl.col('loss') / pl.col('exposure')).alias('premium'))
+    severity_data = data.filter((pl.col('claims') > 0) & (pl.col('loss') > 0)).with_columns(
+        (pl.col('loss') / pl.col('claims')).alias('severity'))
+    train, holdout = data.filter(pl.col('year') < 2022), data.filter(pl.col('year') >= 2022)
+    data.select('policy_id', (pl.col('year') >= 2022).alias('holdout')).write_csv(output / 'split.csv')
+    shape = lambda p: p.banded('age', breaks=[25., 50.]).categorical('region')
+    models = {}
+    for name, plan, training, validation in [
+        ('frequency', Plan.frequency('exposure'), train, holdout),
+        ('severity', Plan.severity('claims'), severity_data.filter(pl.col('year') < 2022),
+         severity_data.filter(pl.col('year') >= 2022)),
+        ('premium', Plan.pure_premium('exposure'), train, holdout),
+    ]:
+        fitted = shape(plan).fit(training, name)
+        if not fitted.converged:
             raise RuntimeError(f'{name} did not converge')
-        report = model.report(validation)
-        (output / f'{name}_review.md').write_text(report.markdown)
-        model.to_workbook().save_csv_dir(str(output / name))
-        for table_name, table in model.rating_tables_by_name().items():
-            table.write_csv(output / f'{name}_{table_name}_estimates.csv')
-        intervals = coefficient_intervals(model)
-        joint = term_tests(model)
-        (output / f'{name}_term_tests.json').write_text(json.dumps(
-            {'table': joint.table.to_dicts(), 'metadata': joint.metadata}, indent=2, allow_nan=False))
-        for table_name, table in intervals.tables.items():
-            table.write_csv(output / f'{name}_{table_name}_intervals.csv')
-        if name == 'frequency':
-            # Same fitted means, with Pearson-scaled conditional uncertainty.
-            quasi = coefficient_intervals(model, dispersion='quasi_poisson')
-            for table_name, table in quasi.tables.items():
-                table.write_csv(output / f'{name}_{table_name}_quasi_intervals.csv')
-        reloaded = Workbook.load_csv_dir(str(output / name)).to_model()
-        quotes = holdout.select('age', 'region')
-        actual = reloaded.predict(quotes).to_series()
-        expected = model.predict(quotes).to_series()
-        if (actual - expected).abs().max() > 1e-8:
-            raise RuntimeError('Workbook predictions changed')
-    product = frequency_severity(frequency, severity)
-    product.save(output / 'frequency_severity')
-    product_bundle = save_bundle(product, output / 'frequency_severity_bundle',
-        training_id='auto-component-studies-pre-2022', validation_data=holdout,
-        validation_id='auto-2022',
-        validation_options={'target': 'avenue_pure_premium', 'metric': 'tweedie',
-                            'weight': 'exposure', 'segments': ['region', 'year']},
-        component_context={
-            'frequency': {'training_id': 'auto-policies-pre-2022', 'fold': fold,
-                          'validation_data': holdout, 'validation_id': 'auto-policies-2022'},
-            'severity': {'training_id': 'auto-positive-claims-pre-2022',
-                         'validation_data': prepared.severity.filter(pl.col('year') >= 2022),
-                         'validation_id': 'auto-positive-claims-2022'}})
-    if (product_bundle.model.predict(quotes).to_series() - product.predict(quotes).to_series()).abs().max() > 1e-8:
-        raise RuntimeError('Analytical composition bundle predictions changed')
-    comparison = compare_models(
-        holdout, {'frequency_times_severity': Candidate(product, 'loss_per_exposure'),
-                  'tweedie': Candidate(premium, 'loss_per_exposure'),
-                  'selected_tweedie': Candidate(selected_premium, 'loss_per_exposure')},
-        target='avenue_pure_premium', unit='loss_per_exposure', metric='tweedie',
-        tweedie_power=1.5, weight='exposure', segments=['region', 'year'], bootstrap=50, seed=47)
-    comparison.summary.write_csv(output / 'comparison.csv')
-    for name, curve in comparison.discrimination.items():
-        curve.write_csv(output / f'comparison_{name}_concentration.csv')
-    for name, table in comparison.segments.items():
-        table.write_csv(output / f'comparison_{name}.csv')
-    # A manual factor edit creates a new scoring artifact; its evidence is separate.
-    edit_directory = output / 'edited_premium'
-    premium.to_workbook().save_csv_dir(str(edit_directory))
-    factor_path = next(edit_directory.glob('*region.csv'))
-    factors = pl.read_csv(factor_path)
-    factors.with_columns((pl.col('Relativity') * 1.05).alias('Relativity')).write_csv(factor_path)
-    edited = Workbook.load_csv_dir(str(edit_directory)).to_model()
-    changes = compare_changes(premium, edited, holdout, unit='loss_per_exposure',
-                              weight='exposure', segments=['region'])
-    changes.totals.write_csv(output / 'edit_totals.csv')
-    changes.policies.sort('weighted_change', descending=True).head(20).write_csv(output / 'largest_changes.csv')
-    changes.contributions.write_csv(output / 'factor_changes.csv')
-    explained = edited.explain(holdout.head(5))
-    explained['contributions'].write_csv(output / 'quote_explanations.csv')
-    # Fresh validation evidence belongs to the edited artifact, not the original fit.
+        (output / f'{name}_review.md').write_text(fitted.report(validation).markdown)
+        (output / f'{name}_plan.json').write_text(fitted.plan.to_json())
+        fitted.to_workbook().save_csv_dir(str(output / name))
+        loaded = Workbook.load_csv_dir(str(output / name)).to_model()
+        np.testing.assert_allclose(loaded.predict(holdout.select('age', 'region')).to_numpy(),
+                                   fitted.predict(holdout).to_numpy(), atol=1e-12, rtol=1e-12)
+        models[name] = fitted
+    # Components are rate and mean severity: multiply their predicted means.
+    product = models['frequency'].predict_rate(holdout).to_series() * models['severity'].predict(holdout).to_series()
+    rows = []
+    for name, prediction in [('frequency_severity', product), ('tweedie', models['premium'].predict(holdout).to_series())]:
+        rows.append({'model': name, 'ae_ratio': holdout['loss'].sum() / (prediction * holdout['exposure']).sum(),
+                     'mean_tweedie_deviance': mean_tweedie_deviance(holdout['premium'], prediction,
+                         power=1.5, sample_weight=holdout['exposure'])})
+    comparison = pl.DataFrame(rows)
+    comparison.write_csv(output / 'comparison.csv')
+    # A rate revision is an ordinary workbook edit and a fresh validation.
+    edited_dir = output / 'edited_premium'
+    models['premium'].to_workbook().save_csv_dir(str(edited_dir))
+    factors = next(edited_dir.glob('*region.csv'))
+    pl.read_csv(factors).with_columns((pl.col('Relativity') * 1.05).alias('Relativity')).write_csv(factors)
+    edited = Workbook.load_csv_dir(str(edited_dir)).to_model()
+    before, after = models['premium'].predict(holdout).to_series(), edited.predict(holdout).to_series()
+    np.testing.assert_allclose(after, before * 1.05, atol=1e-12, rtol=1e-12)
+    holdout.select('policy_id', 'region', 'exposure').with_columns(before.alias('old'), after.alias('new'),
+        (after - before).alias('change')).write_csv(output / 'policy_changes.csv')
+    edited.explain(holdout.head(5))['contributions'].write_csv(output / 'quote_explanations.csv')
     (output / 'edited_review.md').write_text(edited.report(holdout).markdown)
-    print(comparison.summary)
-    return comparison
+    print(comparison)
 
 
 if __name__ == '__main__':

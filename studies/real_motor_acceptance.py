@@ -16,9 +16,10 @@ import numpy as np
 import pandas as pd
 import polars as pl
 from glum import GeneralizedLinearRegressor, TweedieDistribution
-from avenue_model import (Candidate, GLMOptions, Plan, SplitSpec, coefficient_intervals, term_tests,
-                          compare_changes, compare_models, frequency_severity,
-                          prepare_pricing, save_bundle, Workbook)
+from avenue_model import GLMOptions, Plan, coefficient_intervals, term_tests, Workbook
+from sklearn.model_selection import GroupShuffleSplit
+from sklearn.metrics import mean_tweedie_deviance
+
 
 BANDS = {'age': [21., 26., 36., 51., 71.], 'vehicle_age': [1., 5., 10., 20.],
          'bonus': [51., 60., 80., 100., 150.]}
@@ -100,16 +101,20 @@ def run(args):
              'response_definition': 'observed positive-payment records per exposure; reported claims retained separately',
              'adjustments': 'none; no development, trend, loss cap or exposure cap'}
     write(out / 'source_audit.json', audit)
-    prepared = prepare_pricing(data, exposure='exposure', claims='paid_claims', loss='loss',
-                               predictors=PREDICTORS, invalid='exclude', large_loss=200000.)
-    prepared.summary.write_csv(out / 'populations.csv')
-    prepared.audit.filter(~pl.col('frequency_included')).write_csv(out / 'excluded_rows.csv')
-    prepared.experience('region').write_csv(out / 'region_experience.csv')
-    fold = SplitSpec.grouped('policy_id', n_splits=4, seed=20260905).split(prepared.frequency)[0]
-    train, holdout = fold.frames(prepared.frequency)
-    (out / 'split.json').write_text(fold.to_json())
-    severity_train = prepared.severity.join(train.select('policy_id'), on='policy_id', how='semi')
-    severity_holdout = prepared.severity.join(holdout.select('policy_id'), on='policy_id', how='semi')
+    valid = pl.all_horizontal([pl.col(c).is_not_null() & pl.col(c).is_finite()
+                               for c in ['exposure', 'paid_claims', 'loss', *BANDS]]) & (pl.col('exposure') > 0)
+    data.filter(~valid).write_csv(out / 'excluded_rows.csv')
+    data = data.filter(valid).with_columns(
+        (pl.col('paid_claims') / pl.col('exposure')).alias('avenue_frequency'),
+        (pl.col('loss') / pl.col('exposure')).alias('avenue_pure_premium'))
+    train_rows, holdout_rows = next(GroupShuffleSplit(n_splits=1, test_size=.25,
+        random_state=20260905).split(data, groups=data['policy_id'].to_numpy()))
+    train, holdout = data[train_rows], data[holdout_rows]
+    data.select('policy_id').with_columns(pl.Series('holdout', np.isin(np.arange(data.height), holdout_rows))).write_csv(out / 'split.csv')
+    severity = data.filter((pl.col('paid_claims') > 0) & (pl.col('loss') > 0)).with_columns(
+        (pl.col('loss') / pl.col('paid_claims')).alias('avenue_severity'))
+    severity_train = severity.join(train.select('policy_id'), on='policy_id', how='semi')
+    severity_holdout = severity.join(holdout.select('policy_id'), on='policy_id', how='semi')
     preparation_seconds = time.perf_counter() - begin
     models, references, records = {}, {}, []
     specs = [('frequency', Plan.frequency('exposure'), 'avenue_frequency', 'exposure', train, holdout, 'poisson'),
@@ -159,12 +164,9 @@ def run(args):
         intervals = coefficient_intervals(model)
         for term, table in intervals.tables.items():
             table.write_csv(out / f'{name}_{term}_intervals.csv')
-        bundle = save_bundle(model, out / f'{name}_bundle', validation_data=validation,
-                             fit_options={'max_iterations': 1000, 'tolerance': fit_tolerance},
-                             training_id=fold.split_id + ':' + name,
-                             validation_id=fold.split_id + ':holdout',
-                             unit={'frequency': 'paid_claims/exposure', 'severity': 'loss/paid_claim', 'premium': 'loss/exposure'}[name])
-        np.testing.assert_allclose(bundle.model.predict(validation.select(PREDICTORS)).to_series(), mu, atol=1e-12, rtol=1e-12)
+        (out / f'{name}_plan.json').write_text(model.plan.to_json())
+        loaded = Workbook.load_json(str(out / f'{name}_scoring.json')).to_model()
+        np.testing.assert_allclose(loaded.predict(validation.select(PREDICTORS)).to_series(), mu, atol=1e-12, rtol=1e-12)
         model.explain(validation.select(PREDICTORS).head(20))['contributions'].write_csv(out / f'{name}_explanations.csv')
         models[name], references[name] = model, reference
         records.append({'model': name, 'train_rows': training.height, 'holdout_rows': validation.height,
@@ -176,39 +178,30 @@ def run(args):
                         'resolved_knots': knots, 'iterations': model.report().fit_summary['iterations'],
                         'covariance_method': model.inference_summary['covariance_method']})
         write(out / 'models.json', records)
-    product = frequency_severity(models['frequency'], models['severity'])
-    product.save(out / 'product')
     premium_knots = resolved_knots(models['premium'])
     xholdout, _ = native_frame(holdout, native_frame(train, knots=premium_knots)[1], knots=premium_knots)
-    reference_premium = references['premium'].predict(xholdout)
-    candidates = {
-        'frequency_severity': Candidate(product, 'loss/exposure'),
-        'tweedie': Candidate(models['premium'], 'loss/exposure'),
-        'glum_tweedie': Candidate(reference_premium, 'loss/exposure', True),
+    predictions = {
+        'frequency_severity': models['frequency'].predict(holdout).to_series().to_numpy() * models['severity'].predict(holdout).to_series().to_numpy(),
+        'tweedie': models['premium'].predict(holdout).to_series().to_numpy(),
+        'glum_tweedie': references['premium'].predict(xholdout),
     }
     if args.booster:
         from booster_challenger import run_challenger
         challenger = run_challenger(train, holdout, models['frequency'], out / 'booster')
-        challenger_product = frequency_severity(challenger, models['severity'])
-        challenger_product.save(out / 'booster_severity_product')
-        candidates['booster_frequency_glm_severity'] = Candidate(
-            challenger_product, 'loss/exposure', training_status='completed')
-    comparison = compare_models(holdout, candidates,
-       target='avenue_pure_premium', unit='loss/exposure', metric='tweedie', tweedie_power=1.5,
-       weight='exposure', segments=['region', 'fuel'], bootstrap=20, seed=20260905)
-    comparison.summary.write_csv(out / 'comparison.csv')
-    for name, curve in comparison.discrimination.items():
-        curve.write_csv(out / f'comparison_{name}_concentration.csv')
-    for segment, table in comparison.segments.items():
-        table.write_csv(out / f'comparison_{segment}.csv')
+        predictions['booster_frequency_glm_severity'] = challenger.predict(holdout).to_series().to_numpy() * models['severity'].predict(holdout).to_series().to_numpy()
+    y, w = holdout['avenue_pure_premium'].to_numpy(), holdout['exposure'].to_numpy()
+    comparison = pl.DataFrame([{'model': name, 'ae': float(np.sum(w*y)/np.sum(w*mu)),
+        'mean_tweedie_deviance': mean_tweedie_deviance(y, mu, power=1.5, sample_weight=w)}
+        for name, mu in predictions.items()])
+    comparison.write_csv(out / 'comparison.csv')
     edited_path = out / 'edited_premium'
     models['premium'].to_workbook().save_csv_dir(str(edited_path))
     intercept = next(edited_path.glob('*intercept.csv'))
     pl.read_csv(intercept).with_columns((pl.col('Relativity') * 1.05).alias('Relativity')).write_csv(intercept)
     edited = Workbook.load_csv_dir(str(edited_path)).to_model()
-    changes = compare_changes(models['premium'], edited, holdout, unit='loss/exposure', weight='exposure', segments=['region'])
-    changes.totals.write_csv(out / 'edit_totals.csv')
-    changes.policies.sort('weighted_change', descending=True).head(20).write_csv(out / 'largest_changes.csv')
+    holdout.select('policy_id').with_columns(
+        models['premium'].predict(holdout).to_series().alias('before'),
+        edited.predict(holdout).to_series().alias('after')).write_csv(out / 'policy_changes.csv')
     (out / 'edited_report.md').write_text(edited.report(holdout).markdown)
     np.testing.assert_allclose(edited.predict(holdout).to_series(), models['premium'].predict(holdout).to_series() * 1.05, rtol=1e-12)
     write(out / 'run.json', {'status': 'passed', 'numeric_effects': 'natural_cubic_quantile_5' if smooth else 'prespecified_bands',
@@ -224,7 +217,7 @@ def run(args):
                          'no temporal variable; grouped random policy holdout',
                          'observed paid-loss cost, not developed prospective ultimate loss cost',
                          'normal intervals conditional on fixed prespecified structure']})
-    print(comparison.summary)
+    print(comparison)
 
 
 if __name__ == '__main__':

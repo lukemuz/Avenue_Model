@@ -37,13 +37,13 @@ their existing banded scoring semantics.
 
 ## Folds, selection and support
 
-`Fold.fit` resolves automatic knots using only its training rows. Plan JSON retains
+`Plan.fit` resolves automatic knots using only the supplied training rows. Plan JSON retains
 the knot specification; `model.resolved` records the resulting knot coordinates in
-`knots`, with `edges=None`. A source plan in a bundle can be refitted and will resolve
+`knots`, with `edges=None`. A serialized Plan can be refitted and will resolve
 its automatic knots on the new training data. The scoring workbook always retains
 the already resolved knots.
 
-Spline terms work in `select_glm` on the same held-out loss as other candidates.
+Evaluate candidate specifications with ordinary loops and a common held-out loss.
 Changing knot count changes the allowed shape, so compare alternatives on common
 folds. The resolved `parameters` field is the nominal specification dimension after
 an intercept constraint, not a verified effective degrees-of-freedom estimate.
@@ -57,16 +57,16 @@ full-design aliases; pre-fit spline conditioning exhibits are still being develo
 
 ## Export and editing
 
-`model.to_workbook()` and `save_bundle()` retain exact continuous scoring in workbook
+`model.to_workbook()` retains exact continuous scoring in workbook
 format 4. Earlier workbook readers reject that version. Knot locations and knot
 values are the editable authority; scoring derives local polynomial coefficients
 from them. Relativity-scale workbooks convert knot relativities to log coefficients
 before interpolating. Edit either coordinates or factors, reload, and use
-`compare_changes` to review quote effects.
+prediction differences to review quote effects.
 
 Explanations show `kind='spline'`, the evaluated continuous contribution, and a null
 `table_row`. A contribution between knots does not belong to a single table row.
-Composition retains separate continuous tables, and bundle reloads use the same
+Native factor composition retains separate continuous tables, and workbook reloads use the same
 scorer. Loaded/edited values carry no new fitting evidence.
 
 ## Current statistical scope
@@ -92,7 +92,7 @@ does not give post-selection coverage. Use reserved data for final evaluation.
 
 Roughness penalties, ridge/elastic-net options, individual locked knots, global solving
 and spline acceleration are not implemented. Fully fixed curves can be carried
-through `Plan.offset_model`, including Plan/bundle round trips.
+through `Plan.offset_model`, including Plan/workbook round trips.
 
 Run the complete synthetic pricing example:
 
@@ -100,11 +100,9 @@ Run the complete synthetic pricing example:
 python examples/smooth_pricing_study.py --output /tmp/avenue-smooth-study
 ```
 
-It reserves a final holdout, compares five/eight quantile knots on development folds,
-refits the selected plan, saves selection evidence and a validated bundle, verifies
-reload parity, and exports a continuous quote curve as CSV. The synthetic study is
-an API example, not evidence of real-portfolio calibration or production performance.
-See [implementation and independent references](SMOOTH_EFFECTS_IMPLEMENTATION.md).
+It reserves a final holdout, fits five training-quantile knots, writes a validation
+report and scoring workbook, verifies reload parity, and exports a continuous quote
+curve as CSV. This is an API example, not evidence of real-portfolio calibration.
 
 ## Update a filed continuous curve
 

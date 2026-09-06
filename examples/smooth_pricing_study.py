@@ -1,11 +1,12 @@
-"""Select and deliver a continuous age effect on synthetic claim frequency."""
+"""Fit and deliver a continuous age effect on synthetic claim frequency."""
 import argparse
 from pathlib import Path
 
 import numpy as np
 import polars as pl
 
-from avenue_model import Plan, GLMTrial, SplitSpec, select_glm, save_bundle, load_bundle
+from avenue_model import Plan, Workbook
+from sklearn.model_selection import train_test_split
 
 
 def main():
@@ -19,28 +20,22 @@ def main():
     claims = rng.poisson(exposure*rate)
     data = pl.DataFrame({'age': age, 'exposure': exposure,
                          'frequency': claims/exposure})
-    outer = SplitSpec.random(n_splits=5, seed=31).split(data)[0]
-    train, holdout = outer.frames(data)
-    trials = {f'knots_{n}': GLMTrial(Plan.frequency('exposure').spline('age', quantile=n))
-              for n in (5, 8)}
-    selection = select_glm(train, trials, target='frequency', unit='claims/exposure',
-                           metric='poisson', weight='exposure', split=SplitSpec.random(3, seed=19))
-    model = selection.refit(train)
+    training, testing = train_test_split(np.arange(data.height), test_size=.2, random_state=31)
+    train, holdout = data[training], data[testing]
+    model = Plan.frequency('exposure').spline('age', quantile=5).fit(train, 'frequency')
+    if not model.converged:
+        raise RuntimeError('Spline fit did not converge')
     args.output.mkdir(parents=True, exist_ok=False)
-    selection.save(args.output/'selection')
-    save_bundle(model, args.output/'model', training_id='synthetic-development',
-                validation_data=holdout, validation_id='untouched-final-holdout',
-                unit='claims/exposure', fold=outer)
-    loaded = load_bundle(args.output/'model').model
+    (args.output/'review.md').write_text(model.report(holdout).markdown)
+    model.to_workbook().save_csv_dir(str(args.output/'model'))
+    loaded = Workbook.load_csv_dir(str(args.output/'model')).to_model()
     np.testing.assert_allclose(loaded.predict(holdout).to_numpy(), model.predict(holdout).to_numpy(), rtol=1e-12)
     grid = pl.DataFrame({'age': np.linspace(10., 95., 200)})
     grid.with_columns(pl.Series('frequency', loaded.predict_rate(grid).to_numpy().reshape(-1))).write_csv(args.output/'continuous_curve.csv')
-    print(selection.summary)
-    print('Selected:', selection.recommended)
     print('Resolved knots:', model.resolved[1]['knots'])
     print('Covariance:', model.inference_summary['covariance_method'])
     print('Estimated parameters:', model.inference_summary['n_parameters'])
-    print('Bundle and continuous quote curve:', args.output)
+    print('Workbook and continuous quote curve:', args.output)
 
 
 if __name__ == '__main__':

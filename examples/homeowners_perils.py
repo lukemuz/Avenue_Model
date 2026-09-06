@@ -1,18 +1,16 @@
-"""Synthetic attritional water/theft study; deliberately excludes catastrophe losses.
+"""Synthetic attritional water/theft; no catastrophe model or inferred adjustments.
 
-Run: python examples/homeowners_perils.py --output /tmp/homeowners-study
-Use --data for a CSV with the same columns. Explicit supplied development/trend
-factors are applied and audited; coverage is assumed to be at a common limit and
-deductible basis. No catastrophe, limit, deductible or inflation model is inferred.
+Requires numpy and scikit-learn. Supplied development/trend factors are applied
+explicitly; coverage, limits and deductibles are assumed on a common basis.
 """
 import argparse
-import json
 from pathlib import Path
 import random
-
+import numpy as np
 import polars as pl
-from avenue_model import (GLMOptions, coefficient_intervals, term_tests, Candidate, ComposedModel, Plan, SplitSpec, Workbook,
-                          compare_models, prepare_pricing, sum_loss_costs, save_bundle)
+from sklearn.model_selection import GroupShuffleSplit
+from sklearn.metrics import mean_tweedie_deviance
+from avenue_model import GLMOptions, Plan, Workbook, coefficient_intervals
 
 
 def synthetic(path):
@@ -35,101 +33,55 @@ def synthetic(path):
 
 def run(output, data_path=None):
     output = Path(output)
-    output.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=False)
     if data_path is None:
         data_path = output / 'synthetic_homeowners.csv'
         synthetic(data_path)
-    raw = pl.read_csv(data_path)
-    for column in ('development_factor', 'trend_factor'):
-        values = raw[column]
-        if values.null_count() or not values.is_finite().all() or (values <= 0).any():
-            raise ValueError(f'{column} must contain supplied finite positive adjustments')
-    models, baselines, adjustments, bundle_contexts = {}, {}, [], {}
+    data = pl.read_csv(data_path)
+    for column in ('exposure', 'development_factor', 'trend_factor'):
+        if data[column].null_count() or not data[column].is_finite().all() or (data[column] <= 0).any():
+            raise ValueError(f'{column} must be finite and positive')
+    # Keep every renewal for a home on the same side of the split.
+    training, testing = next(GroupShuffleSplit(n_splits=1, test_size=1/3, random_state=61).split(
+        data, groups=data['home_id'].to_numpy()))
+    models, predictions, adjustments = {}, {}, []
     for peril in ('water', 'theft'):
-        developed = f'{peril}_prepared_loss'
-        raw = raw.with_columns((pl.col(f'{peril}_loss') * pl.col('development_factor') *
-                                pl.col('trend_factor')).alias(developed))
-        adjustments.append({'peril': peril, 'input_loss': raw[f'{peril}_loss'].sum(),
-                            'prepared_loss': raw[developed].sum()})
-    pl.DataFrame(adjustments).write_csv(output / 'loss_adjustments.csv')
-    fold = SplitSpec.grouped('home_id', n_splits=3, seed=61).split(raw)[0]
-    (output / 'split.json').write_text(fold.to_json())
-    train, holdout = fold.frames(raw)
-    for peril in ('water', 'theft'):
-        prepared = prepare_pricing(train, exposure='exposure', claims=f'{peril}_claims',
-                                   loss=f'{peril}_prepared_loss', predictors=['territory', 'home_age'])
-        validation = prepare_pricing(holdout, exposure='exposure', claims=f'{peril}_claims',
-                                     loss=f'{peril}_prepared_loss', predictors=['territory', 'home_age'])
-        prepared.audit.write_csv(output / f'{peril}_training_audit.csv')
-        validation.audit.write_csv(output / f'{peril}_validation_audit.csv')
-        prepared.experience('territory').write_csv(output / f'{peril}_experience.csv')
+        loss = data[f'{peril}_loss'] * data['development_factor'] * data['trend_factor']
+        adjustments.append({'peril': peril, 'input_loss': data[f'{peril}_loss'].sum(), 'prepared_loss': loss.sum()})
+        frame = data.with_columns((loss / data['exposure']).alias('premium'))
+        train, holdout = frame[training], frame[testing]
         model = (Plan.pure_premium('exposure').banded('home_age', breaks=[20., 40., 60.])
-                 .categorical('territory').fit(prepared.pure_premium, 'avenue_pure_premium',
-                      GLMOptions(covariance='cluster', cluster='home_id')))
-        baseline = Plan.pure_premium('exposure').fit(prepared.pure_premium, 'avenue_pure_premium',
-                      GLMOptions(covariance='cluster', cluster='home_id'))
-        if not model.converged or not baseline.converged:
+                 .categorical('territory').fit(train, 'premium', GLMOptions(covariance='cluster', cluster='home_id')))
+        if not model.converged:
             raise RuntimeError(f'{peril} did not converge')
-        models[peril], baselines[peril] = model, baseline
-        bundle_contexts[peril] = {'training_id': f'home-training-{peril}',
-                                 'validation_data': validation.pure_premium,
-                                 'validation_id': f'home-holdout-{peril}'}
-        (output / f'{peril}_review.md').write_text(model.report(validation.pure_premium).markdown)
-        joint = term_tests(model)
-        (output / f'{peril}_term_tests.json').write_text(json.dumps(
-            {'table': joint.table.to_dicts(), 'metadata': joint.metadata}, indent=2, allow_nan=False))
+        (output / f'{peril}_review.md').write_text(model.report(holdout).markdown)
         for name, table in coefficient_intervals(model).tables.items():
-            table.write_csv(output / f'{peril}_{name}_cluster_intervals.csv')
-        for name, table in model.rating_tables_by_name().items():
-            table.write_csv(output / f'{peril}_{name}_factors.csv')
-    total = sum_loss_costs(models)
-    baseline = sum_loss_costs(baselines)
-    holdout = holdout.with_columns(((pl.col('water_prepared_loss') + pl.col('theft_prepared_loss')) /
-                                    pl.col('exposure')).alias('combined_loss_cost'))
-    comparison = compare_models(holdout, {'peril_models': Candidate(total, total.unit),
-                                         'intercept_baseline': Candidate(baseline, baseline.unit)},
-                                target='combined_loss_cost', weight='exposure', unit=total.unit,
-                                metric='tweedie', tweedie_power=1.5, segments=['territory', 'year'],
-                                bootstrap=100, bootstrap_group='home_id', seed=61)
-    comparison.summary.write_csv(output / 'comparison.csv')
-    for name, table in comparison.segments.items():
-        table.write_csv(output / f'comparison_{name}.csv')
-    total.save(output / 'peril_plan')
-    analytical = save_bundle(total, output / 'peril_bundle', fold=fold,
-        validation_data=holdout, validation_id='home-grouped-holdout',
-        validation_options={'target': 'combined_loss_cost', 'metric': 'tweedie',
-                            'weight': 'exposure', 'segments': ['territory', 'year']},
-        component_context=bundle_contexts,
-        lineage={'adjustment_audit': 'loss_adjustments.csv', 'scope': 'attritional water and theft'})
-    reloaded = ComposedModel.load(output / 'peril_plan')
-    quotes = holdout.select('territory', 'home_age')
-    original = total.predict(quotes).to_series()
-    restored = reloaded.predict(quotes).to_series()
-    if (original - restored).abs().max() > 1e-8:
-        raise RuntimeError('Reload changed composed quote predictions')
-    if (original - analytical.model.predict(quotes).to_series()).abs().max() > 1e-8:
-        raise RuntimeError('Analytical peril bundle changed quote predictions')
-    components = reloaded.predict_components(quotes)
-    if (components['water'] + components['theft'] - restored).abs().max() > 1e-8:
-        raise RuntimeError('Peril contributions do not reconcile')
-    components.head(20).write_csv(output / 'quote_peril_contributions.csv')
-    # Edit one component and retain a fresh, explicit common-metric validation.
-    edited_directory = output / 'edited_water'
-    models['water'].to_workbook().save_csv_dir(str(edited_directory))
-    factor_path = next(edited_directory.glob('*territory.csv'))
-    factors = pl.read_csv(factor_path)
-    factors.with_columns((pl.col('Relativity') * 1.05).alias('Relativity')).write_csv(factor_path)
-    edited_water = Workbook.load_csv_dir(str(edited_directory)).to_model()
-    edited_total = sum_loss_costs({'water': edited_water, 'theft': models['theft']})
-    edited_total.save(output / 'edited_peril_plan')
-    edited_total.validate(holdout, target='combined_loss_cost', metric='tweedie',
-                          weight='exposure', segments=['territory']).summary.write_csv(output / 'edited_validation.csv')
-    delta = edited_total.predict(quotes).to_series() - original
-    if (delta - components['water'] * .05).abs().max() > 1e-8:
-        raise RuntimeError('Known water factor edit did not reconcile')
-    pl.DataFrame({'old': original, 'change': delta, 'exposure': holdout['exposure']}).write_csv(output / 'policy_changes.csv')
-    print(comparison.summary)
-    return comparison
+            table.write_csv(output / f'{peril}_{name}_intervals.csv')
+        model.to_workbook().save_csv_dir(str(output / peril))
+        loaded = Workbook.load_csv_dir(str(output / peril)).to_model()
+        quotes = holdout.select('home_age', 'territory')
+        predictions[peril] = loaded.predict(quotes).to_series()
+        np.testing.assert_allclose(predictions[peril], model.predict(quotes).to_series(), atol=1e-12, rtol=1e-12)
+        models[peril] = model
+    pl.DataFrame(adjustments).write_csv(output / 'loss_adjustments.csv')
+    data[testing].select('home_id').unique().write_csv(output / 'holdout_homes.csv')
+    holdout = data[testing]
+    total = predictions['water'] + predictions['theft']
+    actual = (holdout['water_loss'] + holdout['theft_loss']) * holdout['development_factor'] * holdout['trend_factor']
+    comparison = pl.DataFrame({'ae_ratio': [actual.sum() / (total * holdout['exposure']).sum()],
+        'mean_tweedie_deviance': [mean_tweedie_deviance(actual / holdout['exposure'], total,
+                                                     power=1.5, sample_weight=holdout['exposure'])]})
+    comparison.write_csv(output / 'comparison.csv')
+    pl.DataFrame(predictions).with_columns(total.alias('total')).write_csv(output / 'peril_predictions.csv')
+    edited_dir = output / 'edited_water'
+    models['water'].to_workbook().save_csv_dir(str(edited_dir))
+    factor = next(edited_dir.glob('*territory.csv'))
+    pl.read_csv(factor).with_columns((pl.col('Relativity') * 1.05).alias('Relativity')).write_csv(factor)
+    edited = Workbook.load_csv_dir(str(edited_dir)).to_model()
+    changed = edited.predict(holdout).to_series() + predictions['theft']
+    np.testing.assert_allclose(changed - total, predictions['water'] * .05, atol=1e-10, rtol=1e-10)
+    pl.DataFrame({'old': total, 'new': changed, 'change': changed-total}).write_csv(output / 'policy_changes.csv')
+    print(comparison)
 
 
 if __name__ == '__main__':

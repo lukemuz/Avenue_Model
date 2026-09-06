@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 import polars as pl
-from avenue_model import GLMOptions, Plan, coefficient_intervals, save_bundle
+from avenue_model import GLMOptions, Plan, coefficient_intervals
 
 
 class RobustInferenceTests(unittest.TestCase):
@@ -76,10 +76,8 @@ class RobustInferenceTests(unittest.TestCase):
         table = model.rating_tables_by_name()[term['name']]
         interior = table.filter((pl.col('a_Level') == 'b') & (pl.col('b_Level') == 'y'))
         self.assertAlmostEqual(interior['Standard_Error'][0], np.sqrt(covariance[-1, -1]), places=8)
-        with tempfile.TemporaryDirectory() as path:
-            bundle = save_bundle(model, path + '/model')
-            self.assertEqual(bundle.source_evidence['inference_summary']['covariance_method'], 'hc0')
-            self.assertEqual(bundle.model.inference_summary, {})
+        self.assertEqual(model.inference_summary['covariance_method'], 'hc0')
+        self.assertEqual(model.to_workbook().to_model().inference_summary, {})
 
     def test_weighted_mean_intercept_and_factor_contrasts(self):
         data = pl.DataFrame({'g': ['a'] * 3 + ['b'] * 4,

@@ -13,7 +13,7 @@ python -m http.server --directory api-html 8000
 
 Substitute the generated wheel's actual filename. Open `http://localhost:8000` for
 local review. Use a fresh output directory. The documentation extra installs pdoc;
-tuning, test and credibility dependencies are not required to generate the reference.
+tuning and test dependencies are not required to generate the reference.
 
 The builder verifies the installed package against the supplied wheel bytes and rejects
 editable/source imports. It checks that every public top-level export (apart from

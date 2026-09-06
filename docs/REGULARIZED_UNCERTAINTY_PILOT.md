@@ -1,5 +1,10 @@
 # Regularized bootstrap coverage pilot
 
+Historical evidence for the builds and scripts recorded below. The current library
+has removed study orchestration and analytical bundle APIs; see the
+[scope review](COMPLEXITY_REVIEW.md). Saved results are retained, but commands and
+artifact layouts below describe the historical run.
+
 A generic percentile bootstrap around a regularized fit must not be presented as a
 confidence interval for the underlying unpenalized response mean. This controlled
 Gaussian ridge experiment demonstrates a large coverage failure caused by shrinkage
@@ -43,7 +48,7 @@ has further bootstrap-consistency issues; this ridge experiment does not validat
 lasso method. See Chatterjee and Lahiri,
 [Bootstrapping Lasso Estimators](https://www.tandfonline.com/doi/abs/10.1198/jasa.2011.tm10159).
 
-[Bootstrap stability](BOOTSTRAP_STABILITY.md) now exposes reproducible refits and
+Bootstrap stability (see the fundamentals scope review) now exposes reproducible refits and
 descriptive percentile bands with this limitation explicit. It retains all failures
 and withholds bands if any replicate fails. The pilot can exercise that public API
 with `--public-api`; this is a mechanics check, not a claim that the coverage problem

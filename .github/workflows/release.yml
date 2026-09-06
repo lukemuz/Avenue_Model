@@ -82,7 +82,7 @@ jobs:
           import subprocess, sys
           wheels = list(Path('dist').glob('*.whl'))
           assert len(wheels) == 1, wheels
-          subprocess.check_call([sys.executable, '-m', 'pip', 'install', str(wheels[0]) + '[test,tuning,credibility]'])
+          subprocess.check_call([sys.executable, '-m', 'pip', 'install', str(wheels[0]) + '[test,tuning]'])
       - name: Verify installed payload, tests and tutorials
         shell: python
         run: |

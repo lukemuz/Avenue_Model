@@ -16,8 +16,7 @@ The ARM Linux test uses a native [GitHub-hosted ARM runner](https://docs.github.
 even though the wheel build uses cross-compilation. macOS installs the OpenMP runtime
 used by LightGBM; see its [installation guide](https://lightgbm.readthedocs.io/en/stable/Installation-Guide.html).
 
-Each test job downloads only its corresponding wheel, installs the test, tuning and
-credibility extras, and runs `studies/wheel_acceptance.py`. The runner:
+Each test job downloads only its corresponding wheel, installs the test and tuning extras, and runs `studies/wheel_acceptance.py`. The runner:
 
 1. Rejects source/editable imports and verifies every installed package payload file
    against the downloaded wheel, including the native extension.
@@ -36,7 +35,7 @@ publication through the job dependency.
 
 ## Local verification
 
-The [retained local result](../studies/results/wheel_gate/) uses a newly built wheel
+The [historical local result](../studies/results/wheel_gate/) uses an earlier wheel build
 installed in a fresh CPython 3.12 Linux x86-64 environment. All 143 Python tests pass
 without skips, all three tutorials complete, and 15 installed payload files match the
 wheel. A separate run confirms that the editable development installation is rejected.

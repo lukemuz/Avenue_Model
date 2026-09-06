@@ -76,20 +76,15 @@ are lazy, on request; no second global fit or full model matrix is required. Add
 retained covariance storage is quadratic in each term's reduced width, rather than
 the full model width; the existing inference parameter limit still applies.
 
-`save_bundle` records the default covariance-based joint table and interpretation
-metadata automatically, or an explicit reason when the model cannot supply it.
-This is source-fit evidence. Reloaded source and edited scorers never acquire a new
-convergence certificate or the right to rerun inferential tests. Older schema-1 bundles
-without the additive `term_tests` field simply lack that evidence. User-requested
-quasi-Poisson tests can be retained separately using `tests.table.to_dicts()` and
-`tests.metadata`.
+Retain the requested `tests.table.to_dicts()` and `tests.metadata` with your fit
+records. A scoring workbook does not acquire the source fit's convergence or inference.
+The real motor study exports the table and its interpretation metadata.
 
-The auto, homeowners and real motor examples export `*_term_tests.json` with both
-the named table and its metadata. Python tests compare joint statistics and p-values
+Python tests compare joint statistics and p-values
 with independent dense calculations for Gaussian, Poisson, Gamma, Tweedie and binomial,
 under classical/HC0/CR0 covariance and both reporting anchors. They cover quasi-Poisson,
 hierarchical interactions, polynomial terms, empty bands, aliased variates, fixed priors,
-insufficient clusters and source-bundle isolation. Chi-square tails are separately
+insufficient clusters and scoring-artifact isolation. Chi-square tails are separately
 checked against SciPy across degrees of freedom 1–5000 and extreme statistics.
 Rust tests protect singular-test rejection and identifiable terms beside aliased nuisance
 tables. This evidence does not supply post-selection or small-sample validity.

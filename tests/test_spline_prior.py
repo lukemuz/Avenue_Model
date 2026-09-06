@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 from scipy.interpolate import CubicSpline
 
-from avenue_model import Plan, GLMOptions, Workbook, save_bundle, load_bundle, term_tests
+from avenue_model import Plan, GLMOptions, Workbook, term_tests
 
 
 class SplinePriorTests(unittest.TestCase):
@@ -62,10 +62,11 @@ class SplinePriorTests(unittest.TestCase):
                 test = term_tests(updated).table.filter(pl.col('term') == 'region')
                 np.testing.assert_allclose(test['statistic'][0], beta[1]**2/covariance[1,1], rtol=3e-7)
                 with tempfile.TemporaryDirectory() as tmp:
-                    save_bundle(updated, Path(tmp)/'bundle', validation_data=data)
-                    loaded = load_bundle(Path(tmp)/'bundle')
-                    np.testing.assert_allclose(loaded.model.predict(data).to_numpy().reshape(-1), mu, rtol=2e-8)
-                    self.assertIn('natural_cubic_linear_tails', loaded.source_plan.to_json())
+                    updated.to_workbook().save_json(str(Path(tmp)/'model.json'))
+                    loaded = Workbook.load_json(str(Path(tmp)/'model.json')).to_model()
+                    np.testing.assert_allclose(loaded.predict(data).to_numpy().reshape(-1), mu, rtol=2e-8)
+                    self.assertIn('natural_cubic_linear_tails', updated.plan.to_json())
+
 
     def test_carried_geometry_is_validated_and_prior_encodings_survive(self):
         data = pl.DataFrame({'x': np.linspace(0., 3., 60), 'region': ['a', 'b'] * 30, 'y': [1., 2.] * 30})

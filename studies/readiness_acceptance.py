@@ -97,7 +97,7 @@ def main():
                     'Cargo.toml', 'Cargo.lock', 'pyproject.toml').split('\0')
         names.append(str(Path(__file__).resolve().relative_to(ROOT)))
         record['source_files_sha256'] = {name: sha256(ROOT / name) for name in sorted(set(names))
-                                        if name and (Path(name).suffix in ('.rs', '.py', '.toml', '.lock'))}
+                                        if name and (ROOT / name).is_file() and (Path(name).suffix in ('.rs', '.py', '.toml', '.lock'))}
         env = os.environ.copy()
         for key in ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS',
                     'POLARS_MAX_THREADS', 'RAYON_NUM_THREADS']:

@@ -15,7 +15,7 @@ print(review.tables['region'])
 coefficients, score convergence, response predictions, dispersion estimation and
 likelihood/AIC calculations keep their existing meanings. The report, low-level
 `GLMDiagnostics`, `FittedModel.inference_summary`, interval metadata and analytical
-bundle source evidence identify the covariance method explicitly.
+inference metadata identify the covariance method explicitly.
 
 The implementation uses the same identifiable reduced design as ordinary inference,
 including two-way interaction reference constraints and polynomial variate loadings.
@@ -55,7 +55,7 @@ Wald tests or adjustment for model selection. It can be unreliable in small samp
 or high-leverage cells. Repeated policies, geographic dependence or other cluster
 structures need [explicit clustered inference](CLUSTER_INFERENCE.md); HC0 alone does
 not account for them. Standard errors
-on edited/loaded scorers remain unavailable; source bundle evidence stays separate.
+on edited/loaded scorers remain unavailable; retain source fit evidence separately.
 
 Independent tests form dense information and score matrices across all five families,
 nonuniform weights and both solvers, and also verify offsets, hierarchical constraints,

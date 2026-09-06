@@ -7,7 +7,7 @@ import numpy as np
 import polars as pl
 from scipy.optimize import LinearConstraint, minimize
 
-from avenue_model import Plan, GLMOptions, Workbook, coefficient_intervals, save_bundle
+from avenue_model import Plan, GLMOptions, Workbook, coefficient_intervals
 
 
 class MonotonicTests(unittest.TestCase):
@@ -72,9 +72,8 @@ class MonotonicTests(unittest.TestCase):
                     model.to_workbook().save_csv_dir(path+'/csv')
                     loaded = Workbook.load_csv_dir(path+'/csv').to_model()
                     np.testing.assert_allclose(loaded.predict(data).to_numpy().reshape(-1), actual, rtol=1e-12)
-                    bundle = save_bundle(model, path+'/bundle')
-                    self.assertEqual(json.loads(bundle.source_plan.to_json())['terms'][0]['direction'], direction)
-                    self.assertIn('Monotonic', bundle.source_evidence['inference_summary']['standard_errors_note'])
+                    self.assertEqual(json.loads(model.plan.to_json())['terms'][0]['direction'], direction)
+                    self.assertIn('Monotonic', model.inference_summary['standard_errors_note'])
 
     def test_empty_bands_and_rejected_combinations(self):
         data = pl.DataFrame({'x': [1., 1., 3., 3., 5., 5.], 'y': [1., 2., 3., 4., 5., 6.]})

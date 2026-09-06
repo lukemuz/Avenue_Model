@@ -1,5 +1,10 @@
 # Real motor acceptance exercise, September 5, 2026
 
+Historical evidence for the builds and scripts recorded below. The current library
+has removed study orchestration and analytical bundle APIs; see the
+[scope review](COMPLEXITY_REVIEW.md). Saved results are retained, but commands and
+artifact layouts below describe the historical run.
+
 The real frequency/severity/pure-premium arm now completes from a freshly installed
 release wheel. All three GLMs converge, agree with glum's native categorical path,
 and deliver raw-quote scoring artifacts with retained inference and review evidence.

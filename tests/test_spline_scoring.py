@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 import polars as pl
-from avenue_model import Plan, Workbook, compare_changes, save_bundle, load_bundle
+from avenue_model import Plan, Workbook
 
 
 class SplineScoringTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class SplineScoringTests(unittest.TestCase):
         path.write_text(json.dumps(artifact))
         return Workbook.load_json(str(path)).to_model()
 
-    def test_python_bundle_and_change_review_preserve_the_curve(self):
+    def test_workbook_and_explanations_preserve_the_curve(self):
         with tempfile.TemporaryDirectory() as tmp:
             model = self.artifact(tmp)
             changed = self.artifact(tmp, (0., .8, 0.))
@@ -33,14 +33,15 @@ class SplineScoringTests(unittest.TestCase):
             curve = np.array([-.6, 0., .275, .4, .275, 0., -.6])
             expected = np.exp(.2 + curve)
             np.testing.assert_allclose(model.predict(data).to_numpy().reshape(-1), expected)
-            save_bundle(model, Path(tmp) / 'bundle')
-            loaded = load_bundle(Path(tmp) / 'bundle').model
+            model.to_workbook().save_json(str(Path(tmp)/'saved.json'))
+            loaded = Workbook.load_json(str(Path(tmp)/'saved.json')).to_model()
             np.testing.assert_allclose(loaded.predict(data).to_numpy().reshape(-1), expected)
-            delta = compare_changes(loaded, changed, data, unit='loss per policy')
-            effects = delta.contributions.filter(pl.col('kind') == 'spline')
-            np.testing.assert_allclose(effects['coefficient_change'].to_numpy(), curve)
-            self.assertEqual(effects['old_table_row'].null_count(), len(curve))
-            np.testing.assert_allclose(delta.policies['change'].to_numpy(), np.exp(.2+2*curve)-expected)
+            before = loaded.explain(data)['contributions'].filter(pl.col('kind') == 'spline')
+            after = changed.explain(data)['contributions'].filter(pl.col('kind') == 'spline')
+            np.testing.assert_allclose(after['coefficient'] - before['coefficient'], curve)
+            self.assertEqual(before['table_row'].null_count(), len(curve))
+            np.testing.assert_allclose(changed.predict(data).to_numpy().reshape(-1) - expected,
+                                       np.exp(.2+2*curve)-expected)
             self.assertIsNone(loaded.converged)
             self.assertEqual(loaded.rating_tables_by_name()['curve']['Status'].unique().to_list(), ['scoring_only'])
 

@@ -1,5 +1,10 @@
 # Real-data fork challenger acceptance, September 5, 2026
 
+Historical evidence for the builds and scripts recorded below. The current library
+has removed study orchestration and analytical bundle APIs; see the
+[scope review](COMPLEXITY_REVIEW.md). Saved results are retained, but commands and
+artifact layouts below describe the historical run.
+
 The fork challenger now completes the real motor study from a fresh wheel environment,
 using the same paid-claim definition, training rows and untouched holdout as the GLMs.
 Both conversion modes preserve held-out predictions, restored category labels and

@@ -38,10 +38,7 @@ def main():
               ('Scoring and exposure', 'SCORING_CONTRACT.md'),
               ('Continuous splines', 'SPLINES.md'),
               ('Inference and intervals', 'COEFFICIENT_INTERVALS.md'),
-              ('Refit stability', 'BOOTSTRAP_STABILITY.md'),
-              ('Conditional credibility', 'POISSON_CREDIBILITY.md'),
-              ('LightGBM tuning', 'lightgbm.md'),
-              ('Bundles and delivery', 'ANALYTICAL_BUNDLES.md')]
+              ('LightGBM tuning', 'lightgbm.md')]
     avenue_model.__doc__ += '\n\n## Workflow guides\n\n' + '\n'.join(
         f'- [{title}]({source}/{name})' for title, name in guides)
     pdoc.render.configure(docformat='google', show_source=False,

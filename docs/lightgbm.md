@@ -97,43 +97,13 @@ it is not scoring latency. Models are released after each fold's measurement. La
 artifacts can make this materially more expensive than the standalone inexpensive
 `estimate_num_tables` helper. Conversion errors propagate instead of becoming invented
 complexity scores. No prediction-parity claim is inferred from measuring structure.
-`coefficient_cells` counts stored factor values, not independent fitted parameters:
-`statistical_rank` is null and `support_status` is `not_measured`.
-Support/rank require the corresponding data and fitting specification. Final full-data
-refits can differ from these CV artifacts and still need separate review.
-
-Pass `scoring_data=quotes` to measure scoring cost for every selected fold artifact.
-Use a nonempty Polars frame with the booster's numeric predictors/category codes;
-feature columns are selected in booster order. For example:
-
-```python
-result = tune_lgbm(dataset, {"objective": "poisson"}, n_trials=10,
-                   scoring_data=encoded_quotes)
-```
-
-Each fold scores the same quote frame three times using public `predict`, including
-input preparation, matching and returned-array materialization. `scoring_seconds` is
-the median of those three calls; `scoring_samples_seconds` retains each observation,
-including the first. The text summary's `mean score ms` averages the fold medians.
-Without quote data this field stays null and the summary displays `unknown`.
-
-Every scored vector must agree with that fold booster's **selected prefix** at
-`atol=rtol=1e-12`, with finite outputs, before the cost is accepted. A mismatch raises
-an error. The record includes quote count, predictor order, data fingerprint, Polars
-version, maximum absolute parity error and tolerances. Parity only covers these quotes.
-Reference scoring, parity checks and fingerprinting are outside the timed calls.
-
-Choose a representative batch size and record your hardware/thread settings when
-comparing timings. These observations are not isolated memory measurements, prepared
-cache timings, or universal latency estimates. Timing adds three public predictions
-per fold, and does not enter either Pareto objective. The data are used for scoring
-measurements, not training or loss evaluation; this is not an additional validation
-score or training-support estimate.
+`coefficient_cells` counts stored factor values, not independent fitted parameters.
+Final full-data refits can differ from these CV artifacts and need separate review.
+Measure scoring performance on your representative quotes outside the tuning loop.
 
 `select(max_tables=...)` screens the mean CV table count at the selected iteration.
-It does not enforce a limit on the final converted artifact. Use
-`from_booster(..., resource_limits={'tables': N})` to reject an actual final conversion
-exceeding a requested table limit; row and interaction-order limits are also supported
+It does not enforce a limit on the final converted artifact. Inspect the final
+`from_booster` result's `metadata['complexity']` and apply your delivery requirements
 ([conversion guide](CONVERSION.md)). `trial.fold_tables` retains
 the fold distribution; a constant booster is a valid one-table artifact. When
 the LightGBM in play is stock, the two interaction penalties are dropped from the search

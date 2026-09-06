@@ -27,9 +27,6 @@ comes out is a set of CSVs a person can read, edit, file and load back.
   with fold-local knots, linear tails and continuous-basis coefficient inference.
   [Whole-term tests](docs/TERM_TESTS.md) assess supported factor contrasts jointly
   using the fit's declared covariance method.
-- **Sparse groups can borrow strength.** [Poisson–Gamma credibility](docs/POISSON_CREDIBILITY.md)
-  pools group frequency relativities around a fixed baseline, with explicit prior
-  strength, conditional posterior intervals and ordinary scoring workbooks.
 - **Problems are found before fitting.** `check()` reports data faults, thin levels,
   unidentified terms and redundant tables together, with actionable messages.
 - **The fitted model is an artifact.** Save it as JSON or readable CSV tables, edit it,
@@ -41,10 +38,9 @@ Approximation*](https://avenue-analytics.com/research/avenue-analytics-methodolo
 
 ## Complete pricing studies
 
-The [workflow guide and support matrix](docs/WORKFLOW_SUPPORT.md) cover preparation,
-reproducible validation, model comparison, factor explanations and editable delivery.
-The [readiness audit](docs/READINESS_AUDIT.md) records fresh-wheel acceptance results
-and the remaining gaps against the improvement plan.
+The [support guide](docs/WORKFLOW_SUPPORT.md) describes the core `Plan`,
+`FittedModel` and `Workbook` interfaces. Examples use ordinary Polars, NumPy and
+scikit-learn operations for preparation, validation splits and comparisons.
 Run the [auto study](examples/auto_pricing_study.py) or
 [homeowners attritional-peril study](examples/homeowners_perils.py) for executable
 synthetic examples with quote scoring, export/reload and reviewed factor edits.
@@ -198,8 +194,8 @@ the old table should provide the shape while its factors are re-estimated.
 
 ### Compose frequency and severity
 
-All routes produce the same `FittedModel` type, so fitted, loaded and converted models
-can predict, validate, report, save and compose.
+Fitted, loaded and converted components use `FittedModel`. Combine their predictions
+with ordinary arithmetic, keeping each component workbook independently editable.
 
 ```python
 frequency = (
@@ -213,23 +209,21 @@ severity = (
     .fit(claims, "severity")
 )
 
-pure_premium = frequency + severity
-pure_premium.to_workbook().save_csv_dir("technical_price")
+pure_premium = frequency.predict_rate(quotes).to_series() * severity.predict(quotes).to_series()
 ```
 
-Under the shared log link, linear predictors add and fitted means multiply. Category
-encodings are reconciled by level name when the component models saw different subsets.
+The product is loss per exposure. Add peril loss-cost predictions on that same
+response scale. The existing `FittedModel +` operator combines log-link factor
+tables multiplicatively; it does not add response means or infer a new loss family.
 
 ## Exact LightGBM conversion
 
 ```python
-import json
-from avenue_model import FittedModel
+from avenue_model import from_booster
 
-converted = FittedModel.from_lgbm_json(
-    json.dumps(booster.dump_model()),
-    consolidation="max",
-)
+conversion = from_booster(booster, new_business, consolidation="max")
+print(conversion.parity)
+converted = conversion.model
 predictions = converted.predict(new_business)
 ```
 
@@ -247,8 +241,8 @@ What comes back is rating tables, not an explanation of a model that stays a bla
 Add the intercept to one factor from each table and apply the inverse link. That is the
 whole model — the same arithmetic a filed rating plan uses.
 
-Conversion changes representation, not prediction: fitted means agree with the booster
-to floating-point noise. On French motor claim frequency, the end-to-end example tunes
+Supported conversion changes representation, not prediction; the parity report checks
+agreement on the supplied rows. On French motor claim frequency, the end-to-end example tunes
 for accuracy and table count, converts the result and writes it as CSV:
 
 ```bash
@@ -334,10 +328,9 @@ reproduction commands are in the
 
 ## Known gaps
 
-- `predict()` returns a null for an observation matching no rating row — an unseen
-  category level, most often — rather than raising. `validate()` reports the same
-  situation at high severity and excludes those rows, so a scoring path that never
-  validates is the one to watch.
+- `predict()` raises for unmatched rows or nonfinite predictions. Use
+  `predict_diagnostics()` for row-level statuses and null results on failed rows.
+  Valid explicit wildcard/default routes remain supported.
 - Converted models preserve LightGBM thresholds verbatim; rounding them can change which
   rows match.
 
@@ -360,12 +353,11 @@ package root. Compatible Polars versions are pinned in `pyproject.toml`.
 - [Rating tables, matching and LightGBM conversion](src/rating_model/README.md)
 - Rust API documentation: `cargo doc --open`
 - Python API documentation is available through `help(avenue_model)` and
-  `help(avenue_model.Plan)`; a hosted API reference is planned.
+  `help(avenue_model.Plan)`; the [searchable reference](docs/API_REFERENCE.md)
+  builds locally, with hosted deployment configured but not yet verified.
 
 ## Built with
 
 - [Polars](https://www.pola.rs/) — fast DataFrames
 - [PyO3](https://pyo3.rs/) — Python bindings
 - [Rayon](https://github.com/rayon-rs/rayon) — parallelism
-
-[Analytical bundles](docs/ANALYTICAL_BUNDLES.md) retain source plans, fit and validation evidence alongside editable scoring workbooks.

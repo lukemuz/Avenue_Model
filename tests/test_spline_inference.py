@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 from scipy.interpolate import CubicSpline
 
-from avenue_model import Plan, GLMOptions, coefficient_intervals, term_tests, save_bundle, load_bundle
+from avenue_model import Plan, GLMOptions, coefficient_intervals, term_tests, Workbook
 
 
 class SplineInferenceTests(unittest.TestCase):
@@ -123,13 +123,11 @@ class SplineInferenceTests(unittest.TestCase):
         for name in ('x','copy'):
             table = model.rating_tables_by_name()[name]
             self.assertTrue(all(value is None or np.isnan(value) for value in table['Standard_Error'].to_list()[1:]))
-        with tempfile.TemporaryDirectory() as tmp:
-            save_bundle(model, Path(tmp)/'bundle')
-            bundle = load_bundle(Path(tmp)/'bundle')
-            self.assertIsNone(bundle.model.converged)
-            with self.assertRaises(ValueError):
-                term_tests(bundle.model)
-            self.assertIsNotNone(bundle.source_evidence['term_tests'])
+        loaded = model.to_workbook().to_model()
+        self.assertIsNone(loaded.converged)
+        with self.assertRaises(ValueError):
+            term_tests(loaded)
+
 
 
 if __name__ == '__main__':

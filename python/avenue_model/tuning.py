@@ -281,7 +281,7 @@ class TuningResult:
         if not self.tuned_interaction_penalties:
             lines.append(f"  interaction penalties were NOT tuned - {self.lightgbm} "
                          f"does not accept them")
-        lines.append(f"  {'mean tables':>12}{'mean rows':>12}{'largest':>10}{'order':>7}{'mean score ms':>15}{'cv loss':>14}   parameters")
+        lines.append(f"  {'mean tables':>12}{'mean rows':>12}{'largest':>10}{'order':>7}{'cv loss':>14}   parameters")
         for t in self.frontier:
             shown = {k: v for k, v in t.params.items() if k in DEFAULT_SPACE}
             rendered = ", ".join(
@@ -294,10 +294,7 @@ class TuningResult:
                 complexity = f"{mean_rows:>12.1f}{largest:>10}{order:>7}"
             else:
                 complexity = f"{'unknown':>12}{'unknown':>10}{'unknown':>7}"
-            times = [c.get('scoring_seconds') for c in t.fold_complexity]
-            score = (f"{1000 * sum(times) / len(times):.3f}"
-                     if times and all(v is not None for v in times) else 'unknown')
-            lines.append(f"  {t.tables:>12.2f}{complexity}{score:>15}{t.cv_loss:>14.6f}   {rendered}")
+            lines.append(f"  {t.tables:>12.2f}{complexity}{t.cv_loss:>14.6f}   {rendered}")
         return "\n".join(lines)
 
 
@@ -314,7 +311,6 @@ def tune_lgbm(
     metric: str | None = None,
     seed: int | None = None,
     callback: Callable[[Trial], None] | None = None,
-    scoring_data=None,
 ) -> TuningResult:
     """Search for boosters that are both accurate and small enough to read.
 
@@ -332,10 +328,6 @@ def tune_lgbm(
         metric: LightGBM validation metric. Defaults by objective.
         seed: sampler seed, for a reproducible search.
         callback: called with each completed `Trial`, for progress reporting.
-        scoring_data: optional nonempty Polars quote frame with numeric booster
-            values/category codes. Every selected fold prefix is scored three times
-            on this same frame, with booster parity checked before recording timings.
-            These observations do not enter the loss/table-count selection objectives.
 
     Returns:
         A `TuningResult`. Use `.frontier` to see the trade-off, `.select(max_tables=N)`
@@ -343,14 +335,6 @@ def tune_lgbm(
         regardless of size.
     """
     lightgbm, optuna, module_name = _require_deps(dataset)
-    if scoring_data is not None:
-        import polars as pl
-        if not isinstance(scoring_data, pl.DataFrame):
-            raise TypeError('scoring_data must be a Polars DataFrame of numerical booster inputs')
-        if not scoring_data.height:
-            raise ValueError('scoring_data must contain at least one quote')
-        scoring_data = scoring_data.clone()
-
     if "objective" not in params:
         raise ValueError("params must include 'objective'")
     objective_name = params["objective"]
@@ -465,34 +449,7 @@ def tune_lgbm(
                                'coefficient_cells': sum(rows),
                                'conversion_seconds': time.perf_counter() - started,
                                'consolidation': 'max', 'num_iterations': best_round + 1,
-                               'support_status': 'not_measured', 'statistical_rank': None,
-                               'scoring_seconds': None})
-            if scoring_data is not None:
-                import numpy as np
-                from .splitting import _fingerprint
-                predictors = scoring_data.select(booster.feature_name())
-                if any(not column.dtype.is_numeric() for column in predictors):
-                    raise TypeError('scoring_data predictors must contain numerical booster values/category codes')
-                reference = np.asarray(booster.predict(predictors.to_numpy(), num_iteration=best_round + 1))
-                if reference.shape != (predictors.height,) or not np.isfinite(reference).all():
-                    raise ValueError('Scoring-cost reference must contain one finite mean per quote')
-                samples = []
-                max_error = 0.
-                for _ in range(3):
-                    started = time.perf_counter()
-                    actual = converted.predict(predictors).to_numpy().reshape(-1)
-                    samples.append(time.perf_counter() - started)
-                    if actual.shape != reference.shape or not np.isfinite(actual).all() or not np.allclose(actual, reference, atol=1e-12, rtol=1e-12):
-                        raise ValueError('Converted fold failed scoring-data parity; scoring cost is not accepted')
-                    max_error = max(max_error, float(np.max(np.abs(actual - reference))))
-                complexity[-1].update(scoring_seconds=float(np.median(samples)),
-                    scoring_samples_seconds=samples, scoring_rows=predictors.height,
-                    scoring_data_fingerprint=_fingerprint(predictors),
-                    scoring_polars_version=pl.__version__,
-                    scoring_feature_names=booster.feature_name(),
-                    scoring_method='median of three public batch calls, including first call',
-                    scoring_parity={'status': 'passed', 'atol': 1e-12, 'rtol': 1e-12,
-                                    'max_absolute_error': max_error})
+                               })
             del converted, artifact
         counts = [float(c['tables']) for c in complexity]
         tables = sum(counts) / len(counts)

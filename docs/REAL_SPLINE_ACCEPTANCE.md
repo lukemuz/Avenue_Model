@@ -1,5 +1,10 @@
 # Real motor study: continuous spline acceptance
 
+Historical evidence for the builds and scripts recorded below. The current library
+has removed study orchestration and analytical bundle APIs; see the
+[scope review](COMPLEXITY_REVIEW.md). Saved results are retained, but commands and
+artifact layouts below describe the historical run.
+
 The continuous workflow passes fitting, independent-prediction and delivery checks
 on the French motor portfolio. The tested spline specifications **do not improve
 holdout loss over the banded baseline**. Their fitting time and boundary uncertainty

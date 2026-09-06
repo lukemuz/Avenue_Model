@@ -59,10 +59,10 @@ class ExplanationTests(unittest.TestCase):
             parts = explanation['contributions'].filter(pl.col('row') == row)
             self.assertAlmostEqual(parts['coefficient'].sum(), explanation['summary']['predictions'][row])
 
-    def test_known_workbook_edit_is_identified_and_reconciles(self):
+    def test_known_workbook_edit_preserves_explanation_arithmetic(self):
         import tempfile
         from pathlib import Path
-        from avenue_model import Workbook, compare_changes
+        from avenue_model import Workbook
         data = self.data()
         original = Plan.frequency('exposure').categorical('region').fit(data, 'count')
         with tempfile.TemporaryDirectory() as directory:
@@ -71,36 +71,10 @@ class ExplanationTests(unittest.TestCase):
             table = pl.read_csv(path)
             table.with_columns((pl.col('Relativity') * 1.1).alias('Relativity')).write_csv(path)
             edited = Workbook.load_csv_dir(directory).to_model()
-            changes = compare_changes(original, edited, data, unit='rate', weight='exposure', segments=['region'])
-            self.assertAlmostEqual(changes.totals['relative_change'][0], .1)
-            self.assertAlmostEqual(changes.policies['weighted_change'].sum(), changes.totals['change'][0])
-            self.assertAlmostEqual(changes.segments['region']['change'].sum(), changes.totals['change'][0])
-            region = changes.contributions.filter(pl.col('term') == 'region')
-            for delta in region['coefficient_change']:
+            before, after = original.predict(data).to_series(), edited.predict(data).to_series()
+            for a, b in zip(before, after):
+                self.assertAlmostEqual(b, a * 1.1)
+            old = original.explain(data)['contributions'].filter(pl.col('term') == 'region')
+            new = edited.explain(data)['contributions'].filter(pl.col('term') == 'region')
+            for delta in new['coefficient'] - old['coefficient']:
                 self.assertAlmostEqual(delta, math.log(1.1))
-            intercept = changes.contributions.filter(pl.col('kind') == 'intercept')
-            self.assertEqual(intercept['coefficient_change'].to_list(), [0.] * data.height)
-
-    def test_added_removed_terms_and_zero_offsets_have_defined_changes(self):
-        from avenue_model import compare_changes
-        data = self.data()
-        old = Plan('poisson', exposure='exposure', exposure_role='offset').categorical('region').fit(data, 'count')
-        new = Plan('poisson', exposure='exposure', exposure_role='offset').banded('age', breaks=[30.]).fit(data, 'count')
-        quotes = data.with_columns(pl.lit(0.).alias('exposure'))
-        result = compare_changes(old, new, quotes, unit='count')
-        contributions = result.contributions
-        removed = contributions.filter(pl.col('term') == 'region')
-        added = contributions.filter(pl.col('term') == 'age')
-        self.assertEqual(removed['presence'].unique().to_list(), ['removed'])
-        self.assertEqual(added['presence'].unique().to_list(), ['added'])
-        self.assertEqual(removed['new_table_row'].null_count(), data.height)
-        self.assertEqual(added['old_table_row'].null_count(), data.height)
-        self.assertEqual(removed['new_coefficient'].to_list(), [0.] * data.height)
-        self.assertEqual(added['old_coefficient'].to_list(), [0.] * data.height)
-        offsets = contributions.filter(pl.col('kind') == 'exposure')
-        self.assertEqual(offsets['presence'].unique().to_list(), ['both'])
-        self.assertEqual(offsets['coefficient_change'].to_list(), [0.] * data.height)
-        self.assertEqual(offsets['old_coefficient'].to_list(), [-math.inf] * data.height)
-        self.assertEqual(result.policies['relative_change'].null_count(), data.height)
-        self.assertEqual(result.totals['change'][0], 0.)
-        self.assertEqual(contributions['row'].to_list(), sorted(contributions['row'].to_list()))

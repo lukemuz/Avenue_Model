@@ -51,7 +51,7 @@ are not treated as statistical constraints that certify a boundary fit.
 
 ## Export and edits
 
-The direction survives Plan JSON, workbook JSON/CSV, and analytical bundles. A workbook
+The direction survives Plan JSON and workbook JSON/CSV. A workbook
 containing a monotonic table uses format version 3 so older readers reject it instead
 of silently dropping the declaration. Ordinary workbooks still write version 2; the
 current reader accepts versions 1–3.
@@ -69,7 +69,7 @@ loss comparisons. Fitting tests check exact weighted offset solutions, both dire
 both normalizations, empty bands, metadata round trips and edited-factor findings.
 Python tests compare multi-term fits with a separate dense SLSQP constrained optimizer
 for all three families and both directions, including active pooled constraints. CSV
-and bundle reloads preserve quote predictions to relative tolerance `1e-12`.
+and workbook reloads preserve quote predictions to relative tolerance `1e-12`.
 
 Continuous splines, smoothing penalties, constrained uncertainty, penalties combined
 with ordering, and ordered terms inside interactions remain unimplemented. The full

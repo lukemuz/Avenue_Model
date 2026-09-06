@@ -16,37 +16,16 @@ Scoring errors remain strict; explanations never invent contributions for unmatc
 rows. These are exact model mechanics, not causal attributions.
 
 ```python
-from avenue_model import compare_changes
-
-change = compare_changes(
-    original, edited, quotes, unit="loss_per_exposure", weight="exposure",
-    segments=["region"],
-)
-print(change.totals)
-print(change.segments["region"])
-print(change.policies.sort("weighted_change", descending=True).head(20))
-print(change.contributions.filter(pl.col("coefficient_change") != 0))
+changes = quotes.select("policy_id").with_columns(
+    original.predict(quotes).to_series().alias("before"),
+    edited.predict(quotes).to_series().alias("after"),
+).with_columns((pl.col("after") - pl.col("before")).alias("change"))
 ```
 
-Both artifacts score every row. They must share a link and recorded prediction
-convention; the caller declares the common physical unit. Use exposure weights for
-loss-per-exposure means, not for already exposure-adjusted totals. Policy and segment
-changes reconcile to the weighted portfolio. Relative change is null for a zero old
-mean. No rows are excluded.
+Compare means in the same physical units and exposure convention. Aggregate with
+Polars using exposure weights for rates, or sum totals directly. Inspect each
+model's contributions when term-level explanations are needed.
 
-Factor changes retain old/new table row positions and link-scale coefficients. Terms
-are identified by `(kind, name)`; added/removed terms are explicit and contribute zero
-on the absent side. Renaming a term is therefore reported as removal plus addition.
-A nonlinear link means factor coefficient changes are not additive response-scale
-loss-cost changes. For detailed structural review inspect both artifacts' tables.
-The exhibit measures behavior on supplied quotes and does not certify unchanged
-behavior elsewhere.
-
-An edited workbook is a new scoring artifact. These exhibits do not assign old
-standard errors to edited coefficients. Obtain fresh validation evidence for it.
-The executable auto study demonstrates a known 5% factor edit, policy movements,
-quote explanations and a separate edited-artifact validation report.
-
-Large change reviews keep contribution tables columnar. The [controlled performance
-study](CHANGE_REVIEW_PERFORMANCE.md) verifies unchanged million-row exhibits with
-lower memory use and shorter runtime on a real six-table workload.
+An edited workbook is a new scoring artifact; it does not inherit standard errors
+for its edited coefficients. Obtain fresh validation with `edited.report(data)`.
+The auto example verifies a known 5% edit and saves policy movements and explanations.

@@ -6,7 +6,7 @@ import numpy as np
 import polars as pl
 from scipy.stats import chi2
 
-from avenue_model import GLMOptions, Plan, Workbook, term_tests, save_bundle
+from avenue_model import GLMOptions, Plan, Workbook, term_tests
 from avenue_model.inference import _chi_square_survival
 
 
@@ -121,11 +121,6 @@ class TermTestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'HC0/cluster'):
             term_tests(plan.fit(data, 'y', GLMOptions(covariance='hc0')), dispersion='quasi_poisson')
         with tempfile.TemporaryDirectory() as path:
-            bundle = save_bundle(model, path+'/bundle')
-            self.assertEqual(bundle.source_evidence['term_tests']['status'], 'recorded')
-            self.assertEqual(bundle.source_evidence['term_tests']['table'], term_tests(model).table.to_dicts())
-            with self.assertRaisesRegex(ValueError, 'original'):
-                term_tests(bundle.model)
             model.to_workbook().save_json(path+'/model.json')
             with self.assertRaisesRegex(ValueError, 'original'):
                 term_tests(Workbook.load_json(path+'/model.json').to_model())

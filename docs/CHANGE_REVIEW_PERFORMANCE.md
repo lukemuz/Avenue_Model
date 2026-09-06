@@ -1,5 +1,10 @@
 # Change-review memory and timing, September 5, 2026
 
+Historical evidence for the builds and scripts recorded below. The current library
+has removed study orchestration and analytical bundle APIs; see the
+[scope review](COMPLEXITY_REVIEW.md). Saved results are retained, but commands and
+artifact layouts below describe the historical run.
+
 `compare_changes` now combines long factor exhibits with a columnar Polars full join
 instead of converting them into millions of Python dictionaries and tuple keys.
 The public result still contains policy changes, matched old/new table rows,

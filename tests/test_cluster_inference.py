@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 import polars as pl
-from avenue_model import GLMOptions, Plan, coefficient_intervals, save_bundle
+from avenue_model import GLMOptions, Plan, coefficient_intervals
 
 
 class ClusterInferenceTests(unittest.TestCase):
@@ -69,11 +69,9 @@ class ClusterInferenceTests(unittest.TestCase):
         for name, table in hc0.rating_tables_by_name().items():
             np.testing.assert_allclose(clustered.rating_tables_by_name()[name]['Standard_Error'], table['Standard_Error'], atol=1e-9)
             np.testing.assert_allclose(reverse.rating_tables_by_name()[name]['Standard_Error'], table['Standard_Error'], atol=1e-9)
-        with tempfile.TemporaryDirectory() as path:
-            bundle = save_bundle(clustered, path + '/bundle')
-            self.assertEqual(bundle.source_evidence['inference_summary']['n_clusters'], 79)
-            self.assertEqual(bundle.model.inference_summary, {})
-            np.testing.assert_allclose(bundle.model.predict(data.select('g')).to_series(), clustered.predict(data).to_series(), atol=1e-12)
+        loaded = clustered.to_workbook().to_model()
+        self.assertEqual(loaded.inference_summary, {})
+        np.testing.assert_allclose(loaded.predict(data.select('g')).to_series(), clustered.predict(data).to_series(), atol=1e-12)
 
     def test_offset_scores_use_count_means_and_preserve_row_order(self):
         rng = np.random.default_rng(141)
