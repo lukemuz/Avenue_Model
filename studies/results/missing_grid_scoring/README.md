@@ -18,3 +18,6 @@ This is editable local release-extension evidence, not fresh-wheel acceptance.
 All 284 active Rust and 147 Python tests pass; six Rust tests and one doctest remain
 ignored. Independent missing-coordinate tests cover actual null/NaN quote inputs;
 the real-data timing population contains finite quotes.
+
+The flag names above describe the recorded script. The current runner converts by
+default and uses `--workbook` for a saved artifact; see the linked reproduction guide.

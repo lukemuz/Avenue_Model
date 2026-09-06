@@ -1,8 +1,8 @@
 # Conversion regression fixtures
 
 `categorical_tree.json` is the first failing tree isolated in
-`evaluation/fork_results/conversion_diagnostics.json` by the September 2026 fork
-conversion evaluation. It contains model structure only, with no policy records.
+the historical September 2026 fork conversion evaluation. The isolated fixture is
+self-contained; the old evaluation output is not required. It contains model structure only, with no policy records.
 The regression test enumerates a small synthetic Cartesian product of its drivers
 and evaluates the original tree decisions independently of Avenue.
 
@@ -20,7 +20,7 @@ splits and JSON reloads. zero_as_missing remains explicitly unsupported.
 basis weights, integrated curvature and dense IRLS information/score references for
 five knot geometries and 220 probes. Linear tails are an explicit fixture convention.
 The per-case derivative tolerances account for reference roundoff on closely spaced
-knots. See `docs/SMOOTH_EFFECTS_IMPLEMENTATION.md` for the method and integration limits.
+knots. See [spline conventions](../../docs/SPLINES.md).
 
 ### Continuous spline GLM references
 
@@ -28,5 +28,4 @@ knots. See `docs/SMOOTH_EFFECTS_IMPLEMENTATION.md` for the method and integratio
 CubicSpline and an independent dense weighted-score root for five GLM families.
 It includes categorical effects, offsets and zero/nonuniform weights. The Rust
 `glm_spline_tests` compares fitted means and anchored coefficients, all normalization
-modes and workbook reloads. See `docs/SMOOTH_EFFECTS_IMPLEMENTATION.md` for numerical
-conventions, tolerances and the remaining public Plan/inference gates.
+modes and workbook reloads. See [spline conventions and inference scope](../../docs/SPLINES.md).

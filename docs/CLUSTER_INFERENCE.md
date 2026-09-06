@@ -57,13 +57,15 @@ degrees of freedom. The ordinary residual degrees of freedom retained in diagnos
 remain a fit/dispersion quantity. CR0 has no small-sample or leverage correction and
 can be unreliable with few or highly unequal clusters. Two groups merely meets the
 computational minimum; it is not evidence that inference is reliable. Multi-way
-clustering, CR1/CR2 corrections, cluster bootstrap, whole-term tests and post-selection
+clustering, CR1/CR2 corrections, cluster bootstrap and post-selection
 uncertainty remain outside this implementation. Quasi-Poisson interval rescaling is
 rejected for clustered fits.
 
-The [homeowners tutorial](../examples/homeowners_perils.py) now clusters uncertainty by
-home ID across renewal years, separately from its grouped train/holdout split and its
-fixed-prediction cluster bootstrap comparison. It exports labeled CR0 factor intervals;
+Supported joint contrasts can be assessed with [whole-term tests](TERM_TESTS.md).
+
+The [homeowners tutorial](../examples/homeowners_perils.py) clusters uncertainty by
+home ID across renewal years, separately from its grouped train/holdout split.
+It exports labeled CR0 factor intervals;
 it still models attritional water/theft only, not catastrophe aggregation.
 
 Tests independently aggregate dense scores for all families and both solvers, check

@@ -1,3 +1,0 @@
-candidate,status,converged,eligible,rows,weight,actual,expected,ae_ratio,mean_loss,error,loss_difference_lower,loss_difference_upper
-glm_frequency,scored,true,true,169504,89725.25415001123,6566.0,6631.173672446962,0.9901716233556416,0.453824774315503,,0.0,0.0
-booster_frequency,scored,,false,169504,89725.25415001123,6566.0,6629.385095071584,0.9904387670707641,0.45104406304598876,,-0.003448509477066907,-0.0021402478532761464

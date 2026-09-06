@@ -62,7 +62,7 @@ carries that finding. It does not silently sort the edited factors. Refitting th
 source Plan enforces the declared direction again. Saved source inference never
 becomes fitting evidence for an edited scorer.
 
-## Verification and remaining work
+## Verification and scope
 
 Rust tests compare the block algorithm against every contiguous partition for 3,072
 loss comparisons. Fitting tests check exact weighted offset solutions, both directions,

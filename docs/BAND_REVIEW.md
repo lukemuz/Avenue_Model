@@ -33,5 +33,4 @@ Pure categorical and intercept tables need no numeric interval labels.
 These are derived review columns. Editable workbook files keep the original scoring
 schema; loading a workbook regenerates the labels. Tests check multi-axis matching at
 boundaries and in tails, unsupported geometry, name collisions, A/E reconciliation,
-coefficient intervals and unchanged workbook predictions. The auto-pricing example
-exports these labels in its factor review files.
+coefficient intervals and unchanged workbook predictions. Inspect `model.rating_tables_by_name()` to access these review labels.

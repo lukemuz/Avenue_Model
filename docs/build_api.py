@@ -9,7 +9,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'studies'))
-from readiness_acceptance import git, installed_wheel_evidence, sha256
+from wheel_acceptance import git, installed_wheel_evidence, sha256
 
 
 class Anchors(HTMLParser):
@@ -34,7 +34,7 @@ def main():
     import pdoc
     commit = git('rev-parse', 'HEAD')
     source = f'https://github.com/lukemuz/Avenue_Model/blob/{commit}/docs'
-    guides = [('Workflow and support matrix', 'WORKFLOW_SUPPORT.md'),
+    guides = [('User guide', 'README.md'),
               ('Scoring and exposure', 'SCORING_CONTRACT.md'),
               ('Continuous splines', 'SPLINES.md'),
               ('Inference and intervals', 'COEFFICIENT_INTERVALS.md'),

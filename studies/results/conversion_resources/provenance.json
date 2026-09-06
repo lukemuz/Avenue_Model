@@ -1,9 +1,0 @@
-{
-  "source_commit": "2283bbbf64172a3f31945f5be0e2162d74aec991",
-  "sha256": {
-    "python/avenue_model/conversion.py": "776635939f922457c73e081302948ad6094f70830a679d2fef0d652c317b9b92",
-    "tests/test_conversion_resources.py": "063054c7ad63537618951cb5e9d59aecf745bcbeea0a99697cd40f95f653d5c9",
-    "evaluation/fork_results/fork_numeric/selected_booster.txt": "98cc39b552de9aa00472edbff9b7dce1a11a5abb6834844e68443423bfac6174"
-  },
-  "scope": "Local editable source; LightGBM fork 4.6.0.99. No new installed-wheel acceptance."
-}

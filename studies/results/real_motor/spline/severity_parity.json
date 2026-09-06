@@ -1,0 +1,9 @@
+{
+  "atol": 1e-06,
+  "rtol": 2e-06,
+  "failed_rows": 0,
+  "holdout_rows": 6273,
+  "max_relative_difference": 2.0920023880030705e-09,
+  "fit_tolerance": 1e-11,
+  "reference_gradient_tolerance": 1e-09
+}

@@ -32,11 +32,11 @@ jobs:
         # With the `tuning` extra, so the converted-model tests actually run rather
         # than skipping: a skipped test is not a passing one.
         run: python -m pip install "$(echo dist/*.whl)[tuning,test]"
-      - name: Run Python tests
-        run: python -m unittest discover -s tests -v
-      - name: Run synthetic auto study
-        run: python examples/auto_pricing_study.py --output /tmp/avenue-auto-study
-      - name: Run synthetic homeowners study
-        run: python examples/homeowners_perils.py --output /tmp/avenue-homeowners-study
-      - name: Run synthetic booster study
-        run: python examples/booster_pricing_study.py --output /tmp/avenue-booster-study --refit-glm
+      - name: Verify wheel and run tests and examples
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess, sys
+          wheel = next(Path('dist').glob('*.whl'))
+          subprocess.check_call([sys.executable, 'studies/wheel_acceptance.py',
+                                 '--wheel', str(wheel), '--output', '/tmp/avenue-wheel-acceptance'])

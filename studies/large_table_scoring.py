@@ -1,4 +1,4 @@
-"""Repeat the historical four-table motor scoring workload without refitting it."""
+"""Measure exact booster/workbook scoring on a deterministic motor holdout."""
 import argparse
 import hashlib
 import importlib
@@ -23,21 +23,19 @@ def digest(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--evaluation', type=Path, required=True)
+    parser.add_argument('--frequency', type=Path, required=True, help='OpenML 41214 policy parquet')
+    parser.add_argument('--booster', type=Path, required=True, help='Saved LightGBM model using age, vehicle_age, bonus, region and fuel')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--repeats', type=int, default=5)
     parser.add_argument('--quote-rows', type=int, help='Score this many leading holdout rows for a batch-size study')
-    artifact = parser.add_mutually_exclusive_group()
-    artifact.add_argument('--reconvert', action='store_true', help='Measure a fresh conversion, including current missing routes, instead of the historical workbook')
-    artifact.add_argument('--model', type=Path, help='Score an exact saved JSON artifact against the same original booster and quotes')
+    parser.add_argument('--workbook', type=Path, help='Exact workbook JSON to score; otherwise convert the supplied booster')
     args = parser.parse_args()
     if args.repeats < 3:
         parser.error('at least three repeats are required')
     if args.quote_rows is not None and args.quote_rows < 1:
         parser.error('--quote-rows must be positive')
     args.output.mkdir(parents=True, exist_ok=False)
-    source = args.evaluation / 'fork_results/fork_numeric'
-    data_path = args.evaluation / 'data/freMTPL2freq.parquet'
+    data_path = args.frequency
     raw = pd.read_parquet(data_path)
     # Exactly the original feature construction, row split and training-only maps.
     # Historical response/exposure clipping does not enter this scoring-only frame.
@@ -59,17 +57,13 @@ def main():
             parser.error('--quote-rows exceeds the holdout population')
         x = x[:args.quote_rows]
     quotes = pl.DataFrame({n: x[:, i] for i, n in enumerate(names)})
-    booster_path = source / 'selected_booster.txt'
+    booster_path = args.booster
     booster = lgb.Booster(model_file=str(booster_path))
     started = time.perf_counter()
-    if args.model:
-        model = Workbook.load_json(str(args.model)).to_model()
-    else:
-        model = from_booster(booster).model if args.reconvert else Workbook.load_csv_dir(str(source / 'selected')).to_model()
+    model = (Workbook.load_json(str(args.workbook)).to_model() if args.workbook
+             else from_booster(booster).model)
     artifact_setup_seconds = time.perf_counter() - started
     tables = model.to_workbook().tables
-    if not args.reconvert and not args.model:
-        assert len(tables) == 4 and sum(t.height for t in tables) == 19181
     reference = booster.predict(x, num_threads=4)
     timings = []
     for _ in range(args.repeats):
@@ -80,19 +74,17 @@ def main():
     np.save(args.output / 'prediction.npy', actual)
     extension = Path(importlib.import_module('avenue_model.avenue_model').__file__)
     artifact_paths = [data_path, booster_path]
-    if args.model:
-        artifact_paths.append(args.model)
-    elif not args.reconvert:
-        artifact_paths += sorted((source / 'selected').iterdir())
+    if args.workbook:
+        artifact_paths.append(args.workbook)
     model.to_workbook(scale='factor').save_json(str(args.output / 'model.json'))
     result = {
         'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
         'matching_sha256': digest(Path(__file__).resolve().parents[1] / 'src/glm/matching.rs'),
         'script_sha256': digest(Path(__file__)), 'extension_sha256': digest(extension),
-        'artifact_source': 'supplied_workbook' if args.model else ('fresh_conversion' if args.reconvert else 'historical_workbook'),
+        'artifact_source': 'supplied_workbook' if args.workbook else 'fresh_conversion',
         'artifact_setup_seconds': artifact_setup_seconds,
         'model_json_sha256': digest(args.output / 'model.json'),
-        'inputs': {str(p.relative_to(args.evaluation) if p.is_relative_to(args.evaluation) else p): digest(p) for p in artifact_paths if p.is_file()},
+        'inputs': {str(p): digest(p) for p in artifact_paths if p.is_file()},
         'versions': {p: importlib.metadata.version(p) for p in ['avenue_model', 'lightgbm', 'numpy', 'pandas', 'polars']},
         'threads': {k: os.environ.get(k) for k in ['OMP_NUM_THREADS', 'POLARS_MAX_THREADS', 'RAYON_NUM_THREADS']},
         'train_rows': train.height, 'quote_rows': quotes.height,

@@ -46,7 +46,7 @@ input as zero, as the booster does. Categorical nulls in Int32 input columns fol
 the complement/wildcard route. Integer codes remain the boundary requirement for
 categorical boosters.
 
-`zero_as_missing` is explicitly rejected pending support for its separate near-zero
+`zero_as_missing` is unsupported and rejected because it uses a separate near-zero
 routing rule. Constant-only boosters produce an intercept artifact in both modes.
 Preprocessing is explicit caller code; see the booster example.
 

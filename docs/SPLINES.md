@@ -53,7 +53,7 @@ matrix; aliased coefficients are not assigned finite standard errors.
 Validation A/E exhibits describe explicit support intervals rather than assigning
 an observed rate to a knot value. A knot need not coincide with any observation to
 be estimated. The fitter rejects singular within-spline information. Post-fit covariance detects
-full-design aliases; pre-fit spline conditioning exhibits are still being developed.
+full-design aliases.
 
 ## Export and editing
 
@@ -129,11 +129,10 @@ from the earlier spline fit. The prior's knot values remain locked and are not
 reported as newly estimated parameters. An update that also estimates a new spline uses its continuous basis in the
 new fit covariance; uncertainty in the fixed prior still is not propagated.
 
-## Real-portfolio evidence
+## Real-portfolio checks
 
-The [real motor acceptance study](REAL_SPLINE_ACCEPTANCE.md) passes independent
-prediction and delivery checks for frequency, severity and pure premium. The tested
-five-quantile-knot specifications have worse holdout loss than the banded baseline,
-wide uncertainty at a sparse boundary, and slower fitting. That evidence limits the
-current performance and modeling-quality claims; it does not justify replacing the
-banded specification automatically.
+The [motor evaluation](../studies/README.md#real-motor-comparison) compares banded and
+five-knot spline fits with independent glum predictions. Its retained single-split
+results favor bands on holdout loss for this specification. Knot counts should be
+chosen for the problem and evaluated on reserved observations. Correct numerical
+fitting alone does not establish a better predictive specification.

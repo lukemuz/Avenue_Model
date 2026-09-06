@@ -1,4 +1,4 @@
-"""Fresh-wheel real frequency/severity study; never writes historical evaluation outputs.
+"""Real motor frequency/severity checks against independent glum fits.
 
 Inputs: OpenML 41214 policy parquet and 41215 claim parquet. No caps or monetary
 adjustments. Frequency here counts observed paid claim records, not reported ClaimNb.

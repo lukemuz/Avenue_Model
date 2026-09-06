@@ -1,4 +1,0 @@
-candidate,status,converged,training_status,declared_training_status,eligible,rows,weight,actual,expected,ae_ratio,mean_loss,error,gini,normalized_gini,discrimination_status,loss_difference_lower,loss_difference_upper
-baseline,scored,true,converged,,true,6000,6000.0,6013.0,6000.0,1.0021666666666667,1.4811666666666667,,0.0,0.0,available,,
-pooled,scored,,completed,completed,true,6000,6000.0,6013.0,6023.495525543764,0.9982575689648551,1.2655809850784203,,0.2241676645046843,0.3699527765369812,available,,
-unpooled,scored,,completed,completed,true,6000,6000.0,6013.0,5536.353709544146,1.0860939014127946,6.858290834296445,,0.1458876877875713,0.24076423010797096,available,,

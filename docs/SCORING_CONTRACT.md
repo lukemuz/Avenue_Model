@@ -19,7 +19,7 @@ category encoding. The target column is never a scoring input.
 Training and validation still require their response and weight/offset columns.
 These scoring rules also apply to a workbook converted back to a model.
 
-An empty term list now means an intercept-only model. For example,
+An empty term list means an intercept-only model. For example,
 `Plan.frequency("exposure").fit(data, "frequency")` estimates the exposure-weighted
 portfolio frequency and exports an ordinary one-table workbook.
 
@@ -33,22 +33,15 @@ the penalty-only optimum. Both table and global solvers use this rule, including
 paired ridge updates. Review still marks these rows `no_data`; the value is not a
 data-supported estimate or an uncertainty statement.
 
-This corrects solver-dependent unused-row predictions in earlier penalized refits.
-It does not add a route for an unmatched quote: strict matching still applies.
+This does not add a route for an unmatched quote: strict matching still applies.
 Locked factors remain fixed. Unpenalized unused rows retain their starting factors
 subject to normalization; monotonic and smooth terms have their own documented
 extrapolation rules. Existing saved scoring workbooks retain their saved values;
 the new rule applies when fitting again.
 
-## Migration from 0.1.0 evaluation behavior
+## Invalid quote rows
 
-Offset models previously returned rates from `predict()` while validation used counts.
-Remove manual multiplication by exposure after predicting with an offset model.
-Frequency presets retain their existing rate-plus-weight convention; multiply their
-rates by exposure when computing counts. Severity and rate quote frames no longer
-need dummy training-weight columns.
-
-`predict()` now raises on unmatched rows or nonfinite results. For batch review, use
+`predict()` raises on unmatched rows or nonfinite results. For batch review, use
 `predict_diagnostics(frame)`: it returns `row` (zero-based input position),
 `predictions`, `status` (`ok`, `unmatched`, or `nonfinite`) and `unmatched_tables`.
 Failed predictions are Polars nulls, not NaNs or invented neutral factors. Valid
@@ -73,7 +66,7 @@ not divide a count by zero. These methods require a Poisson response with a reco
 target, exposure column and weight/offset convention. Severity, composed and
 unspecified response means raise instead of guessing a count interpretation.
 `prediction_kind` describes this limited recorded convention; `response` leaves
-physical units unspecified. General loss/currency/unit metadata remains planned.
+physical units unspecified. Physical units are defined by the caller.
 
 `input_schema` contains predictor kinds and internal dtypes, encoded `(label, code)`
 pairs where available, separate `prediction_columns` and `validation_columns`,
@@ -82,11 +75,11 @@ those strings or their numerical codes. Internal dtypes describe the table match
 the boundary normalizes supported input types as usual. The schema reflects the
 current artifact and survives workbook reload.
 
-Negative, null, NaN and infinite exposure now raise during fitting and validation
+Negative, null, NaN and infinite exposure raise during fitting and validation
 as well as count scoring. Weight-zero rows carry no fitting weight. Offset models
 still require positive training exposure; zero scoring exposure yields zero counts.
 
-Numeric nulls and NaNs no longer silently match the first band. Ordinary GLM tables
+Numeric nulls and NaNs do not match ordinary finite bands. Ordinary GLM tables
 without an explicit missing-only bound report them as unmatched. Converted booster
 tables may contain an explicit `NaN` bound encoding the booster's valid missing
 route. These rows are preserved by format-2 CSV/JSON workbooks.

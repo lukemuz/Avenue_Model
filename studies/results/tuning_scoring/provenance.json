@@ -1,9 +1,0 @@
-{
-  "source_commit": "afec9d5c9300c0e95e998359d318ee0f213910e0",
-  "source_sha256": {
-    "python/avenue_model/tuning.py": "3ee68b939920299deb29afb93ffa2dcf10f003c50c135583ecb997f13e359db6",
-    "examples/booster_pricing_study.py": "0999c3fb1fffd71db4c8b336c0e134e82ca1a73ffb8f985984e46c6f310fc0fb",
-    "tests/test_tuning_contract.py": "e19b535a2876bccd34b60cf4af74ae9762951e3f2986136ad1640898b847fb53"
-  },
-  "environment": "editable release extension; stock LightGBM 4.7.0 and fork 4.6.0.99; OMP/POLARS/RAYON threads 4"
-}

@@ -1,5 +1,7 @@
-"""Verify an installed release wheel, run all Python tests and the three tutorials."""
+"""Verify an installed release wheel, run all Python tests and the four tutorials."""
 import argparse
+import hashlib
+import zipfile
 import importlib.metadata
 import json
 import os
@@ -10,7 +12,46 @@ import sys
 import time
 import unittest
 
-from readiness_acceptance import ROOT, git, installed_wheel_evidence, sha256
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as source:
+        for block in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def git(*args):
+    return subprocess.check_output(['git', *args], cwd=ROOT, text=True).strip()
+
+
+def installed_wheel_evidence(wheel):
+    import avenue_model
+    distribution = importlib.metadata.distribution('avenue_model')
+    origin = Path(avenue_model.__file__).resolve()
+    if origin.is_relative_to(ROOT / 'python'):
+        raise ValueError('Acceptance requires an installed wheel, not the source package')
+    direct_url = json.loads(distribution.read_text('direct_url.json') or '{}')
+    if direct_url.get('dir_info', {}).get('editable'):
+        raise ValueError('Acceptance refuses an editable installation')
+    # Version strings alone cannot distinguish successive local 0.1.0 builds.
+    # Verify every installed package payload against the supplied wheel bytes.
+    verified = []
+    with zipfile.ZipFile(wheel) as archive:
+        for name in archive.namelist():
+            if not name.startswith('avenue_model/') or name.endswith('/'):
+                continue
+            installed = Path(distribution.locate_file(name))
+            expected = hashlib.sha256(archive.read(name)).hexdigest()
+            if not installed.is_file() or sha256(installed) != expected:
+                raise ValueError(f'Installed package differs from supplied wheel: {name}')
+            verified.append(name)
+    if not any(name.endswith('.so') or name.endswith('.pyd') for name in verified):
+        raise ValueError('The supplied wheel has no verified native extension')
+    return {'path': str(wheel), 'sha256': sha256(wheel), 'import_origin': str(origin),
+            'installed_payload_files_verified': len(verified), 'direct_url': direct_url}
 
 
 def main():
@@ -49,7 +90,8 @@ def main():
             raise RuntimeError('Wheel tests failed or skipped tests; inspect tests.log')
         for name, script in [('auto', 'auto_pricing_study.py'),
                              ('homeowners', 'homeowners_perils.py'),
-                             ('booster', 'booster_pricing_study.py')]:
+                             ('booster', 'booster_pricing_study.py'),
+                             ('smooth', 'smooth_pricing_study.py')]:
             path = ROOT / 'examples' / script
             command = [sys.executable, str(path), '--output', str(output / name)]
             if name == 'booster':

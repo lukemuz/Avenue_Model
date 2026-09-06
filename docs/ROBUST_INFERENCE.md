@@ -14,8 +14,8 @@ print(review.tables['region'])
 `covariance='model_based'` remains the default. HC0 changes uncertainty only:
 coefficients, score convergence, response predictions, dispersion estimation and
 likelihood/AIC calculations keep their existing meanings. The report, low-level
-`GLMDiagnostics`, `FittedModel.inference_summary`, interval metadata and analytical
-inference metadata identify the covariance method explicitly.
+`GLMDiagnostics`, `FittedModel.inference_summary`, and interval metadata identify
+the covariance method explicitly.
 
 The implementation uses the same identifiable reduced design as ordinary inference,
 including two-way interaction reference constraints and polynomial variate loadings.
@@ -50,8 +50,9 @@ an otherwise usable scorer disappear. Intervals require a converged original fit
 `coefficient_intervals(..., dispersion='quasi_poisson')` rejects HC0: quasi-Poisson
 scaling is a separate alternative, not another multiplier for robust errors.
 
-HC0 has no leverage correction, finite-sample correction, clustering, whole-term
-Wald tests or adjustment for model selection. It can be unreliable in small samples
+Supported joint contrasts can be assessed with [whole-term tests](TERM_TESTS.md).
+HC0 has no leverage correction, finite-sample correction, clustering or adjustment
+for model selection. It can be unreliable in small samples
 or high-leverage cells. Repeated policies, geographic dependence or other cluster
 structures need [explicit clustered inference](CLUSTER_INFERENCE.md); HC0 alone does
 not account for them. Standard errors

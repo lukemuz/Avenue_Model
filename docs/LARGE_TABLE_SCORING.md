@@ -31,10 +31,8 @@ The independent row matcher checks a three-dimensional grid against all 2,197
 combinations of boundary, tail, signed-zero, infinite, null and NaN probes, plus invalid
 grid variants. Two additional three-dimensional grids check explicit missing routes,
 including a missing-only axis, 2,662 probe combinations, NaN payloads and chunked data.
-Existing conversion tests now exercise both tiny and indexed-size quote batches
-through both consolidation modes and workbook reloads. Verification passed 284 active
-Rust tests (six ignored) and 147 Python
-tests; the doctest remains ignored.
+Conversion tests exercise tiny and indexed-size quote batches through both
+consolidation modes and workbook reloads.
 
 ## Reproduced historical workload
 
@@ -55,7 +53,7 @@ On the same AMD Ryzen 9 9950X Linux x86-64 machine, with four-thread limits:
 
 This is approximately 128–136 times faster than the immediately preceding engine on
 this specific large-grid workload. The original historical median was 3.0966 seconds;
-the plan's fivefold engineering target is met locally on its original workload.
+these observations apply to the recorded workload and builds.
 All four runs produce byte-identical predictions, with maximum relative error
 `4.996e-15` against the saved booster. Every timed call must pass `atol=rtol=1e-12`
 before the runner records a successful result.
@@ -69,22 +67,37 @@ Small workloads, irregular tables and other hardware need their own measurements
 The [retained results](../studies/results/large_table_scoring/) record every timing,
 input and prediction fingerprint, source/matcher/script/native-extension hashes, thread
 settings and dependency versions. They use an editable local release extension, not a
-fresh installed wheel. Run from the repository with the historical evaluation artifacts:
+fresh installed wheel.
+
+## Reproduce a scoring measurement
+
+The runner requires a policy parquet (OpenML 41214) and a saved numerical LightGBM
+booster with features `age`, `vehicle_age`, `bonus`, `region`, `fuel`. It reconstructs
+the historical seeded 75% training split and sorted training-only category maps.
+Only use a booster trained with those exact feature conventions.
 
 ```sh
 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4 \
 POLARS_MAX_THREADS=4 RAYON_NUM_THREADS=4 python studies/large_table_scoring.py \
-  --evaluation evaluation --output /tmp/avenue-large-table-scoring
+  --frequency /path/freMTPL2freq.parquet --booster /path/selected_booster.txt \
+  --output /tmp/avenue-scoring
 ```
 
-The output directory must be new. NumPy, pandas, Polars and LightGBM are required for
-this benchmark. The recorded run uses the fork environment; it loads the saved model
-without training. A reusable prepared-scoring API and full stage/memory profiling remain
-separate work.
+By default it converts the supplied booster and saves the resulting `model.json`.
+Pass `--workbook /path/model.json` to score that exact artifact on another build.
+This keeps factors and row order fixed. File loading and reference predictions occur
+outside timed calls; every timed prediction must pass booster parity. Inputs, native
+extension, matcher and script hashes are retained with every timing sample.
+
+The output directory must be new. NumPy, pandas, Polars and LightGBM are required.
+The RSS measurement uses Python's Unix `resource` module and covers the whole process.
+The script does not fetch historical models or data. The archived original evaluation
+contains those inputs for exact replay of the records below; other boosters define
+new workloads and cannot reproduce the old table counts or timings.
 
 ## Current conversion with explicit missing routes
 
-`--reconvert` measures a new conversion of the same saved booster. This produces
+Converting the same saved booster with the missing-route implementation produces
 four tables and 21,723 rows, including explicit missing routes, rather than the
 historical workbook's 19,181 rows. Before missing-coordinate indexing, the current
 conversion scored the same 169,504 finite quotes in 0.7566 seconds (median of five).
@@ -93,7 +106,7 @@ relative booster error `4.996e-15`. This extends the speed improvement to the cu
 conversion path; it is not a claim that the two workbook snapshots are identical.
 
 The baseline saves its exact `model.json`. Subsequent runs use
-`--model /path/to/baseline/model.json`, preserving row order as well as table geometry
+`--workbook /path/to/baseline/model.json`, preserving row order as well as table geometry
 and factors. This matters because fresh conversions can enumerate equivalent grid
 coordinates in different valid orders. The [retained follow-up](../studies/results/missing_grid_scoring/)
 checks exact workbook equality excluding only the creation timestamp, prediction

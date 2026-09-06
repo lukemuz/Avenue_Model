@@ -17,8 +17,8 @@ comes out is a set of CSVs a person can read, edit, file and load back.
   engine returned a comparable solution, against glum, scikit-learn and H2O across three
   families and three penalty settings
   ([methodology](src/glm/README.md#the-rest-of-the-field)). These timings cover banded
-  models; the [real spline study](docs/REAL_SPLINE_ACCEPTANCE.md) identifies a substantial
-  fitting-time gap that still needs work.
+  models. Continuous splines have separate fitting characteristics; see the
+  [evaluation scope](studies/README.md).
 - **The plan is data.** Levels, bands, interactions, reference levels and exposure
   treatment are explicit, serializable and reproducible.
   [Monotonic banded effects](docs/MONOTONIC_EFFECTS.md) retain a declared increasing
@@ -38,7 +38,7 @@ Approximation*](https://avenue-analytics.com/research/avenue-analytics-methodolo
 
 ## Complete pricing studies
 
-The [support guide](docs/WORKFLOW_SUPPORT.md) describes the core `Plan`,
+The [support guide](docs/README.md) describes the core `Plan`,
 `FittedModel` and `Workbook` interfaces. Examples use ordinary Polars, NumPy and
 scikit-learn operations for preparation, validation splits and comparisons.
 Run the [auto study](examples/auto_pricing_study.py) or

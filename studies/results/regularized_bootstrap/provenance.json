@@ -1,8 +1,0 @@
-{
-  "artifact_directory": "/tmp/avenue-regularized-bootstrap-evidence",
-  "sha256": {
-    "result.json": "a9eadec4e590a4059f0d8e6f8f3416e5d0e0bb1f224731f151de4fb28bbc9f8d",
-    "summary.csv": "e14617567dea5a247c4aa901c26fc0fc9a5fcd62881974a592a466387e48abea",
-    "history.csv": "1cca5b1c58189f7089573952baeab2315ce3510cf634bcb65ec59d2a5e95c619"
-  }
-}

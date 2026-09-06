@@ -194,4 +194,4 @@ The unpenalised refit also carries Wald standard errors and reference levels, wh
 converted model does not. A penalised fit omits the standard errors, so the ridge row
 is the better model and the unpenalised row is the one to quote errors from.
 
-See the [executable stock/fork study](BOOSTER_STUDY.md) for tuning through raw-quote reload and an audited rate change.
+See the [executable stock/fork study](../examples/booster_pricing_study.py) for tuning through raw-quote reload and an audited rate change.
