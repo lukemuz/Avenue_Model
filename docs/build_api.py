@@ -35,9 +35,9 @@ def main():
     commit = git('rev-parse', 'HEAD')
     source = f'https://github.com/lukemuz/Avenue_Model/blob/{commit}/docs'
     guides = [('User guide', 'README.md'),
-              ('Scoring and exposure', 'SCORING_CONTRACT.md'),
-              ('Continuous splines', 'SPLINES.md'),
-              ('Inference and intervals', 'COEFFICIENT_INTERVALS.md'),
+              ('Scoring and exposure', 'scoring.md#response-and-exposure'),
+              ('Continuous splines', 'modeling.md#continuous-splines'),
+              ('Inference and intervals', 'inference.md#coefficient-intervals'),
               ('LightGBM tuning', 'lightgbm.md')]
     avenue_model.__doc__ += '\n\n## Workflow guides\n\n' + '\n'.join(
         f'- [{title}]({source}/{name})' for title, name in guides)

@@ -20,7 +20,7 @@ splits and JSON reloads. zero_as_missing remains explicitly unsupported.
 basis weights, integrated curvature and dense IRLS information/score references for
 five knot geometries and 220 probes. Linear tails are an explicit fixture convention.
 The per-case derivative tolerances account for reference roundoff on closely spaced
-knots. See [spline conventions](../../docs/SPLINES.md).
+knots. See [spline conventions](../../docs/modeling.md#continuous-splines).
 
 ### Continuous spline GLM references
 
@@ -28,4 +28,4 @@ knots. See [spline conventions](../../docs/SPLINES.md).
 CubicSpline and an independent dense weighted-score root for five GLM families.
 It includes categorical effects, offsets and zero/nonuniform weights. The Rust
 `glm_spline_tests` compares fitted means and anchored coefficients, all normalization
-modes and workbook reloads. See [spline conventions and inference scope](../../docs/SPLINES.md).
+modes and workbook reloads. See [spline conventions and inference scope](../../docs/modeling.md#continuous-splines).

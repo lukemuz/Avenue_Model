@@ -1,338 +1,171 @@
 # Avenue Model
 
-**Models represented as rating tables, from a GLM or from LightGBM.**
+**Fit on rating tables. Convert boosted trees into them. Keep the model editable.**
 
-The rating table is the model. Avenue fits one — directly on the tables, with no
-dummy-coded design matrix anywhere in the process — or converts supported LightGBM
-structure into rating tables with optional numerical parity evidence. Either way what
-comes out is a set of CSVs a person can read, edit, file and load back.
+Avenue is a Python package with a Rust engine for statistical models represented as
+rating tables. It grew out of research into a practical insurance pricing question:
+how much predictive accuracy can we retain in a model that someone can inspect,
+change and deploy as a set of tables?
 
-- **LightGBM becomes inspectable.** A tree ensemble converts into the same rating tables a
-  GLM produces. `from_booster()` can verify prediction agreement on supplied data;
-  unsupported booster semantics fail explicitly. See [conversion support](docs/CONVERSION.md).
-  [Interaction-aware tuning](docs/lightgbm.md) reduces a booster to a handful of readable
-  tables for little loss.
-- **The engine is fast.** Avenue fits on rating tables without materializing an
-  observation-by-parameter matrix — fastest in five of the six scenarios where every
-  engine returned a comparable solution, against glum, scikit-learn and H2O across three
-  families and three penalty settings
-  ([methodology](src/glm/README.md#the-rest-of-the-field)). These timings cover banded
-  models. Continuous splines have separate fitting characteristics; see the
-  [evaluation scope](studies/README.md).
-- **The plan is data.** Levels, bands, interactions, reference levels and exposure
-  treatment are explicit, serializable and reproducible.
-  [Monotonic banded effects](docs/MONOTONIC_EFFECTS.md) retain a declared increasing
-  or decreasing direction through fitting and export.
-  [Continuous spline effects](docs/SPLINES.md) fit and export exact natural cubics
-  with fold-local knots, linear tails and continuous-basis coefficient inference.
-  [Whole-term tests](docs/TERM_TESTS.md) assess supported factor contrasts jointly
-  using the fit's declared covariance method.
-- **Problems are found before fitting.** `check()` reports data faults, thin levels,
-  unidentified terms and redundant tables together, with actionable messages.
-- **The fitted model is an artifact.** Save it as JSON or readable CSV tables, edit it,
-  load it again, validate it and compose it with other models.
+The tables are the model throughout the workflow. Define levels, bands and
+interactions, fit their factors, then export them as readable CSVs. An existing
+rating plan can supply the starting structure or stay fixed while new factors are
+estimated. A LightGBM model can enter the same workflow through exact conversion.
 
-The method, the penalties and the case studies are described in
+Three contributions drive the project:
+
+- **Direct estimation on rating tables.** The GLM table solver works with cached
+  observation-to-row matches, avoiding an observation-by-parameter design matrix.
+  Fitting and scoring share the same matching rules, so the estimated structure
+  carries directly into the delivered model.
+- **Competitive speed with a small memory footprint.** In the recorded six-case
+  real-data comparison with glum, Avenue used less memory in five cases and fitted
+  faster in four. At 20 million observations, one benchmark fitted in 3.1 seconds
+  using 1.2 GB, against glum's 16.5 seconds and 3.6 GB. The
+  [solver notes](src/glm/README.md#benchmarks) include the methods and cases where
+  other engines win.
+- **Exact booster conversion, with sparsity encouraged during training.** Supported
+  LightGBM ensembles convert directly into rating tables without a surrogate fit.
+  The companion [avenue-lightgbm](https://github.com/lukemuz/avenue-lightgbm) fork
+  adds penalties for new feature combinations and within-tree interaction complexity.
+  These let training favor a compact table structure alongside predictive accuracy.
+  In the French motor experiment, an interaction penalty reduced 39 tables to five
+  for a 0.7% increase in cross-validated loss.
+
+The [LightGBM guide](docs/lightgbm.md) develops the conversion and sparsity work,
+with reproducible examples. The accompanying research paper is
 [*GBMs as Factor Tables: Achieving Both Transparency and Interpretability Without
 Approximation*](https://avenue-analytics.com/research/avenue-analytics-methodology.pdf).
 
-## Complete pricing studies
-
-The [support guide](docs/README.md) describes the core `Plan`,
-`FittedModel` and `Workbook` interfaces. Examples use ordinary Polars, NumPy and
-scikit-learn operations for preparation, validation splits and comparisons.
-Run the [auto study](examples/auto_pricing_study.py) or
-[homeowners attritional-peril study](examples/homeowners_perils.py) for executable
-synthetic examples with quote scoring, export/reload and reviewed factor edits.
-
 ## Installation
 
-From a source checkout:
+From a source checkout, with Python 3.12 or newer and a Rust toolchain:
 
 ```bash
 pip install .
 ```
 
-After the first release:
+For LightGBM conversion and tuning, install the optional dependencies:
 
 ```bash
-pip install avenue-model
+pip install '.[tuning]'
+pip install avenue-lightgbm  # optional fork with interaction penalties
 ```
 
-```toml
-[dependencies]
-avenue_model = "0.1.0"
-```
+## Fit, inspect and export
 
-Python 3.12 or newer is required. For LightGBM conversion and tuning:
-
-```bash
-pip install "avenue-model[tuning]"  # adds LightGBM and Optuna
-pip install avenue-lightgbm         # optional interaction penalties
-```
-
-## Quick start
-
-For searchable signatures and method documentation, see the
-[API reference build and hosting guide](docs/API_REFERENCE.md).
-
-Frequency is modelled as claims per unit exposure, with exposure as its prior weight.
-That makes predictions and composition read naturally: frequency predicts claims per
-exposure, severity predicts loss per claim, and their product is loss per exposure.
+This example uses Polars frames `train`, `holdout` and `new_business`.
+The training target `frequency` is claim count divided by exposure.
 
 ```python
-from avenue_model import Plan
+from avenue_model import Plan, Workbook
 
 plan = (
     Plan.frequency("exposure")
     .banded("driver_age", breaks=[21, 25, 35, 50, 70])
-    .banded("vehicle_age", quantile=10)
     .categorical("region")
-    .variate("vehicle_value", quantile=20, degree=2)
 )
 
-# See every decision and data problem before fitting.
 check = plan.check(train, "frequency")
 for issue in check.issues:
-    print(issue["severity"], issue["code"], issue["message"])
+    print(issue["severity"], issue["message"])
 
 fitted = plan.fit(train, "frequency")
+print(fitted.report(holdout).markdown)
 predicted_frequency = fitted.predict(new_business)
 
-# One call gives calibration, discrimination, A/E exhibits and graded findings.
-validation = fitted.validate(holdout)
-print(validation.ae_ratio, validation.gini)
-print(validation.warnings)
-
-# A report combines the plan, fit, validation and rating tables.
-report = fitted.report(holdout)
-print(report.verdict)
-print(report.headline)
-print(report.markdown)
-```
-
-Here `frequency = claim_count / exposure`. Multiply the prediction by exposure for
-expected claim counts. To model raw counts instead, use the explicit Poisson formulation:
-
-```python
-count_plan = Plan(
-    "poisson",
-    exposure="exposure",
-    exposure_role="offset",
-)
-fitted_counts = count_plan.fit(train, "claim_count")
-```
-
-Plans normalize ordinary integer, boolean, string and categorical columns at the
-boundary. Category encodings remain attached to the model, so scoring cannot silently
-assign a familiar level a different code.
-
-### Check before fitting
-
-`plan.check(df, target)` returns resolved bands, base levels and parameter counts along
-with all detected issues rather than stopping at the first:
-
-- missing, null or invalid target and exposure values;
-- observations that match no rating row;
-- empty, constant or thin levels;
-- unidentified variate degrees;
-- near-aliased table pairs; and
-- plans spending more parameters than the data can support.
-
-Findings have stable codes and readable messages. `fit()` runs and retains the same
-check, so its findings travel into the final report.
-
-## Models you can open and edit
-
-The rating tables are the model. Export them as one JSON file or as CSVs with a manifest:
-
-```python
-fitted.to_workbook().save_csv_dir("plan_2026")
-```
-
-```text
-plan_2026/
-  manifest.json
-  00_intercept.csv
-  01_driver_age.csv
-  02_region.csv
-```
-
-The CSVs use category names rather than internal codes and expose one editable factor
-column. The manifest retains everything needed to reconstruct the model.
-
-```python
-from avenue_model import Workbook
-
-loaded = Workbook.load_csv_dir("plan_2026").to_model()
+fitted.to_workbook().save_csv_dir("rating_plan")
+loaded = Workbook.load_csv_dir("rating_plan").to_model()
 loaded.predict(new_business)
-loaded.validate(holdout)
-loaded.report(holdout)
 ```
 
-Loading validates every table and reports all problems together before constructing a
-model.
+`Plan.frequency` fits a Poisson rate using exposure weights; its predictions are
+claims per unit exposure. Quotes need the rating predictors, without observed claims
+or exposure. Explicit count/offset models are also supported; see
+[response and exposure conventions](docs/scoring.md#response-and-exposure).
 
-### Carry an existing plan forward
+The export contains a manifest and one CSV per table, with category labels and
+editable factors. Reloading reconstructs the scorer. After editing factors, use
+`loaded.report(holdout)` to assess the revised model.
 
-An existing model can be held fixed while new factors are fitted on top:
+To carry an existing plan forward, hold it fixed and estimate an additional effect:
 
 ```python
-prior = Workbook.load_csv_dir("plan_2025").to_model()
-
 updated = (
     Plan.frequency("exposure")
-    .offset_model(prior, prefix="prior")
+    .offset_model(loaded, prefix="prior")
     .categorical("telematics")
     .fit(train, "frequency")
 )
 ```
 
-The prior tables contribute to every prediction and spend no new parameters. The new
-intercept can still express a rate-level change. Use `.given(name, table)` instead when
-the old table should provide the shape while its factors are re-estimated.
+Use `Plan.given()` when existing tables should supply the structure and their factors
+should be re-estimated. This also lets the GLM solver refit a booster-selected structure.
 
-### Compose frequency and severity
-
-Fitted, loaded and converted components use `FittedModel`. Combine their predictions
-with ordinary arithmetic, keeping each component workbook independently editable.
-
-```python
-frequency = (
-    Plan.frequency("exposure")
-    .categorical("region")
-    .fit(train, "frequency")
-)
-severity = (
-    Plan.severity("claim_count")
-    .categorical("region")
-    .fit(claims, "severity")
-)
-
-pure_premium = frequency.predict_rate(quotes).to_series() * severity.predict(quotes).to_series()
-```
-
-The product is loss per exposure. Add peril loss-cost predictions on that same
-response scale. The existing `FittedModel +` operator combines log-link factor
-tables multiplicatively; it does not add response means or infer a new loss family.
-
-## Exact LightGBM conversion
+## Convert a booster
 
 ```python
 from avenue_model import from_booster
 
-conversion = from_booster(booster, new_business, consolidation="max")
+conversion = from_booster(booster, quote_predictors, consolidation="max")
 print(conversion.parity)
 converted = conversion.model
-predictions = converted.predict(new_business)
+converted.to_workbook().save_csv_dir("converted_plan")
 ```
 
-What comes back is rating tables, not an explanation of a model that stays a black box:
+Conversion groups the ensemble's contributions into tables, sums their factors and
+applies the inverse link. The result uses the same scoring and workbook interfaces
+as a fitted GLM. The parity report checks prediction agreement on the supplied rows;
+[conversion support](docs/lightgbm.md#conversion-support-and-verification) describes
+supported objectives, missing-value routes and input requirements.
 
-```text
-02_prior_charge_count__sex.csv        03_sex__age.csv
-  Prior_Charge_Count  Sex  Factor       Sex   Age   Factor
-                 0.0    F  -1.1001        F  20.5   1.4170
-                 1.5    F  -0.4956        F  21.5   1.0817
-                 2.5    F   0.0441        F  22.5   0.8567
-                 ...                      ...
-```
-
-Add the intercept to one factor from each table and apply the inverse link. That is the
-whole model — the same arithmetic a filed rating plan uses.
-
-Supported conversion changes representation, not prediction; the parity report checks
-agreement on the supplied rows. On French motor claim frequency, the end-to-end example tunes
-for accuracy and table count, converts the result and writes it as CSV:
-
-```bash
-python examples/french_motor.py
-```
-
-With [`avenue-lightgbm`](https://github.com/lukemuz/avenue-lightgbm), it produces five
-tables at 0.591 held-out mean Poisson deviance. Table-size controls, category handling,
-consolidation and GLM refitting are covered in [the LightGBM guide](docs/lightgbm.md).
-
-Converted models do not inherently know which observed response they explain. Add that
-metadata before validation:
-
-```python
-converted = converted.with_response(
-    "frequency",
-    exposure="exposure",
-    exposure_role="weight",
-)
-```
-
-## Why fit on tables?
-
-A conventional rating workflow expresses feature structure once in preprocessing and
-again in the deployed tables:
-
-```text
-Conventional:
-rating structure -> encoding -> model matrix -> coefficients -> rebuilt tables
-
-Avenue:
-rating tables + observations -> fitted rating tables
-```
-
-In Avenue, fitting and prediction use the same matching code. Levels, bands, interactions
-and wildcard rules therefore cannot drift between estimation and deployment. Avoiding a
-dense dummy-coded matrix is also valuable for high-cardinality factors and interactions.
-
-For direct control, the lower-level `RatingModel`, `fit_glm` and
-`fit_glm_with_diagnostics` APIs remain available.
-
-## Capabilities
-
-Avenue supports Gaussian, Poisson, Gamma, Tweedie and Binomial GLMs; categorical,
-banded, polynomial and interaction terms; ridge, lasso and elastic net; weights, offsets
-and locked factors; statistical inference; validation and model reports; editable JSON
-and CSV workbooks; model composition; and exact LightGBM conversion.
+Exactness and readability are separate concerns: a complex ensemble can produce
+large tables. `tune_lgbm` searches cross-validated loss and table count together;
+the interaction penalties guide training toward fewer feature combinations. Review
+total rows and interaction order as well as table count before choosing a model.
 
 ## Performance at a glance
 
-**Avenue is usually the fastest GLM engine tested, rivaled only by glum, and is almost
-always the most memory-efficient.** Every reported benchmark first checks that the
-engines produce comparable fitted means. On the six-case real-data suite Avenue wins
-four fits and five memory comparisons:
+These are recorded fit benchmarks for banded GLMs, with fitted-mean agreement checked
+before comparing speed. They demonstrate the solver's strengths on rating models;
+they are not a survey of every GLM implementation or a timing guarantee for each release.
 
-| Dataset | Avenue fit | Avenue peak | glum fit | glum peak |
+| Dataset | Avenue fit | Avenue memory | glum fit | glum memory |
 |---|---:|---:|---:|---:|
-| freMTPL2, 678k rows, 79 parameters, Poisson | **0.26 s** | **87 MB** | 0.49 s | 165 MB |
-| census income, 45k rows, 116 parameters, Binomial | **0.15 s** | **6 MB** | 0.21 s | 11 MB |
-| NYC taxi, 2.75M rows, 577 parameters, Gamma | 5.22 s | **272 MB** | **3.82 s** | 479 MB |
-| house sales, 21.6k rows, 92 parameters, Gamma | **0.046 s** | **9 MB** | 0.055 s | 81 MB |
+| French motor, 678k rows, Poisson | **0.26 s** | **87 MB** | 0.49 s | 165 MB |
+| Census income, 45k rows, Binomial | **0.15 s** | **6 MB** | 0.21 s | 11 MB |
+| NYC taxi, 2.75M rows, Gamma | 5.22 s | **272 MB** | **3.82 s** | 479 MB |
+| House sales, 21.6k rows, Gamma | **0.046 s** | **9 MB** | 0.055 s | 81 MB |
 
-glum is the closest general-purpose competitor: like Avenue, it avoids a dense
-dummy-coded design matrix. Avenue also leads the wider comparison with scikit-learn and
-H2O, winning five of the six cases in which every engine returned a comparable solution:
+A separate comparison with glum, scikit-learn and H2O found Avenue fastest in five of
+six cases where all engines returned comparable fitted means. glum wins the taxi
+fit above; direct factorization is also particularly effective on small Gaussian
+models. Avenue provides both table descent and global IRLS to accommodate these
+different workloads.
 
-| fit time, Avenue = 1.00x | Avenue | glum | scikit-learn | H2O |
-|---|---:|---:|---:|---:|
-| freMTPL2, Poisson, unpenalised | **1.00x** | 2.5x | 2.9x | 3.2x |
-| census income, Binomial, ridge | **1.00x** | 1.8x | 1.3x | 4.3x |
-| freMTPL2, Poisson, lasso | **1.00x** | 2.6x | n/a — no L1 for a Poisson GLM | n/a — fitted means disagree |
+See [benchmarks and reproduction commands](src/glm/README.md#benchmarks) for the full
+results, memory measurement conventions, synthetic cases and conditioning limits.
+The [evaluation guide](studies/README.md) covers correctness checks and newer studies.
 
-The exceptions are informative. glum wins the high-cardinality NYC taxi fit;
-scikit-learn's `newton-cholesky` wins the small house-sales Gamma fit, where a few direct
-factorisations cost less than repeated passes over the rows. `n/a` means an engine could
-not express the model or did not return comparable fitted means—not that it ran slowly.
+## Explore the package
 
-Timings vary by machine, so compare results within each table. Full methodology,
-synthetic and 20-million-row results, memory measurements, correctness gates, and
-reproduction commands are in the
-[GLM documentation](src/glm/README.md#benchmarks); the wider comparison is
-[here](src/glm/README.md#the-rest-of-the-field).
+Avenue supports Gaussian, Poisson, Gamma, Tweedie and Binomial GLMs, with categorical,
+banded, polynomial, interaction and continuous spline effects. It includes monotonic
+bands, ridge/lasso/elastic net, weights, offsets and locked factors. Supported
+unpenalized fits provide coefficient intervals and joint term tests, with model-based,
+HC0 or clustered covariance. The guides describe which combinations are available.
 
-## Known gaps
+- [User guides](docs/README.md): specification, scoring, inference and LightGBM.
+- [Auto pricing example](examples/auto_pricing_study.py): frequency/severity fitting,
+  validation, export and factor edits.
+- [Homeowners example](examples/homeowners_perils.py): separate peril models and
+  clustered inference.
+- [Booster example](examples/booster_pricing_study.py): tuning, conversion and GLM refitting.
+- [Continuous effects example](examples/smooth_pricing_study.py): natural cubic splines.
+- [GLM internals](src/glm/README.md) and [rating-table representation](src/rating_model/README.md).
 
-- `predict()` raises for unmatched rows or nonfinite predictions. Use
-  `predict_diagnostics()` for row-level statuses and null results on failed rows.
-  Valid explicit wildcard/default routes remain supported.
-- Converted models preserve LightGBM thresholds verbatim; rounding them can change which
-  rows match.
+The examples use synthetic data unless stated otherwise. The
+[real motor study](studies/results/real_motor/README.md) records comparisons on public data.
 
 ## Development
 
@@ -342,22 +175,7 @@ maturin develop --release
 python -m unittest discover -s tests
 ```
 
-Python code lives in `python/avenue_model/`; the Rust engine is re-exported from the
-package root. Compatible Polars versions are pinned in `pyproject.toml`.
-
-## Documentation
-
-- [GLM internals and benchmarks](src/glm/README.md)
-- [LightGBM as rating tables](docs/lightgbm.md) — table size, tuning, category names
-  and refitting as a GLM
-- [Rating tables, matching and LightGBM conversion](src/rating_model/README.md)
-- Rust API documentation: `cargo doc --open`
-- Python API documentation is available through `help(avenue_model)` and
-  `help(avenue_model.Plan)`; the [searchable reference](docs/API_REFERENCE.md)
-  builds locally, with hosted deployment configured but not yet verified.
-
-## Built with
-
-- [Polars](https://www.pola.rs/) — fast DataFrames
-- [PyO3](https://pyo3.rs/) — Python bindings
-- [Rayon](https://github.com/rayon-rs/rayon) — parallelism
+Python code lives in `python/avenue_model/`; Rust fitting and scoring live in `src/`.
+The engine uses Polars, PyO3 and Rayon. See the [evaluation guide](studies/README.md)
+for installed-wheel checks and the [API reference guide](docs/API_REFERENCE.md) to
+build searchable documentation. Rust API documentation is available with `cargo doc --open`.

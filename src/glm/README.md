@@ -64,7 +64,8 @@ usually preferable for strongly conditioned plans and unpenalized Gaussian model
 
 ## Benchmarks
 
-Every reported result is gated on comparable fitted means. Times are fit-only release
+These recorded benchmarks cover banded models and are gated on comparable fitted
+means. They have not been rerun for this documentation revision. Times are fit-only release
 builds and the fastest of repeated runs. Absolute times depend on hardware; compare
 engines within a table. glum is the primary competitor because its `tabmat` backend also
 avoids a dense dummy-coded matrix. statsmodels is used as a correctness reference.
@@ -101,6 +102,11 @@ Whole-process peak RSS, including data and interpreter:
 | Poisson, 5M rows | **564 MB** | 1,200 MB | — |
 
 ### Real data
+
+Memory here is sampled incremental peak RSS across each engine’s preparation and
+fitting, excluding the shared input data. The whole-process figures above include
+the interpreter and input data. Allocation reuse and sampling resolution affect
+incremental measurements; a reported zero does not mean a zero-memory fit.
 
 | unpenalized | Avenue fit | Avenue peak | glum fit | glum peak |
 |---|---:|---:|---:|---:|
@@ -139,8 +145,9 @@ every comparable case. The full nine-case output remains reproducible with
 | 100 tables of 6 levels | **39.3 s, 10.8 GB** | 865.9 s, 21.1 GB |
 | 5 tables of 101 levels | **3.1 s, 1.2 GB** | 16.5 s, 3.6 GB |
 
-The two cases have the same data and parameter count. Their different table layouts
-show the `O(n · T)` versus `O(n · T²)` iteration cost directly. Fitted means agree to
+The two cases have the same observation and parameter counts but different table
+layouts. The results illustrate how table count affects the relative cost of
+coordinate sweeps and Gram-matrix construction. Fitted means agree to
 `5.6e-09` and `3.2e-09`.
 
 ### Conditioning limit

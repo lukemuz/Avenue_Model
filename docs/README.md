@@ -1,36 +1,28 @@
-# Avenue documentation
+# Avenue user guides
 
-Avenue centers on `Plan` for fitting, `FittedModel` for prediction and inspection,
-and `Workbook` for editable delivery. Data preparation and study orchestration
-belong in the calling application.
+Start with the [README example](../README.md#fit-inspect-and-export). The public workflow
+has three objects: `Plan` defines what to fit, `FittedModel` predicts and reports,
+and `Workbook` stores editable tables.
 
-Use Polars expressions for targets and adjustments, scikit-learn for splits and
-metrics, and Python loops for candidate evaluation. Multiply frequency and severity
-predictions or add peril predictions in consistent response units. These operations
-do not require another model type or serialization format.
+| Guide | Covers |
+|---|---|
+| [Model specification](modeling.md) | Interactions, monotonic bands and continuous splines |
+| [Scoring and model review](scoring.md) | Exposure conventions, pandas input, band bounds and quote explanations |
+| [Statistical inference](inference.md) | Coefficient intervals, HC0, clustered covariance and whole-term tests |
+| [LightGBM as rating tables](lightgbm.md) | Sparsity penalties, tuning, exact conversion and GLM refitting |
 
-Executable examples: [auto](../examples/auto_pricing_study.py),
-[homeowners perils](../examples/homeowners_perils.py),
-[booster conversion/refit](../examples/booster_pricing_study.py), and
-[continuous effects](../examples/smooth_pricing_study.py).
+Use ordinary Polars, NumPy and scikit-learn operations for preparation, validation
+splits and model comparisons. The [auto](../examples/auto_pricing_study.py),
+[homeowners](../examples/homeowners_perils.py),
+[booster](../examples/booster_pricing_study.py) and
+[spline](../examples/smooth_pricing_study.py) examples show complete workflows.
 
-Workbooks preserve scoring, not a new fitting certificate. Keep the original model's
-reports, `plan.to_json()`, `fit_options` and requested inference results in the
-application's existing experiment records. Revalidate manually edited artifacts.
+Workbooks preserve scoring. Keep the source Plan, fit options, reports and inference
+results with your experiment records, and revalidate edited models.
 
-## Start here
-
-The [repository quickstart](../README.md) fits and exports a model. For details, use:
-
-- [Scoring and exposure conventions](SCORING_CONTRACT.md)
-- [Interactions](HIERARCHICAL_INTERACTIONS.md), [monotonic bands](MONOTONIC_EFFECTS.md), and [splines](SPLINES.md)
-- [Factor review bounds](BAND_REVIEW.md) and [quote explanations](EXPLANATIONS.md)
-- [Coefficient intervals](COEFFICIENT_INTERVALS.md), [HC0](ROBUST_INFERENCE.md), [clustered covariance](CLUSTER_INFERENCE.md), and [joint tests](TERM_TESTS.md)
-- [Booster conversion](CONVERSION.md), [LightGBM tuning](lightgbm.md), and [pandas input](PANDAS.md)
-
-## Development and evaluation
-
-[Evaluation instructions](../studies/README.md) cover the installed-wheel checks,
-real-data comparisons, benchmark methodology and independent reference fixtures.
-[API reference generation](API_REFERENCE.md) covers searchable documentation and CI.
-Historical review plans and progress reports are not maintained as product guides.
+For implementation and reproduction details, see the
+[GLM solver and benchmarks](../src/glm/README.md),
+[table representation](../src/rating_model/README.md),
+[large-table scoring](LARGE_TABLE_SCORING.md), and
+[evaluation guide](../studies/README.md). The [API reference guide](API_REFERENCE.md)
+explains how to generate searchable signatures and docstrings.

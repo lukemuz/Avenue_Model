@@ -23,8 +23,7 @@ package origin, generator hash, pdoc version and source revision.
 
 These checks prevent silently omitting an exported native class or method. They do not
 prove that every docstring fully explains its parameters or statistical assumptions.
-The linked workflow guides retain those meanings and limitations; semantic docstring
-coverage remains an ongoing documentation task.
+The linked user guides explain the modeling assumptions and supported combinations.
 
 ## CI and Pages
 
@@ -36,7 +35,5 @@ deployment job. No repository write credential is persisted by checkout.
 
 The repository's Pages source must be set to **GitHub Actions**, following
 [pdoc's hosting instructions](https://pdoc.dev/docs/pdoc.html#how-can-i-host-the-documentation-i-generated).
-The deployment job reports the resulting URL when it succeeds. Configuration alone is
-not evidence of a working hosted site. The local build has been verified from a fresh
-CPython 3.12 Linux wheel installation and visually inspected in Chromium; remote CI,
-Pages settings and the deployed URL remain unverified.
+The deployment job reports the hosted URL after a successful run. Until then, use
+the local build or download the `api-reference` workflow artifact.
