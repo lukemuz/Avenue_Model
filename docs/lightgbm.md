@@ -29,7 +29,8 @@ too large to review. Two quantities decide that, and neither is the tree count â
 Table *count* is the number of distinct feature combinations the ensemble uses. *Rows*
 are the cross product of every threshold along a path, so they grow much faster, and they
 are what decides whether anyone can read the result. Both are modelling choices rather
-than facts of the data, and `scripts/bench_lgbm.py` reproduces the table above.
+than facts of the data. These recorded examples illustrate how depth changes the
+size of the resulting tables.
 
 ```python
 from avenue_model import estimate_num_tables

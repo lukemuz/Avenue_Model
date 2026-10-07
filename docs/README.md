@@ -22,7 +22,8 @@ Workbooks preserve scoring. Keep the source Plan, fit options, reports and infer
 results with your experiment records, and revalidate edited models.
 
 For implementation and reproduction details, see the
-[GLM solver and benchmarks](../src/glm/README.md),
+[GLM solver](../src/glm/README.md),
+[performance results](performance.md),
 [table representation](../src/rating_model/README.md),
 [large-table scoring](LARGE_TABLE_SCORING.md), and
 [evaluation guide](../studies/README.md). The [API reference guide](API_REFERENCE.md)

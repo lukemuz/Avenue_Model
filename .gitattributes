@@ -1,2 +1,0 @@
-# Keep generated benchmark evidence collapsed in pull request diffs.
-studies/results/release_0_1_2/*.json linguist-generated=true

@@ -64,51 +64,8 @@ usually preferable for strongly conditioned plans and unpenalized Gaussian model
 
 ## Benchmarks
 
-Avenue's GLM fitting speeds are broadly competitive with state-of-the-art
-implementations. These benchmarks compare the published Avenue 0.1.2 Linux wheel
-with glum 3.4.1 on a Ryzen 9 9950X desktop. Both packages use 32 threads; times are
-medians of three fits after a warmup. Every reported comparison passes convergence
-and fitted-mean agreement checks.
-
-### Real data
-
-Avenue uses its global solver for these models, the path selected by `solver="auto"`
-for their supported structures. The Tweedie fits use power 1.5, with alpha 0.1 for
-ridge and elastic net (`l1_ratio=0.5`).
-
-| Model | Rows | Parameters | Avenue | glum |
-|---|---:|---:|---:|---:|
-| French motor, Poisson | 678,013 | 79 | **0.163** s | 2.01 s |
-| French motor, wide Poisson | 678,013 | 270 | **0.503** s | 5.59 s |
-| NYC taxi, Gamma | 2,753,989 | 577 | 10.3 s | **5.16** s |
-| Census income, Binomial | 45,222 | 116 | **0.13** s | 7 s |
-| House sales, Gamma | 21,613 | 92 | **0.0239** s | 0.0429 s |
-| House sales, Gaussian | 21,613 | 92 | **0.00403** s | 0.0248 s |
-| Motor loss cost, Tweedie | 678,013 | 79 | **0.734** s | 1.6 s |
-| Tweedie, ridge | 678,013 | 79 | **1.41** s | 1.83 s |
-| Tweedie, elastic net | 678,013 | 79 | **1.03** s | 1.93 s |
-
-Avenue is faster in eight of these nine fits; glum leads the taxi case. The
-[supplemental thread sweep](../../studies/results/release_0_1_2/README.md#thread-sensitivity)
-shows how tuning changes the comparison, including faster glum Tweedie fits at lower
-thread counts.
-
-### At twenty million rows
-
-| 20M rows, 501 parameters | Avenue global | Avenue table | glum |
-|---|---:|---:|---:|
-| 5 tables, 101 levels each | **2.97 s** | 3.11 s | 12.6 s |
-| 100 tables, 6 levels each | 70.5 s | **36.6 s** | 763 s |
-
-Table descent is about **21× faster than glum** on the 100-table portfolio.
-The synthetic portfolios use independent categorical factors. The global solver
-provides the automatic fitting path for these structures; the table solver can be
-selected explicitly.
-
-The [supporting results](../../studies/results/release_0_1_2/README.md) contain
-whole-process peak memory, full thread sweeps, tolerances, numerical checks,
-package and input hashes, and reproduction commands. These release measurements
-replace the historical timing tables and four-library ranking.
+See [performance](../../docs/performance.md) for measured speed, memory use and
+reproduction with the published wheel.
 
 ## Variates
 

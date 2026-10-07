@@ -68,23 +68,10 @@ specifications use the same held-out policies and common evaluation loss.
 
 ## Performance benchmarks
 
-The [published-wheel benchmarks](results/release_0_1_2/README.md) support the
-[performance claims](../README.md#performance-at-a-glance). They compare Avenue and
-glum on six real-data specifications, Tweedie loss cost with and without penalties,
-and two portfolios of 20 million observations. The runner verifies the installed wheel
-payload, isolates engines in fresh processes, records convergence and checks fitted
-means before a comparison is used in the documentation. Its results include repeated
-timings, thread settings, package versions, input hashes and whole-process peak memory.
-
-See the linked results for exact reproduction commands. Run engines sequentially
-without competing CPU work. The older `scripts/bench_*.py` runners remain available
-for targeted experiments; their historical timings are superseded by the release
-benchmark tables.
-
-[Large-table scoring](../docs/LARGE_TABLE_SCORING.md) documents a narrower matching
-benchmark and its historical before/after records. Its runner accepts explicit policy,
-booster and optional workbook paths; it does not depend on an old evaluation folder.
-Run the same saved workbook on two builds when measuring an implementation change.
+[One results page](../docs/performance.md) and [one runner](benchmark.py) cover GLM
+speed and memory comparisons. The runner contains preprocessing, verifies the installed
+wheel, isolates engines, and checks numerical agreement. Generated data, logs and
+results belong outside the repository; historical experiments remain in Git history.
 
 ## Independent reference fixtures
 
@@ -101,9 +88,7 @@ fixtures. Ordinary acceptance runs do not rewrite reference data.
 
 ## Results policy
 
-Retain compact measurements that substantiate a documented claim, with source/input
-hashes and methodology. Write exploratory reports, fitted workbooks, logs, prediction
-arrays and downloaded datasets outside the source tree. Regression tests should
-assert correct behavior; obsolete defect-expecting evaluation scripts are not a
-second test suite. The earlier expansion plans and run-by-run reports are archived,
-not maintained as current documentation.
+Keep benchmark summaries in [performance](../docs/performance.md). Write benchmark
+outputs, exploratory reports, fitted workbooks, logs, prediction arrays and downloaded
+data outside the source tree. Retain correctness fixtures and the motor modeling
+study separately: they demonstrate model behavior and the user workflow.

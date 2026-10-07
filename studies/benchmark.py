@@ -52,29 +52,171 @@ def download(data_dir):
         urllib.request.urlretrieve("https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2024-01.parquet", taxi)
 
 
+def prepare_motor(df: pd.DataFrame, wide: bool, drop: tuple[str, ...]=()) -> tuple[dict[str, np.ndarray], dict[str, int], np.ndarray, np.ndarray]:
+    import numpy as np
+    import pandas as pd
+    df = df.copy()
+    df['ClaimNb'] = df['ClaimNb'].astype(float).clip(upper=4)
+    df['Exposure'] = df['Exposure'].astype(float).clip(lower=0.001, upper=1)
+
+    def band(series: pd.Series, edges) -> np.ndarray:
+        return np.digitize(series.to_numpy(dtype=float), edges)
+
+    def categorical(series: pd.Series) -> np.ndarray:
+        return pd.Categorical(series).codes.astype(np.int64)
+    if wide:
+        veh_age = band(df['VehAge'], np.arange(0, 31, 1))
+        driv_age = band(df['DrivAge'], np.arange(18, 91, 1))
+        bonus = band(df['BonusMalus'], np.arange(50, 231, 2))
+        density = band(np.log(df['Density'].astype(float)), np.linspace(0, 11, 60))
+        power = band(df['VehPower'], np.arange(4, 16, 1))
+    else:
+        veh_age = band(df['VehAge'], [1, 2, 3, 5, 7, 10, 15, 20])
+        driv_age = band(df['DrivAge'], [21, 26, 31, 41, 51, 61, 71, 81])
+        bonus = band(df['BonusMalus'], [51, 55, 60, 70, 80, 90, 100, 120, 150])
+        density = band(np.log(df['Density'].astype(float)), [2, 3, 4, 5, 6, 7, 8, 9, 10])
+        power = band(df['VehPower'], [5, 6, 7, 8, 9, 10, 12])
+    codes = {'veh_age': veh_age, 'driv_age': driv_age, 'bonus_malus': bonus, 'density': density, 'veh_power': power, 'area': categorical(df['Area']), 'veh_brand': categorical(df['VehBrand']), 'veh_gas': categorical(df['VehGas']), 'region': categorical(df['Region'])}
+    for name in drop:
+        if name not in codes:
+            raise ValueError(f'unknown table {name!r}; have {sorted(codes)}')
+        del codes[name]
+    levels = {}
+    for name, values in codes.items():
+        uniques, compacted = np.unique(values, return_inverse=True)
+        codes[name] = compacted.astype(np.int64)
+        levels[name] = len(uniques)
+    return (codes, levels, df['ClaimNb'].to_numpy(dtype=float), df['Exposure'].to_numpy(dtype=float))
+FEATURES = ['bedrooms', 'bathrooms', 'sqft_living', 'floors', 'waterfront', 'view', 'condition', 'grade', 'yr_built', 'yr_renovated']
+
+def prepare_housing(df: pd.DataFrame, rows: int | None) -> tuple[dict[str, np.ndarray], dict[str, int], np.ndarray]:
+    import numpy as np
+    import pandas as pd
+    df = df.copy()
+    if rows is not None and rows != len(df):
+        rng = np.random.default_rng(20260826)
+        df = df.iloc[rng.integers(0, len(df), size=rows)].reset_index(drop=True)
+    price = pd.to_numeric(df['price']).to_numpy(dtype=float)
+    quantiles = np.linspace(0, 1, 17)[1:-1]
+    codes: dict[str, np.ndarray] = {}
+    for name in FEATURES:
+        v = pd.to_numeric(df[name], errors='coerce').to_numpy(dtype=float)
+        values, counts = np.unique(v, return_counts=True)
+        if values.size <= 16:
+            level = pd.Categorical(v).codes.astype(np.int64)
+        elif counts.max() > 0.5 * len(v):
+            dominant = values[counts.argmax()]
+            rest = v[v != dominant]
+            edges = np.unique(np.nanquantile(rest, quantiles))
+            level = np.digitize(v, edges) + 1
+            level[v == dominant] = 0
+        else:
+            edges = np.unique(np.nanquantile(v, quantiles))
+            level = np.digitize(v, edges)
+        codes[name] = np.asarray(level, dtype=np.int64)
+    levels: dict[str, int] = {}
+    for name, v in codes.items():
+        uniques, compacted = np.unique(v, return_inverse=True)
+        codes[name] = compacted.astype(np.int64)
+        levels[name] = len(uniques)
+    return (codes, levels, price)
+
+def band(values: np.ndarray, edges) -> np.ndarray:
+    import numpy as np
+    import pandas as pd
+    return np.digitize(np.asarray(values, dtype=float), edges)
+
+def compact(codes: dict[str, np.ndarray]) -> tuple[dict[str, np.ndarray], dict[str, int]]:
+    import numpy as np
+    import pandas as pd
+    levels = {}
+    out = {}
+    for name, values in codes.items():
+        uniques, compacted = np.unique(values, return_inverse=True)
+        out[name] = compacted.astype(np.int64)
+        levels[name] = len(uniques)
+    return (out, levels)
+
+def prepare_taxi(df: pd.DataFrame):
+    import numpy as np
+    import pandas as pd
+    keep = (df['fare_amount'] > 0) & (df['fare_amount'] < 250) & (df['trip_distance'] > 0) & (df['trip_distance'] < 100) & df['passenger_count'].notna() & df['RatecodeID'].notna()
+    df = df[keep]
+    pickup = df['tpep_pickup_datetime']
+    duration = (df['tpep_dropoff_datetime'] - pickup).dt.total_seconds() / 60.0
+    codes = {'pickup_zone': df['PULocationID'].to_numpy(), 'dropoff_zone': df['DOLocationID'].to_numpy(), 'hour': pickup.dt.hour.to_numpy(), 'weekday': pickup.dt.dayofweek.to_numpy(), 'distance': band(df['trip_distance'], [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 30]), 'duration': band(duration.fillna(0.0), [3, 5, 8, 12, 18, 25, 35, 50, 75]), 'passengers': band(df['passenger_count'], [0, 1, 2, 3, 4, 5]), 'rate_code': df['RatecodeID'].to_numpy(), 'payment': df['payment_type'].to_numpy(), 'vendor': df['VendorID'].to_numpy()}
+    codes, levels = compact(codes)
+    return (codes, levels, df['fare_amount'].to_numpy(dtype=float), None)
+
+def prepare_census(df: pd.DataFrame):
+    import numpy as np
+    import pandas as pd
+    categoricals = [c for c in df.columns if str(df[c].dtype) == 'category']
+    df = df.dropna(subset=categoricals)
+
+    def categorical(column: str) -> np.ndarray:
+        return pd.Categorical(df[column].astype('object')).codes.astype(np.int64)
+    codes = {'age': band(df['age'], [25, 30, 35, 40, 45, 50, 55, 60, 65, 70]), 'workclass': categorical('workclass'), 'education': categorical('education'), 'marital_status': categorical('marital-status'), 'occupation': categorical('occupation'), 'relationship': categorical('relationship'), 'race': categorical('race'), 'sex': categorical('sex'), 'hours': band(df['hours-per-week'], [20, 30, 35, 40, 45, 50, 60]), 'capital_gain': band(df['capital-gain'], [1, 3000, 5000, 7500, 15000]), 'capital_loss': band(df['capital-loss'], [1, 1500, 2000]), 'native_country': categorical('native-country')}
+    codes, levels = compact(codes)
+    y = (df['class'].astype(str).str.strip() == '>50K').to_numpy(dtype=float)
+    return (codes, levels, y, None)
+
+def generate_large(rows: int, tables: int, levels: int, correlation: float):
+    import numpy as np
+    import pandas as pd
+    rng = np.random.default_rng(20260827)
+    names = [f'factor_{i:03d}' for i in range(tables)]
+    dtype = np.int8 if levels <= 127 else np.int16
+    spread = 0.35 / (tables / 5.0) ** 0.5
+    eta = np.full(rows, -2.3)
+    latent = None
+    edges = None
+    if correlation > 0.0:
+        latent = rng.standard_normal(rows, dtype=np.float32)
+        from scipy.stats import norm
+        edges = norm.ppf(np.arange(1, levels) / levels).astype(np.float32)
+    codes = {}
+    for name in names:
+        if latent is None:
+            c = rng.integers(0, levels, size=rows, dtype=dtype)
+        else:
+            x = rng.standard_normal(rows, dtype=np.float32)
+            x *= np.float32(np.sqrt(1.0 - correlation))
+            x += np.float32(np.sqrt(correlation)) * latent
+            c = np.digitize(x, edges).astype(dtype)
+            del x
+        effects = rng.normal(0.0, spread, size=levels)
+        effects -= effects[0]
+        eta += effects[c]
+        codes[name] = c
+    del latent
+    exposure = rng.uniform(0.05, 1.0, size=rows)
+    np.exp(eta, out=eta)
+    eta *= exposure
+    y = rng.poisson(eta).astype(np.float64)
+    del eta
+    gc.collect()
+    return (codes, y, exposure)
+
+
 def load_case(case, data_dir):
     import numpy as np
     import pandas as pd
-    sys.path.insert(0, str(ROOT / "scripts"))
-    import bench_fremtpl as motor
-    import bench_housing as housing
-    import bench_real as real
-    import bench_large as large
     weights = offset = None
     alpha = ratio = 0.0
     sources = []
     audit = {}
     if case.startswith("large_"):
         tables, width = (5, 101) if case == "large_few" else (100, 6)
-        codes, y, exposure = large.generate(20_000_000, tables, width, 0.0)
+        codes, y, exposure = generate_large(20_000_000, tables, width, 0.0)
         levels = {k: width for k in codes}
         offset = np.log(exposure)
         family = "poisson"
-        audit = {"seed": large.SEED, "independent_synthetic_factors": True}
+        audit = {"seed": 20260827, "independent_synthetic_factors": True}
     elif case in ("motor", "motor_wide") or case.startswith("tweedie"):
         sources = [data_dir / "motor.parquet"]
         raw = pd.read_parquet(sources[0])
-        codes, levels, y, exposure = motor.prepare(raw, wide=case == "motor_wide")
+        codes, levels, y, exposure = prepare_motor(raw, wide=case == "motor_wide")
         family = "poisson"
         offset = np.log(exposure)
         audit = {"claim_count_cap": 4, "exposure_clip": [0.001, 1.0]}
@@ -94,12 +236,12 @@ def load_case(case, data_dir):
                      "target": "observed claim amount per policy / raw exposure", "caps": None}
     elif case in ("taxi", "census"):
         sources = [data_dir / f"{case}.parquet"]
-        spec = real.DATASETS[case]
-        codes, levels, y, _ = spec["prepare"](pd.read_parquet(sources[0]))
-        family = spec["family"]
+        prepare = prepare_taxi if case == "taxi" else prepare_census
+        codes, levels, y, _ = prepare(pd.read_parquet(sources[0]))
+        family = "gamma" if case == "taxi" else "binary"
     else:
         sources = [data_dir / "housing.parquet"]
-        codes, levels, y = housing.prepare(pd.read_parquet(sources[0]), None)
+        codes, levels, y = prepare_housing(pd.read_parquet(sources[0]), None)
         family = case.removeprefix("housing_")
     return codes, levels, y, weights, offset, family, alpha, ratio, audit, sources
 
@@ -136,6 +278,11 @@ def worker(args):
     # Match the reference coding exactly; no predictor scaling or intercept penalty.
     tolerance = args.tolerance if args.tolerance is not None else (
         1e-11 if case == "taxi" else (1e-9 if case.startswith("tweedie") else 1e-10))
+    if args.tolerance is None and engine.startswith("avenue"):
+        if case in ("motor_wide", "census", "housing_gamma"):
+            tolerance = 1e-12
+        elif case.startswith("tweedie"):
+            tolerance = 1e-11
     requested_solver = "table" if engine == "avenue_table" else "global"
 
     def prepare():
@@ -187,6 +334,7 @@ def worker(args):
               "threadpools": threadpool_info(), "polars_threads": pl.thread_pool_size(), "runs": []}
     # Cold fit is the warmup for timings and a clean-process memory measurement.
     # Record the OS high-water mark through fit, before prediction or subsequent fits.
+    # Python sampling threads miss temporary native allocations while the GIL is held.
     for repeat in range(args.repeats + 1):
         gc.collect()
         started = time.perf_counter(); prepared = prepare(); prep_seconds = time.perf_counter() - started
@@ -272,12 +420,9 @@ def aggregate(output):
         checks.append(check)
     evidence = {"records": records, "agreement": checks,
                 "errors": {p.parent.name: json.loads(p.read_text()) for p in sorted(output.glob("*/error.json"))},
-                "source_sha256": {str(p.relative_to(ROOT)): digest(p) for p in [Path(__file__), *sorted((ROOT / "scripts").glob("bench_*.py"))]},
+                "source_sha256": {str(p.relative_to(ROOT)): digest(p) for p in [Path(__file__)]},
                 "memory_method": "Linux OS whole-process peak RSS through the first fit; includes interpreter, imported libraries, source-data loading, common preparation and engine preparation; excludes subsequent prediction/timing repeats",
                 "timing_method": "median of requested repeats after one full-size warmup; source loading and common banding excluded; engine preparation reported separately; sequential fresh processes"}
-    selection = output / "selected_sources.json"
-    if selection.exists():
-        evidence["selected_sources"] = json.loads(selection.read_text())
     write(output / "results.json", evidence)
     return evidence
 
@@ -311,13 +456,9 @@ def main():
     p.add_argument("--download", action="store_true")
     p.add_argument("--aggregate", action="store_true")
     p.add_argument("--check", action="store_true", help="Validate the requested grid when aggregating")
-    p.add_argument("--avenue-results", nargs="+", type=Path,
-                   help="Combine existing Avenue results; later directories take precedence")
-    p.add_argument("--glum-results", nargs="+", type=Path,
-                   help="Combine existing glum results; later directories take precedence")
     p.add_argument("--cases", nargs="+", choices=CASES, default=list(REAL_CASES))
     p.add_argument("--engines", nargs="+", choices=["avenue", "avenue_table", "glum"], default=["avenue", "glum"])
-    p.add_argument("--threads", nargs="+", type=int, default=[4, 32])
+    p.add_argument("--threads", nargs="+", type=int, default=[os.cpu_count() or 1])
     p.add_argument("--repeats", type=int, default=3)
     p.add_argument("--tolerance", type=float, help="Override both engines' gradient tolerance")
     p.add_argument("--timeout", type=float, help="Seconds per worker (default: 600 real, 3600 large)")
@@ -335,23 +476,6 @@ def main():
     if args.timeout is not None and not 0 < args.timeout < float("inf"):
         p.error("timeout must be finite and positive")
     args.output.mkdir(parents=True, exist_ok=True)
-    if args.avenue_results or args.glum_results:
-        if not (args.avenue_results and args.glum_results):
-            p.error("combining results requires both --avenue-results and --glum-results")
-        selected = {}
-        for case in args.cases:
-            for threads in args.threads:
-                for engine in args.engines:
-                    job = f"{case}-{engine}-{threads}"
-                    sources = args.avenue_results if engine.startswith("avenue") else args.glum_results
-                    source = next((root / job for root in reversed(sources) if (root / job).is_dir()), None)
-                    if source is None:
-                        p.error(f"missing source for {job}")
-                    (args.output / job).symlink_to(source.resolve(), target_is_directory=True)
-                    selected[job] = str(source.resolve())
-        write(args.output / "selected_sources.json", selected)
-        validate(aggregate(args.output), args)
-        return
     if args.aggregate:
         evidence = aggregate(args.output)
         if args.check:

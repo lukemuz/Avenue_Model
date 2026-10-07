@@ -1,35 +1,25 @@
 # Avenue Model
 
-**State-of-the-art GLM performance. Interpretable boosted models.**
+**GLMs and interpretable machine learning, built from editable tables.**
 
-Avenue fits GLMs directly on rating tables and converts LightGBM ensembles into
-the same representation, preserving their predictions. The tables are the model
-you inspect, edit and deploy: explicit levels, bands, interactions and factors.
+Avenue makes the tables the model: explicit levels, bands, interactions and factors
+you can inspect, edit and deploy through a small Python API.
 
-Four achievements make this practical:
-
-- **State-of-the-art fitting speed—competitive with and sometimes faster than glum.**
-  On 678,013 French motor policies, Avenue fitted the 79-parameter Poisson model in
-  **0.16 seconds versus glum's 0.25 seconds**, and the 270-parameter model in
-  **0.49 seconds versus 1.05 seconds**, using each package's best tested thread setting.
-- **State-of-the-art memory efficiency.** On a synthetic portfolio of 20 million
-  observations, Avenue's table solver used **2.43 GiB peak RAM versus glum's
-  3.43 GiB** with five tables, and **18.53 GiB versus 19.75 GiB** with 100 tables.
-  These are whole-process peaks, including the data, with both packages using 32 threads.
-- **Exact conversion of boosted trees into editable rating tables.** Supported
-  LightGBM ensembles become tables that reproduce the ensemble's predictions,
-  without approximation or a surrogate fit. The converted model uses the same
-  inspection, editing, scoring and export workflow as a fitted GLM.
-- **Simpler models through sparsity-aware training.** The companion
+- **Fit a GLM directly on tables.** Define your factors, fit their coefficients and
+  export the result. The table representation is the fitted GLM, with the same
+  predictions and statistical interpretation.
+- **Turn boosted trees into interpretable tables.** Supported LightGBM ensembles
+  convert exactly, preserving predictions without a surrogate fit. Inspect and edit
+  them through the same workflow, or refit their table structure as a GLM.
+- **Keep models small enough to understand.** The companion
   [avenue-lightgbm](https://github.com/lukemuz/avenue-lightgbm) fork penalizes new
-  feature combinations and interaction complexity during training. In the French
-  motor experiment, this reduced **39 tables to five for a 0.7% increase in
-  cross-validated loss**. Exact conversion preserves the resulting model's
-  predictions. [LightGBM integration and results](docs/lightgbm.md).
+  feature combinations during training. In the French motor experiment, this reduced
+  **39 tables to five for a 0.7% increase in cross-validated loss**.
+  [LightGBM integration](docs/lightgbm.md).
 
-Install a wheel, define your factors and fit with a small Python API. No Rust
-toolchain is required. The [quickstart below](#try-it) fits, predicts and exports
-an editable model in a few lines.
+Fitting speed is **state of the art—competitive with and sometimes faster than glum**,
+with state-of-the-art memory efficiency. [Performance examples](#performance-at-a-glance).
+Install a wheel and [try it below](#try-it); no Rust toolchain is required.
 
 ## Installation
 
@@ -101,9 +91,14 @@ training results and conversion checks.
 
 ## Performance at a glance
 
-The examples above compare the published Avenue 0.1.2 Linux wheel with glum 3.4.1
-on a Ryzen 9 9950X desktop. See the [benchmarks](src/glm/README.md#benchmarks) for
-the full range of workloads, thread settings and reproduction details.
+On 678,013 French motor policies, Avenue fitted the 79-parameter Poisson model in
+**0.16 seconds versus glum's 0.25 seconds**, and the 270-parameter model in
+**0.49 seconds versus 1.05 seconds**, using each package's best tested thread setting.
+On 20 million synthetic observations with five tables, Avenue's default global solver
+used **2.73 GiB peak RAM versus glum's 3.43 GiB**, both at 32 threads.
+
+These compare the Avenue 0.1.2 Linux wheel with glum 3.4.1 on a Ryzen 9 9950X desktop.
+[Results and reproduction](docs/performance.md).
 
 ## Explore the package
 
@@ -124,7 +119,7 @@ The examples use synthetic data unless stated otherwise. The
 
 ## Under the hood
 
-See the [GLM solver and benchmarks](src/glm/README.md),
+See the [GLM solver](src/glm/README.md),
 [rating-table representation](src/rating_model/README.md), and
 [installation and development guide](docs/installation.md).
 The research behind booster conversion is described in
