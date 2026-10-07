@@ -11,8 +11,9 @@ you can inspect, edit and deploy through a small Python API.
 - **Turn boosted trees into interpretable tables.** Supported LightGBM ensembles
   convert exactly, preserving predictions without a surrogate fit. Inspect and edit
   them through the same workflow, or refit their table structure as a GLM.
-- **Keep models small enough to understand.** The companion
-  [avenue-lightgbm](https://github.com/lukemuz/avenue-lightgbm) fork penalizes new
+- **Keep models small enough to understand.** Avenue tunes predictive loss and
+  table count together. Its
+  [avenue-lightgbm](https://github.com/lukemuz/avenue-lightgbm) training backend penalizes new
   feature combinations during training. In the French motor experiment, this reduced
   **39 tables to five for a 0.7% increase in cross-validated loss**.
   [LightGBM integration](docs/lightgbm.md).
@@ -67,9 +68,22 @@ exposure. Add age bands, interactions or smooth effects as your model grows.
 [The modeling guide](docs/modeling.md) covers these and fitting from an existing plan.
 [The scoring guide](docs/scoring.md) shows how to reload and edit the exported tables.
 
-## Convert a booster
+## From boosting to editable tables
 
-Start with a trained LightGBM `booster` and a frame of `quote_predictors`:
+Trees learn useful cut points and interactions. Avenue combines their contributions
+into tables grouped by feature combinations. Looking up those tables reproduces the
+boosted model's predictions; you can then inspect, edit and export the model.
+
+**[Run the complete example](examples/interpretable_boosting.py):** create sample data
+→ tune for accuracy and table count → train → convert → inspect and export.
+It also shows an optional GLM refit of the learned table structure. Conversion preserves
+predictions; refitting estimates new coefficients and can change them.
+
+```bash
+python examples/interpretable_boosting.py --output /tmp/avenue-tables
+```
+
+With a trained LightGBM `booster` and a frame of `quote_predictors`, conversion is:
 
 ```python
 from avenue_model import from_booster
@@ -82,9 +96,10 @@ converted.to_workbook().save_csv_dir("converted_plan")
 
 The converted model preserves the supported booster's predictions and uses the same
 scoring and export interface as a GLM. `tune_lgbm` searches predictive loss and table
-count together; the companion
-[avenue-lightgbm](https://github.com/lukemuz/avenue-lightgbm) fork adds interaction
-penalties to encourage simpler structures during training.
+count together. The
+[avenue-lightgbm](https://github.com/lukemuz/avenue-lightgbm) training backend enables
+the additional interaction penalties. The example also runs with stock LightGBM
+without those penalties; it prints which capabilities are active.
 
 See the [LightGBM guide](docs/lightgbm.md) for the workflow, supported models,
 training results and conversion checks.

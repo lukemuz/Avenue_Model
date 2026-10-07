@@ -15,7 +15,7 @@ and `Workbook` stores editable tables.
 Use ordinary Polars, NumPy and scikit-learn operations for preparation, validation
 splits and model comparisons. The [auto](../examples/auto_pricing_study.py),
 [homeowners](../examples/homeowners_perils.py),
-[booster](../examples/booster_pricing_study.py) and
+[introductory boosting](../examples/interpretable_boosting.py) and
 [spline](../examples/smooth_pricing_study.py) examples show complete workflows.
 
 Workbooks preserve scoring. Keep the source Plan, fit options, reports and inference
