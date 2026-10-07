@@ -39,6 +39,28 @@ Approximation*](https://avenue-analytics.com/research/avenue-analytics-methodolo
 
 ## Installation
 
+Download the `.whl` file for your operating system and processor from
+[GitHub Releases](https://github.com/lukemuz/Avenue_Model/releases), then install it
+with Python 3.12 or 3.13. Replace `WHEEL_FILENAME.whl` with the downloaded filename:
+
+```bash
+python -m pip install ./WHEEL_FILENAME.whl
+```
+
+Wheels include the compiled Rust engine; no Rust toolchain is needed. Choose
+`manylinux` for Linux, `win_amd64` for Windows x64, or `macosx` for macOS. For Linux
+and macOS, choose `x86_64` for Intel/AMD or `aarch64`/`arm64` for ARM/Apple Silicon.
+The `cp312-abi3` wheels work on both tested Python versions, 3.12 and 3.13.
+You can also pass a wheel's GitHub release download URL directly to `pip install`.
+
+For LightGBM conversion and tuning, install the wheel with optional dependencies:
+
+```bash
+python -m pip install "./WHEEL_FILENAME.whl[tuning]"
+```
+
+### Install from source
+
 From a source checkout, with Python 3.12 or newer and a Rust toolchain:
 
 ```bash
@@ -168,6 +190,20 @@ The examples use synthetic data unless stated otherwise. The
 [real motor study](studies/results/real_motor/README.md) records comparisons on public data.
 
 ## Development
+
+### GitHub releases
+
+The Release workflow builds wheels for Linux x86_64/ARM64, macOS Intel/Apple
+Silicon, and Windows x64. It tests the installed wheels on Python 3.12 and 3.13
+before attaching them and a source archive to a GitHub release. No PyPI account
+or publishing credentials are required.
+
+Run **Actions → Release → Run workflow** on `main` for a build-and-test rehearsal.
+To publish, ensure `pyproject.toml` and `Cargo.toml` have the same new version,
+then push a matching `v` tag (for example, `v0.1.0`). Tagged runs publish the
+GitHub release only after all wheel tests pass.
+
+### Local checks
 
 ```bash
 cargo test --no-default-features

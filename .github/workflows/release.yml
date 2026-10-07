@@ -114,16 +114,12 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish release
+    name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/')
     needs: [wheels, test-wheels, sdist]
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/avenue-model
     permissions:
       contents: write
-      id-token: write
     steps:
       - uses: actions/download-artifact@v7
         with:
@@ -134,10 +130,9 @@ jobs:
         with:
           name: sdist
           path: dist
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: dist/*
