@@ -32,7 +32,7 @@ and [large.json](large.json).
 ## Thread sensitivity
 
 Median fit times in seconds at fixed thread limits. These are supplemental tuning
-results; the headline comparison above uses the same 32-thread setting throughout.
+results; the fixed-thread comparison above uses the same 32-thread setting throughout.
 A dash means no verified selected comparison at that setting. The initial one-thread
 Tweedie attempts remain in the supporting evidence.
 
@@ -105,14 +105,16 @@ Each case, engine and thread setting runs sequentially in a fresh process. Numer
 thread limits are set before importing libraries: OpenMP, OpenBLAS, MKL, NumExpr,
 Rayon and Polars. Each worker performs one full-size warmup followed by three timed
 fits. Tables report the median fit time; JSON also records individual runs, engine
-preparation, preparation-plus-fit and prediction times. The real-data headline uses
+preparation, preparation-plus-fit and prediction times. The fixed-thread tables use
 the same 32-thread limit for both engines, matching the desktop's logical CPU count.
 The thread sweep separately shows the effect of tuning. Both large cases also use
 32 threads. A fresh-process [default-thread probe](default_threads.json), with no
 thread environment variables set, confirms 32 threads for OpenBLAS, OpenMP and Polars
 on this machine. The fit tolerances and solver choices remain explicit benchmark
 settings. These are in-sample fitting comparisons; prediction timers cover the full
-training data and do not measure held-out accuracy.
+training data and do not measure held-out accuracy. The main README's speed examples
+use each engine's fastest median across its tested thread settings; its memory
+examples use the 32-thread measurements.
 
 Both engines use identical response, exposure, weight, category and reference-level
 definitions, an unpenalized intercept, and no standard-error calculation. glum uses

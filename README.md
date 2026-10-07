@@ -1,19 +1,21 @@
 # Avenue Model
 
-**GLM speed competitive with the state of the art. Interpretable boosted models.**
+**State-of-the-art GLM performance. Interpretable boosted models.**
 
 Avenue fits GLMs directly on rating tables and converts LightGBM ensembles into
 the same representation, preserving their predictions. The tables are the model
 you inspect, edit and deploy: explicit levels, bands, interactions and factors.
 
-Three achievements make this practical:
+Four achievements make this practical:
 
-- **GLM fitting broadly competitive with state-of-the-art implementations.**
-  In published-wheel benchmarks on a Ryzen 9 9950X desktop, Avenue outperformed glum
-  in **eight of nine real-data fits**, with both packages using 32 threads.
-  On a 20-million-row synthetic portfolio with 100 tables, Avenue's table solver fitted in
-  **36.6 seconds versus glum's 763 seconds—about 21× faster**.
-  [Benchmarks and supporting evidence](src/glm/README.md#benchmarks).
+- **State-of-the-art fitting speed—competitive with and sometimes faster than glum.**
+  On 678,013 French motor policies, Avenue fitted the 79-parameter Poisson model in
+  **0.16 seconds versus glum's 0.25 seconds**, and the 270-parameter model in
+  **0.49 seconds versus 1.05 seconds**, using each package's best tested thread setting.
+- **State-of-the-art memory efficiency.** On a synthetic portfolio of 20 million
+  observations, Avenue's table solver used **2.43 GiB peak RAM versus glum's
+  3.43 GiB** with five tables, and **18.53 GiB versus 19.75 GiB** with 100 tables.
+  These are whole-process peaks, including the data, with both packages using 32 threads.
 - **Exact conversion of boosted trees into editable rating tables.** Supported
   LightGBM ensembles become tables that reproduce the ensemble's predictions,
   without approximation or a surrogate fit. The converted model uses the same
@@ -99,12 +101,9 @@ training results and conversion checks.
 
 ## Performance at a glance
 
-The published Linux wheel fits a **678,013-policy Poisson model in 0.16 seconds**
-and a **20-million-row, five-table Poisson model in 3.0 seconds** on a Ryzen 9
-9950X desktop, using 32 threads.
-
-See the [benchmarks](src/glm/README.md#benchmarks) for real-data and 20-million-row
-comparisons against glum, with reproduction details in the supporting results.
+The examples above compare the published Avenue 0.1.2 Linux wheel with glum 3.4.1
+on a Ryzen 9 9950X desktop. See the [benchmarks](src/glm/README.md#benchmarks) for
+the full range of workloads, thread settings and reproduction details.
 
 ## Explore the package
 
