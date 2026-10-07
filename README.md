@@ -1,16 +1,33 @@
 # Avenue Model
 
-**Fast GLMs. Interpretable LightGBM. Models you can edit.**
+**GLM speed competitive with the state of the art. Interpretable boosted models.**
 
-Avenue fits statistical models directly on readable rating tables and converts
-LightGBM ensembles into the same format. Fit, inspect, edit and deploy your model
-with a small Python API.
+Avenue fits GLMs directly on rating tables and converts LightGBM ensembles into
+the same representation, preserving their predictions. The tables are the model
+you inspect, edit and deploy: explicit levels, bands, interactions and factors.
 
-- **Fast.** GLM fitting speeds broadly competitive with state-of-the-art implementations.
-- **Easy to use.** Install a wheel, define your factors and fit. No Rust toolchain required.
-- **Interpretable.** Work with explicit levels, bands, interactions and factors.
-  Convert supported LightGBM models without a surrogate fit, and use sparsity-aware
-  training to keep the resulting tables compact.
+Three achievements make this practical:
+
+- **GLM fitting broadly competitive with state-of-the-art implementations.**
+  In published-wheel benchmarks on a Ryzen 9 9950X desktop, Avenue outperformed glum
+  in **eight of nine real-data fits**, with both packages using 32 threads.
+  On a 20-million-row synthetic portfolio with 100 tables, Avenue's table solver fitted in
+  **36.6 seconds versus glum's 763 seconds—about 21× faster**.
+  [Benchmarks and supporting evidence](src/glm/README.md#benchmarks).
+- **Exact conversion of boosted trees into editable rating tables.** Supported
+  LightGBM ensembles become tables that reproduce the ensemble's predictions,
+  without approximation or a surrogate fit. The converted model uses the same
+  inspection, editing, scoring and export workflow as a fitted GLM.
+- **Simpler models through sparsity-aware training.** The companion
+  [avenue-lightgbm](https://github.com/lukemuz/avenue-lightgbm) fork penalizes new
+  feature combinations and interaction complexity during training. In the French
+  motor experiment, this reduced **39 tables to five for a 0.7% increase in
+  cross-validated loss**. Exact conversion preserves the resulting model's
+  predictions. [LightGBM integration and results](docs/lightgbm.md).
+
+Install a wheel, define your factors and fit with a small Python API. No Rust
+toolchain is required. The [quickstart below](#try-it) fits, predicts and exports
+an editable model in a few lines.
 
 ## Installation
 
@@ -77,9 +94,8 @@ count together; the companion
 [avenue-lightgbm](https://github.com/lukemuz/avenue-lightgbm) fork adds interaction
 penalties to encourage simpler structures during training.
 
-In the French motor experiment, an interaction penalty reduced 39 tables to five
-for a 0.7% increase in cross-validated loss. See the [LightGBM guide](docs/lightgbm.md)
-for the workflow, supported models and conversion checks.
+See the [LightGBM guide](docs/lightgbm.md) for the workflow, supported models,
+training results and conversion checks.
 
 ## Performance at a glance
 
