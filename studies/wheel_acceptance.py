@@ -93,7 +93,10 @@ def main():
                              ('booster', 'booster_pricing_study.py'),
                              ('smooth', 'smooth_pricing_study.py')]:
             path = ROOT / 'examples' / script
-            command = [sys.executable, str(path), '--output', str(output / name)]
+            # The child writes directly to our UTF-8 log file; on Windows its
+            # default redirected stdout encoding otherwise cannot print Polars
+            # table borders. Set the child's encoding explicitly as well.
+            command = [sys.executable, '-X', 'utf8', str(path), '--output', str(output / name)]
             if name == 'booster':
                 command.append('--refit-glm')
             start = time.perf_counter()
