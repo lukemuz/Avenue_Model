@@ -1,0 +1,44 @@
+{
+  "environment": {
+    "OMP_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "MKL_NUM_THREADS": null,
+    "NUMEXPR_NUM_THREADS": null,
+    "RAYON_NUM_THREADS": null,
+    "POLARS_MAX_THREADS": null
+  },
+  "logical_cpus": 32,
+  "available_cpus": 32,
+  "affinity_cpus": 32,
+  "polars_threads": 32,
+  "pools": [
+    {
+      "user_api": "blas",
+      "internal_api": "openblas",
+      "num_threads": 32,
+      "prefix": "libscipy_openblas",
+      "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+      "version": "0.3.31.dev",
+      "threading_layer": "pthreads",
+      "architecture": "SkylakeX"
+    },
+    {
+      "user_api": "blas",
+      "internal_api": "openblas",
+      "num_threads": 32,
+      "prefix": "libscipy_openblas",
+      "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+      "version": "0.3.34.106.0",
+      "threading_layer": "pthreads",
+      "architecture": "SkylakeX"
+    },
+    {
+      "user_api": "openmp",
+      "internal_api": "openmp",
+      "num_threads": 32,
+      "prefix": "libgomp",
+      "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+      "version": null
+    }
+  ]
+}

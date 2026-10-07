@@ -1,11 +1,12 @@
 # Avenue user guides
 
-Start with the [README example](../README.md#fit-inspect-and-export). The public workflow
+Start with the [README example](../README.md#try-it). The public workflow
 has three objects: `Plan` defines what to fit, `FittedModel` predicts and reports,
 and `Workbook` stores editable tables.
 
 | Guide | Covers |
 |---|---|
+| [Installation and development](installation.md) | Release wheels, source builds and publishing |
 | [Model specification](modeling.md) | Interactions, monotonic bands and continuous splines |
 | [Scoring and model review](scoring.md) | Exposure conventions, pandas input, band bounds and quote explanations |
 | [Statistical inference](inference.md) | Coefficient intervals, HC0, clustered covariance and whole-term tests |

@@ -1,0 +1,53 @@
+{
+  "provenance": "Earlier published-wheel investigation in this session, retained as a convergence diagnostic; not a refreshed timing comparison.",
+  "methodology": {
+    "cpu": "AMD Ryzen 9 9950X",
+    "published_wheel": "avenue_model 0.1.2",
+    "glum": "3.4.1",
+    "repeats": 3,
+    "full_size_warmups": 1,
+    "standard_errors": false,
+    "engines_sequential_separate_processes": true,
+    "alpha": 0.1,
+    "elastic_l1_ratio": 0.5,
+    "hyperparameters_tuned": false
+  },
+  "input_hashes": {
+    "/tmp/avenue-tweedie-review/severity.parquet": "cd87258451d1226f3be1a9dc689909de1ddbac46d5b45f0b12de47f797d0a28e",
+    "/home/luke/Projects/avenue_model/examples/.fremtpl2freq.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+  },
+  "lasso_default_failure": {
+    "case": "lasso",
+    "engine": "avenue",
+    "threads": 32,
+    "tolerance": 1e-09,
+    "converged": false,
+    "iterations": 572,
+    "max_gradient": 2.791434590810955e-07,
+    "deviance": 28569573.557467002,
+    "gradient_tail": [
+      5.552980004264822e-08,
+      6.644528558750778e-08,
+      7.950565605201642e-08,
+      9.513484353799133e-08,
+      1.1383468160203658e-07,
+      1.3621349245905852e-07,
+      1.6296292075401007e-07,
+      1.9498568133445432e-07,
+      2.3329478575054506e-07,
+      2.791434590810955e-07
+    ],
+    "deviance_tail": [
+      28569579.536805518,
+      28569577.35757516,
+      28569579.965146173,
+      28569576.84502695,
+      28569580.57844782,
+      28569576.11115607,
+      28569581.45630148,
+      28569575.060978677,
+      28569582.712892223,
+      28569573.557467002
+    ]
+  }
+}

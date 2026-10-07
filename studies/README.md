@@ -1,8 +1,9 @@
 # Evaluation and development checks
 
 Use the regression suite for correctness, examples for integration, and benchmarks
-for performance. Study scripts write to a **new** output directory and never install,
-download or publish packages. Run from the repository root.
+for performance. Study scripts write to a **new** output directory and never install
+or publish packages. Benchmark inputs can be downloaded explicitly with `--download`.
+Run from the repository root.
 
 ## Installed-wheel acceptance
 
@@ -67,11 +68,18 @@ specifications use the same held-out policies and common evaluation loss.
 
 ## Performance benchmarks
 
-The existing [README benchmark tables](../README.md#performance-at-a-glance) and their
-`scripts/bench_*.py` reproduction instructions remain the main comparative performance
-evidence. Run benchmark engines sequentially in fresh processes without competing
-CPU work; retain thread counts, input preparation, fit convergence and prediction
-agreement when interpreting timings.
+The [published-wheel benchmarks](results/release_0_1_2/README.md) support the
+[performance claims](../README.md#performance-at-a-glance). They compare Avenue and
+glum on six real-data specifications, Tweedie loss cost with and without penalties,
+and two portfolios of 20 million observations. The runner verifies the installed wheel
+payload, isolates engines in fresh processes, records convergence and checks fitted
+means before a comparison is used in the documentation. Its results include repeated
+timings, thread settings, package versions, input hashes and whole-process peak memory.
+
+See the linked results for exact reproduction commands. Run engines sequentially
+without competing CPU work. The older `scripts/bench_*.py` runners remain available
+for targeted experiments; their historical timings are superseded by the release
+benchmark tables.
 
 [Large-table scoring](../docs/LARGE_TABLE_SCORING.md) documents a narrower matching
 benchmark and its historical before/after records. Its runner accepts explicit policy,

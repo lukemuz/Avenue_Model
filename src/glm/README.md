@@ -64,106 +64,51 @@ usually preferable for strongly conditioned plans and unpenalized Gaussian model
 
 ## Benchmarks
 
-These recorded benchmarks cover banded models and are gated on comparable fitted
-means. They have not been rerun for this documentation revision. Times are fit-only release
-builds and the fastest of repeated runs. Absolute times depend on hardware; compare
-engines within a table. glum is the primary competitor because its `tabmat` backend also
-avoids a dense dummy-coded matrix. statsmodels is used as a correctness reference.
-
-```bash
-python scripts/bench_glm.py       # synthetic families
-python scripts/bench_fremtpl.py   # French motor
-python scripts/bench_housing.py   # King County housing
-python scripts/bench_real.py      # NYC taxi and census income
-python scripts/bench_engines.py   # glum, scikit-learn and H2O
-python scripts/bench_large.py     # 20M rows and conditioning sweep
-python scripts/bench_isolated.py  # whole-process peak memory
-```
-
-### Synthetic data
-
-Five independent tables and 81 parameters favor coordinate descent and represent an
-upper bound rather than a typical result.
-
-| | Avenue | glum | statsmodels |
-|---|---:|---:|---:|
-| Poisson, 1M rows | **0.100 s** | 0.416 s | — |
-| Gamma, 1M rows | **0.114 s** | 0.408 s | — |
-| Tweedie(1.5), 1M rows | **0.182 s** | 0.286 s | — |
-| Gaussian, 1M rows | 0.079 s | **0.074 s** | — |
-| Poisson, 5M rows | **0.695 s** | 2.518 s | — |
-
-Whole-process peak RSS, including data and interpreter:
-
-| | Avenue | glum | statsmodels |
-|---|---:|---:|---:|
-| Poisson, 100k rows | **113 MB** | 191 MB | 932 MB |
-| Poisson, 1M rows | **196 MB** | 336 MB | — |
-| Poisson, 5M rows | **564 MB** | 1,200 MB | — |
+Avenue's GLM fitting speeds are broadly competitive with state-of-the-art
+implementations. These benchmarks compare the published Avenue 0.1.2 Linux wheel
+with glum 3.4.1 on a Ryzen 9 9950X desktop. Both packages use 32 threads; times are
+medians of three fits after a warmup. Every reported comparison passes convergence
+and fitted-mean agreement checks.
 
 ### Real data
 
-Memory here is sampled incremental peak RSS across each engine’s preparation and
-fitting, excluding the shared input data. The whole-process figures above include
-the interpreter and input data. Allocation reuse and sampling resolution affect
-incremental measurements; a reported zero does not mean a zero-memory fit.
+Avenue uses its global solver for these models, the path selected by `solver="auto"`
+for their supported structures. The Tweedie fits use power 1.5, with alpha 0.1 for
+ridge and elastic net (`l1_ratio=0.5`).
 
-| unpenalized | Avenue fit | Avenue peak | glum fit | glum peak |
+| Model | Rows | Parameters | Avenue | glum |
 |---|---:|---:|---:|---:|
-| freMTPL2, 678k rows, 79 params, Poisson | **0.26 s** | **87 MB** | 0.49 s | 165 MB |
-| freMTPL2, 678k rows, 270 params, Poisson | **0.41 s** | **87 MB** | 1.64 s | 119 MB |
-| NYC taxi, 2.75M rows, 577 params, Gamma | 5.22 s | **272 MB** | **3.82 s** | 479 MB |
-| census income, 45k rows, 116 params, Binomial | **0.15 s** | **6 MB** | 0.21 s | 11 MB |
-| house sales, 21.6k rows, 92 params, Gamma | **0.046 s** | **9 MB** | 0.055 s | 81 MB |
-| house sales, 21.6k rows, 92 params, Gaussian | 0.034 s | 1 MB | **0.012 s** | **0 MB** |
+| French motor, Poisson | 678,013 | 79 | **0.163** s | 2.01 s |
+| French motor, wide Poisson | 678,013 | 270 | **0.503** s | 5.59 s |
+| NYC taxi, Gamma | 2,753,989 | 577 | 10.3 s | **5.16** s |
+| Census income, Binomial | 45,222 | 116 | **0.13** s | 7 s |
+| House sales, Gamma | 21,613 | 92 | **0.0239** s | 0.0429 s |
+| House sales, Gaussian | 21,613 | 92 | **0.00403** s | 0.0248 s |
+| Motor loss cost, Tweedie | 678,013 | 79 | **0.734** s | 1.6 s |
+| Tweedie, ridge | 678,013 | 79 | **1.41** s | 1.83 s |
+| Tweedie, elastic net | 678,013 | 79 | **1.03** s | 1.93 s |
 
-Avenue wins four of six fits and five of six memory comparisons. glum wins the
-high-cardinality taxi model. Its direct solve also wins the small Gaussian model, where
-one factorization is the exact linear-model answer.
-
-### The rest of the field
-
-`bench_engines.py` compares Avenue with glum, scikit-learn and H2O across three families
-and three penalty settings on a separate four-core machine. Avenue is fastest in five of
-the six scenarios where every engine returns a comparable solution.
-
-| fit time, Avenue = 1.00x | Avenue | glum | scikit-learn | H2O |
-|---|---:|---:|---:|---:|
-| freMTPL2, Poisson, unpenalized | **1.00x** | 2.5x | 2.9x | 3.2x |
-| census income, Binomial, ridge | **1.00x** | 1.8x | 1.3x | 4.3x |
-| freMTPL2, Poisson, lasso | **1.00x** | 2.6x | n/a | n/a |
-
-`n/a` means an engine cannot express the model or fails the fitted-mean agreement gate.
-scikit-learn's `newton-cholesky` wins the small house-sales Gamma cases; H2O is slower on
-every comparable case. The full nine-case output remains reproducible with
-`scripts/bench_engines.py`.
+Avenue is faster in eight of these nine fits; glum leads the taxi case. The
+[supplemental thread sweep](../../studies/results/release_0_1_2/README.md#thread-sensitivity)
+shows how tuning changes the comparison, including faster glum Tweedie fits at lower
+thread counts.
 
 ### At twenty million rows
 
-| 20M rows, 501 parameters | Avenue | glum |
-|---|---:|---:|
-| 100 tables of 6 levels | **39.3 s, 10.8 GB** | 865.9 s, 21.1 GB |
-| 5 tables of 101 levels | **3.1 s, 1.2 GB** | 16.5 s, 3.6 GB |
+| 20M rows, 501 parameters | Avenue global | Avenue table | glum |
+|---|---:|---:|---:|
+| 5 tables, 101 levels each | **2.97 s** | 3.11 s | 12.6 s |
 
-The two cases have the same observation and parameter counts but different table
-layouts. The results illustrate how table count affects the relative cost of
-coordinate sweeps and Gram-matrix construction. Fitted means agree to
-`5.6e-09` and `3.2e-09`.
+The 100-table comparison is still running; its complete result will be added before this PR is ready.
 
-### Conditioning limit
+The synthetic portfolios use independent categorical factors. The global solver
+provides the automatic fitting path for these structures; the table solver can be
+selected explicitly.
 
-With 1M rows and 100 tables loaded on a shared latent driver:
-
-| pairwise correlation | `table_conditioning` | Avenue | glum |
-|---:|---:|---:|---:|
-| 0.00 | 1.8 | **4.3 s** | 35.6 s |
-| 0.10 | 10.1 | **29.6 s** | 31.2 s |
-| 0.20 | 19.2 | 95.8 s | **31.2 s** |
-| 0.30 | 28.4 | 240.6 s | **30.9 s** |
-
-Per-sweep cost remains low, but the number of sweeps rises with collective dependence.
-Near-alias pair solving handles two redundant tables; it cannot remove a direction shared
-across many tables. `solver="auto"` selects the global path when supported.
+The [supporting results](../../studies/results/release_0_1_2/README.md) contain
+whole-process peak memory, full thread sweeps, tolerances, numerical checks,
+package and input hashes, and reproduction commands. These release measurements
+replace the historical timing tables and four-library ranking.
 
 ## Variates
 

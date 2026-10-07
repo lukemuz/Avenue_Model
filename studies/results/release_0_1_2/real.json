@@ -1,0 +1,5360 @@
+{
+  "records": [
+    {
+      "case": "census",
+      "engine": "avenue",
+      "threads": 1,
+      "rows": 45222,
+      "parameters": 116,
+      "tables": 12,
+      "family": "binary",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "census.parquet": "4b1b3b89333c711c794dbf7399b4d508a57c22e91d40ee0dfd1c21c172519d06"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.0021998429983796086,
+          "fit_seconds": 0.13363145000039367,
+          "total_seconds": 0.13583129299877328
+        },
+        {
+          "prep_seconds": 0.0013731629987887572,
+          "fit_seconds": 0.13338288000159082,
+          "total_seconds": 0.13475604300037958
+        },
+        {
+          "prep_seconds": 0.0012131199982832186,
+          "fit_seconds": 0.1337051079972298,
+          "total_seconds": 0.134918227995513
+        }
+      ],
+      "peak_process_rss_mib": 385.8203125,
+      "cold_fit_seconds": 0.1337690289983584,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 24,
+        "max_gradient": 5.175537202530029e-13,
+        "solver": "global",
+        "gradient_tail": [
+          2.823663288975565e-11,
+          1.0388421434010238e-11,
+          3.822801574773602e-12,
+          1.4069498095544289e-12,
+          5.175537202530029e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0013731629987887572,
+        "fit_seconds": 0.13363145000039367,
+        "total_seconds": 0.134918227995513,
+        "predict_seconds": 0.09499076099746162
+      },
+      "predict_seconds": [
+        0.09638445199743728,
+        0.09499076099746162,
+        0.09445130200037966
+      ],
+      "status": "ok",
+      "job": "census-avenue-1"
+    },
+    {
+      "case": "census",
+      "engine": "avenue",
+      "threads": 16,
+      "rows": 45222,
+      "parameters": 116,
+      "tables": 12,
+      "family": "binary",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "census.parquet": "4b1b3b89333c711c794dbf7399b4d508a57c22e91d40ee0dfd1c21c172519d06"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.001613996999367373,
+          "fit_seconds": 0.12928931999704218,
+          "total_seconds": 0.13090331699640956
+        },
+        {
+          "prep_seconds": 0.0015401470009237528,
+          "fit_seconds": 0.128851894998661,
+          "total_seconds": 0.13039204199958476
+        },
+        {
+          "prep_seconds": 0.0015402280005218927,
+          "fit_seconds": 0.13035373999809963,
+          "total_seconds": 0.13189396799862152
+        }
+      ],
+      "peak_process_rss_mib": 422.125,
+      "cold_fit_seconds": 0.13090469000235316,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 24,
+        "max_gradient": 5.175537202530029e-13,
+        "solver": "global",
+        "gradient_tail": [
+          2.823663288975565e-11,
+          1.0388421434010238e-11,
+          3.822801574773602e-12,
+          1.4069498095544289e-12,
+          5.175537202530029e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0015402280005218927,
+        "fit_seconds": 0.12928931999704218,
+        "total_seconds": 0.13090331699640956,
+        "predict_seconds": 0.008150806999765337
+      },
+      "predict_seconds": [
+        0.010468702999787638,
+        0.007216213001811411,
+        0.008150806999765337
+      ],
+      "status": "ok",
+      "job": "census-avenue-16"
+    },
+    {
+      "case": "census",
+      "engine": "avenue",
+      "threads": 32,
+      "rows": 45222,
+      "parameters": 116,
+      "tables": 12,
+      "family": "binary",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "census.parquet": "4b1b3b89333c711c794dbf7399b4d508a57c22e91d40ee0dfd1c21c172519d06"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.0017740690018399619,
+          "fit_seconds": 0.13055017199803842,
+          "total_seconds": 0.13232424099987838
+        },
+        {
+          "prep_seconds": 0.0014789820015721489,
+          "fit_seconds": 0.12995126199894003,
+          "total_seconds": 0.13143024400051218
+        },
+        {
+          "prep_seconds": 0.0015580920007778332,
+          "fit_seconds": 0.130071448002127,
+          "total_seconds": 0.13162954000290483
+        }
+      ],
+      "peak_process_rss_mib": 487.23828125,
+      "cold_fit_seconds": 0.13047476900101174,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 24,
+        "max_gradient": 5.175537202530029e-13,
+        "solver": "global",
+        "gradient_tail": [
+          2.823663288975565e-11,
+          1.0388421434010238e-11,
+          3.822801574773602e-12,
+          1.4069498095544289e-12,
+          5.175537202530029e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0015580920007778332,
+        "fit_seconds": 0.130071448002127,
+        "total_seconds": 0.13162954000290483,
+        "predict_seconds": 0.007306213999981992
+      },
+      "predict_seconds": [
+        0.007835332002287032,
+        0.007276868000190007,
+        0.007306213999981992
+      ],
+      "status": "ok",
+      "job": "census-avenue-32"
+    },
+    {
+      "case": "census",
+      "engine": "avenue",
+      "threads": 4,
+      "rows": 45222,
+      "parameters": 116,
+      "tables": 12,
+      "family": "binary",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "census.parquet": "4b1b3b89333c711c794dbf7399b4d508a57c22e91d40ee0dfd1c21c172519d06"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.0014240989985410124,
+          "fit_seconds": 0.13129191199914203,
+          "total_seconds": 0.13271601099768304
+        },
+        {
+          "prep_seconds": 0.001140923999628285,
+          "fit_seconds": 0.13111429600030533,
+          "total_seconds": 0.13225521999993362
+        },
+        {
+          "prep_seconds": 0.0011769019984058104,
+          "fit_seconds": 0.13199112200163654,
+          "total_seconds": 0.13316802400004235
+        }
+      ],
+      "peak_process_rss_mib": 385.79296875,
+      "cold_fit_seconds": 0.13146230300117168,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 24,
+        "max_gradient": 5.175537202530029e-13,
+        "solver": "global",
+        "gradient_tail": [
+          2.823663288975565e-11,
+          1.0388421434010238e-11,
+          3.822801574773602e-12,
+          1.4069498095544289e-12,
+          5.175537202530029e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0011769019984058104,
+        "fit_seconds": 0.13129191199914203,
+        "total_seconds": 0.13271601099768304,
+        "predict_seconds": 0.02703653100252268
+      },
+      "predict_seconds": [
+        0.025378441001521423,
+        0.033485607000329765,
+        0.02703653100252268
+      ],
+      "status": "ok",
+      "job": "census-avenue-4"
+    },
+    {
+      "case": "census",
+      "engine": "glum",
+      "threads": 1,
+      "rows": 45222,
+      "parameters": 116,
+      "tables": 12,
+      "family": "binary",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "census.parquet": "4b1b3b89333c711c794dbf7399b4d508a57c22e91d40ee0dfd1c21c172519d06"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.0016151169984368607,
+          "fit_seconds": 0.21965500299847918,
+          "total_seconds": 0.22127011999691604
+        },
+        {
+          "prep_seconds": 0.0016402950022893492,
+          "fit_seconds": 0.21996876499906648,
+          "total_seconds": 0.22160906000135583
+        },
+        {
+          "prep_seconds": 0.0016115809994516894,
+          "fit_seconds": 0.2203249269987282,
+          "total_seconds": 0.22193650799817988
+        }
+      ],
+      "peak_process_rss_mib": 385.77734375,
+      "cold_fit_seconds": 0.2249883350013988,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 21,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0016151169984368607,
+        "fit_seconds": 0.21996876499906648,
+        "total_seconds": 0.22160906000135583,
+        "predict_seconds": 0.006300446002569515
+      },
+      "predict_seconds": [
+        0.007236822999402648,
+        0.006300446002569515,
+        0.006143870999949286
+      ],
+      "status": "ok",
+      "job": "census-glum-1"
+    },
+    {
+      "case": "census",
+      "engine": "glum",
+      "threads": 16,
+      "rows": 45222,
+      "parameters": 116,
+      "tables": 12,
+      "family": "binary",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "census.parquet": "4b1b3b89333c711c794dbf7399b4d508a57c22e91d40ee0dfd1c21c172519d06"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.0017574560006323736,
+          "fit_seconds": 0.20737919399834936,
+          "total_seconds": 0.20913664999898174
+        },
+        {
+          "prep_seconds": 0.001718432002235204,
+          "fit_seconds": 0.19537778200174216,
+          "total_seconds": 0.19709621400397737
+        },
+        {
+          "prep_seconds": 0.0016518859993084334,
+          "fit_seconds": 0.19404020900037722,
+          "total_seconds": 0.19569209499968565
+        }
+      ],
+      "peak_process_rss_mib": 458.19140625,
+      "cold_fit_seconds": 0.2071969899989199,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 21,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.001718432002235204,
+        "fit_seconds": 0.19537778200174216,
+        "total_seconds": 0.19709621400397737,
+        "predict_seconds": 0.007196276001195656
+      },
+      "predict_seconds": [
+        0.008644247998745413,
+        0.007196276001195656,
+        0.006873728001664858
+      ],
+      "status": "ok",
+      "job": "census-glum-16"
+    },
+    {
+      "case": "census",
+      "engine": "glum",
+      "threads": 32,
+      "rows": 45222,
+      "parameters": 116,
+      "tables": 12,
+      "family": "binary",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "census.parquet": "4b1b3b89333c711c794dbf7399b4d508a57c22e91d40ee0dfd1c21c172519d06"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.0017124709993368015,
+          "fit_seconds": 6.884231543997885,
+          "total_seconds": 6.8859440149972215
+        },
+        {
+          "prep_seconds": 0.0016723449989513028,
+          "fit_seconds": 7.0019590349984355,
+          "total_seconds": 7.003631379997387
+        },
+        {
+          "prep_seconds": 0.001653570001508342,
+          "fit_seconds": 7.150473746001808,
+          "total_seconds": 7.152127316003316
+        }
+      ],
+      "peak_process_rss_mib": 554.75,
+      "cold_fit_seconds": 6.843710438999551,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 21,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0016723449989513028,
+        "fit_seconds": 7.0019590349984355,
+        "total_seconds": 7.003631379997387,
+        "predict_seconds": 0.13417658199978177
+      },
+      "predict_seconds": [
+        0.12901952299944242,
+        0.13417658199978177,
+        0.13447469599850592
+      ],
+      "status": "ok",
+      "job": "census-glum-32"
+    },
+    {
+      "case": "census",
+      "engine": "glum",
+      "threads": 4,
+      "rows": 45222,
+      "parameters": 116,
+      "tables": 12,
+      "family": "binary",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "census.parquet": "4b1b3b89333c711c794dbf7399b4d508a57c22e91d40ee0dfd1c21c172519d06"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.0016468969988636672,
+          "fit_seconds": 0.1371797889987647,
+          "total_seconds": 0.13882668599762837
+        },
+        {
+          "prep_seconds": 0.0016495119998580776,
+          "fit_seconds": 0.13980024199918262,
+          "total_seconds": 0.1414497539990407
+        },
+        {
+          "prep_seconds": 0.00165544400078943,
+          "fit_seconds": 0.14215323099779198,
+          "total_seconds": 0.1438086749985814
+        }
+      ],
+      "peak_process_rss_mib": 385.37109375,
+      "cold_fit_seconds": 0.14328050800031633,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 21,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0016495119998580776,
+        "fit_seconds": 0.13980024199918262,
+        "total_seconds": 0.1414497539990407,
+        "predict_seconds": 0.006100648999563418
+      },
+      "predict_seconds": [
+        0.007585219998873072,
+        0.006100648999563418,
+        0.005954502998065436
+      ],
+      "status": "ok",
+      "job": "census-glum-4"
+    },
+    {
+      "case": "housing_gamma",
+      "engine": "avenue",
+      "threads": 1,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.0012722420033242088,
+          "fit_seconds": 0.02499573800014332,
+          "total_seconds": 0.026267980003467528
+        },
+        {
+          "prep_seconds": 0.0012193719994684216,
+          "fit_seconds": 0.02480939599990961,
+          "total_seconds": 0.026028767999378033
+        },
+        {
+          "prep_seconds": 0.0008871649988577701,
+          "fit_seconds": 0.025005938001413597,
+          "total_seconds": 0.025893103000271367
+        }
+      ],
+      "peak_process_rss_mib": 385.48046875,
+      "cold_fit_seconds": 0.025528734000545228,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 13,
+        "max_gradient": 2.7782016211071374e-13,
+        "solver": "global",
+        "gradient_tail": [
+          1.194394417420167e-08,
+          7.794851320898807e-10,
+          4.2296863772887596e-11,
+          3.370441841773413e-12,
+          2.7782016211071374e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0012193719994684216,
+        "fit_seconds": 0.02499573800014332,
+        "total_seconds": 0.026028767999378033,
+        "predict_seconds": 0.03770066400102223
+      },
+      "predict_seconds": [
+        0.03802939399975003,
+        0.03770066400102223,
+        0.03752330899806111
+      ],
+      "status": "ok",
+      "job": "housing_gamma-avenue-1"
+    },
+    {
+      "case": "housing_gamma",
+      "engine": "avenue",
+      "threads": 16,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.001131266002630582,
+          "fit_seconds": 0.02312965499731945,
+          "total_seconds": 0.02426092099995003
+        },
+        {
+          "prep_seconds": 0.0010472670001036022,
+          "fit_seconds": 0.02403940300064278,
+          "total_seconds": 0.02508667000074638
+        },
+        {
+          "prep_seconds": 0.0009711630009405781,
+          "fit_seconds": 0.02375200000096811,
+          "total_seconds": 0.024723163001908688
+        }
+      ],
+      "peak_process_rss_mib": 392.2265625,
+      "cold_fit_seconds": 0.023774803001288092,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 13,
+        "max_gradient": 2.7782016211071374e-13,
+        "solver": "global",
+        "gradient_tail": [
+          1.194394417420167e-08,
+          7.794851320898807e-10,
+          4.2296863772887596e-11,
+          3.370441841773413e-12,
+          2.7782016211071374e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0010472670001036022,
+        "fit_seconds": 0.02375200000096811,
+        "total_seconds": 0.024723163001908688,
+        "predict_seconds": 0.0043332499990356155
+      },
+      "predict_seconds": [
+        0.005042059001425514,
+        0.0035140140025760047,
+        0.0043332499990356155
+      ],
+      "status": "ok",
+      "job": "housing_gamma-avenue-16"
+    },
+    {
+      "case": "housing_gamma",
+      "engine": "avenue",
+      "threads": 32,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.0010327300005883444,
+          "fit_seconds": 0.023927562000608305,
+          "total_seconds": 0.02496029200119665
+        },
+        {
+          "prep_seconds": 0.0010931140022876207,
+          "fit_seconds": 0.023883127996668918,
+          "total_seconds": 0.02497624199895654
+        },
+        {
+          "prep_seconds": 0.0010622750014590565,
+          "fit_seconds": 0.023771206000674283,
+          "total_seconds": 0.02483348100213334
+        }
+      ],
+      "peak_process_rss_mib": 464.953125,
+      "cold_fit_seconds": 0.024164268997992622,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 13,
+        "max_gradient": 2.7782016211071374e-13,
+        "solver": "global",
+        "gradient_tail": [
+          1.194394417420167e-08,
+          7.794851320898807e-10,
+          4.2296863772887596e-11,
+          3.370441841773413e-12,
+          2.7782016211071374e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0010622750014590565,
+        "fit_seconds": 0.023883127996668918,
+        "total_seconds": 0.02496029200119665,
+        "predict_seconds": 0.0032130760009749793
+      },
+      "predict_seconds": [
+        0.004763412001921097,
+        0.0032130760009749793,
+        0.002945610998722259
+      ],
+      "status": "ok",
+      "job": "housing_gamma-avenue-32"
+    },
+    {
+      "case": "housing_gamma",
+      "engine": "avenue",
+      "threads": 4,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.0010327100026188418,
+          "fit_seconds": 0.02341076599986991,
+          "total_seconds": 0.02444347600248875
+        },
+        {
+          "prep_seconds": 0.0010160980018554255,
+          "fit_seconds": 0.023532356000941945,
+          "total_seconds": 0.02454845400279737
+        },
+        {
+          "prep_seconds": 0.0009508450020803139,
+          "fit_seconds": 0.023790593000740046,
+          "total_seconds": 0.02474143800282036
+        }
+      ],
+      "peak_process_rss_mib": 385.62890625,
+      "cold_fit_seconds": 0.02372178299992811,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 13,
+        "max_gradient": 2.7782016211071374e-13,
+        "solver": "global",
+        "gradient_tail": [
+          1.194394417420167e-08,
+          7.794851320898807e-10,
+          4.2296863772887596e-11,
+          3.370441841773413e-12,
+          2.7782016211071374e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0010160980018554255,
+        "fit_seconds": 0.023532356000941945,
+        "total_seconds": 0.02454845400279737,
+        "predict_seconds": 0.010827820999111282
+      },
+      "predict_seconds": [
+        0.010827820999111282,
+        0.011011878999852343,
+        0.010226845999568468
+      ],
+      "status": "ok",
+      "job": "housing_gamma-avenue-4"
+    },
+    {
+      "case": "housing_gamma",
+      "engine": "glum",
+      "threads": 1,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.0009958579976228066,
+          "fit_seconds": 0.034808869000698905,
+          "total_seconds": 0.03580472699832171
+        },
+        {
+          "prep_seconds": 0.0009859499987214804,
+          "fit_seconds": 0.034508552998886444,
+          "total_seconds": 0.035494502997607924
+        },
+        {
+          "prep_seconds": 0.00098012899979949,
+          "fit_seconds": 0.034523712001828244,
+          "total_seconds": 0.035503841001627734
+        }
+      ],
+      "peak_process_rss_mib": 385.625,
+      "cold_fit_seconds": 0.03981894100070349,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 6,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0009859499987214804,
+        "fit_seconds": 0.034523712001828244,
+        "total_seconds": 0.035503841001627734,
+        "predict_seconds": 0.0045702220013481565
+      },
+      "predict_seconds": [
+        0.005193787997995969,
+        0.0045702220013481565,
+        0.004549442997813458
+      ],
+      "status": "ok",
+      "job": "housing_gamma-glum-1"
+    },
+    {
+      "case": "housing_gamma",
+      "engine": "glum",
+      "threads": 16,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.0009950970015779603,
+          "fit_seconds": 0.047746346001076745,
+          "total_seconds": 0.048741443002654705
+        },
+        {
+          "prep_seconds": 0.0010117689998878632,
+          "fit_seconds": 0.04550728300091578,
+          "total_seconds": 0.04651905200080364
+        },
+        {
+          "prep_seconds": 0.000899065998964943,
+          "fit_seconds": 0.035580955001933035,
+          "total_seconds": 0.03648002100089798
+        }
+      ],
+      "peak_process_rss_mib": 386.0,
+      "cold_fit_seconds": 0.06858547099909629,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 6,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0009950970015779603,
+        "fit_seconds": 0.04550728300091578,
+        "total_seconds": 0.04651905200080364,
+        "predict_seconds": 0.0046266589997685514
+      },
+      "predict_seconds": [
+        0.005143983999005286,
+        0.004615207002643729,
+        0.0046266589997685514
+      ],
+      "status": "ok",
+      "job": "housing_gamma-glum-16"
+    },
+    {
+      "case": "housing_gamma",
+      "engine": "glum",
+      "threads": 32,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.0010610719982651062,
+          "fit_seconds": 0.05065192800248042,
+          "total_seconds": 0.051713000000745524
+        },
+        {
+          "prep_seconds": 0.001012429998809239,
+          "fit_seconds": 0.04288577699844609,
+          "total_seconds": 0.04389820699725533
+        },
+        {
+          "prep_seconds": 0.0009891959998640232,
+          "fit_seconds": 0.042370494000351755,
+          "total_seconds": 0.04335969000021578
+        }
+      ],
+      "peak_process_rss_mib": 455.828125,
+      "cold_fit_seconds": 0.05357860900039668,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 6,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.001012429998809239,
+        "fit_seconds": 0.04288577699844609,
+        "total_seconds": 0.04389820699725533,
+        "predict_seconds": 0.015725356999610085
+      },
+      "predict_seconds": [
+        0.015725356999610085,
+        0.005724419999751262,
+        0.024819814003421925
+      ],
+      "status": "ok",
+      "job": "housing_gamma-glum-32"
+    },
+    {
+      "case": "housing_gamma",
+      "engine": "glum",
+      "threads": 4,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.0010003970019170083,
+          "fit_seconds": 0.028376623999065487,
+          "total_seconds": 0.029377021000982495
+        },
+        {
+          "prep_seconds": 0.0010001860027841758,
+          "fit_seconds": 0.02845341899956111,
+          "total_seconds": 0.029453605002345284
+        },
+        {
+          "prep_seconds": 0.0009938350012816954,
+          "fit_seconds": 0.028423543000826612,
+          "total_seconds": 0.029417378002108308
+        }
+      ],
+      "peak_process_rss_mib": 384.9375,
+      "cold_fit_seconds": 0.0349848310033849,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 6,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0010001860027841758,
+        "fit_seconds": 0.028423543000826612,
+        "total_seconds": 0.029417378002108308,
+        "predict_seconds": 0.0045264489999681246
+      },
+      "predict_seconds": [
+        0.0051454870008456055,
+        0.0045264489999681246,
+        0.00449096300144447
+      ],
+      "status": "ok",
+      "job": "housing_gamma-glum-4"
+    },
+    {
+      "case": "housing_gaussian",
+      "engine": "avenue",
+      "threads": 1,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gaussian",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.0012228870000399183,
+          "fit_seconds": 0.005147501000465127,
+          "total_seconds": 0.006370388000505045
+        },
+        {
+          "prep_seconds": 0.0008567559998482466,
+          "fit_seconds": 0.004901887998130405,
+          "total_seconds": 0.005758643997978652
+        },
+        {
+          "prep_seconds": 0.000840465996589046,
+          "fit_seconds": 0.005275642997730756,
+          "total_seconds": 0.006116108994319802
+        }
+      ],
+      "peak_process_rss_mib": 385.3671875,
+      "cold_fit_seconds": 0.005304877999151358,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 1,
+        "max_gradient": 1.1242355708240386e-14,
+        "solver": "global",
+        "gradient_tail": [
+          1.1242355708240386e-14
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0008567559998482466,
+        "fit_seconds": 0.005147501000465127,
+        "total_seconds": 0.006116108994319802,
+        "predict_seconds": 0.03769865100184688
+      },
+      "predict_seconds": [
+        0.038059552000049734,
+        0.03769865100184688,
+        0.037572502998955315
+      ],
+      "status": "ok",
+      "job": "housing_gaussian-avenue-1"
+    },
+    {
+      "case": "housing_gaussian",
+      "engine": "avenue",
+      "threads": 16,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gaussian",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.001047886999003822,
+          "fit_seconds": 0.003926236997358501,
+          "total_seconds": 0.004974123996362323
+        },
+        {
+          "prep_seconds": 0.0011287100023764651,
+          "fit_seconds": 0.0038894180033821613,
+          "total_seconds": 0.005018128005758626
+        },
+        {
+          "prep_seconds": 0.0010361450003983919,
+          "fit_seconds": 0.004013783000118565,
+          "total_seconds": 0.005049928000516957
+        }
+      ],
+      "peak_process_rss_mib": 391.42578125,
+      "cold_fit_seconds": 0.0043242879983154126,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 1,
+        "max_gradient": 1.1242355708240386e-14,
+        "solver": "global",
+        "gradient_tail": [
+          1.1242355708240386e-14
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.001047886999003822,
+        "fit_seconds": 0.003926236997358501,
+        "total_seconds": 0.005018128005758626,
+        "predict_seconds": 0.003720829001395032
+      },
+      "predict_seconds": [
+        0.0038473179993161466,
+        0.003265900999394944,
+        0.003720829001395032
+      ],
+      "status": "ok",
+      "job": "housing_gaussian-avenue-16"
+    },
+    {
+      "case": "housing_gaussian",
+      "engine": "avenue",
+      "threads": 32,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gaussian",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.0011956259986618534,
+          "fit_seconds": 0.004065429002366727,
+          "total_seconds": 0.005261055001028581
+        },
+        {
+          "prep_seconds": 0.001007000002573477,
+          "fit_seconds": 0.004030945001431974,
+          "total_seconds": 0.005037945004005451
+        },
+        {
+          "prep_seconds": 0.0010143029976461548,
+          "fit_seconds": 0.0037832280031580012,
+          "total_seconds": 0.004797531000804156
+        }
+      ],
+      "peak_process_rss_mib": 463.2578125,
+      "cold_fit_seconds": 0.004776380999828689,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 1,
+        "max_gradient": 1.1242355708240386e-14,
+        "solver": "global",
+        "gradient_tail": [
+          1.1242355708240386e-14
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0010143029976461548,
+        "fit_seconds": 0.004030945001431974,
+        "total_seconds": 0.005037945004005451,
+        "predict_seconds": 0.0031267080012185033
+      },
+      "predict_seconds": [
+        0.003413840000575874,
+        0.0031267080012185033,
+        0.0030152480030665174
+      ],
+      "status": "ok",
+      "job": "housing_gaussian-avenue-32"
+    },
+    {
+      "case": "housing_gaussian",
+      "engine": "avenue",
+      "threads": 4,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gaussian",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.0009367379971081391,
+          "fit_seconds": 0.004399389999889536,
+          "total_seconds": 0.005336127996997675
+        },
+        {
+          "prep_seconds": 0.0008872139987943228,
+          "fit_seconds": 0.003919083999790018,
+          "total_seconds": 0.004806297998584341
+        },
+        {
+          "prep_seconds": 0.0008531200001016259,
+          "fit_seconds": 0.004391285001474898,
+          "total_seconds": 0.005244405001576524
+        }
+      ],
+      "peak_process_rss_mib": 384.16015625,
+      "cold_fit_seconds": 0.004521099999692524,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 1,
+        "max_gradient": 1.1242355708240386e-14,
+        "solver": "global",
+        "gradient_tail": [
+          1.1242355708240386e-14
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0008872139987943228,
+        "fit_seconds": 0.004391285001474898,
+        "total_seconds": 0.005244405001576524,
+        "predict_seconds": 0.010544703000050504
+      },
+      "predict_seconds": [
+        0.010544703000050504,
+        0.0107321370014688,
+        0.010082750999572454
+      ],
+      "status": "ok",
+      "job": "housing_gaussian-avenue-4"
+    },
+    {
+      "case": "housing_gaussian",
+      "engine": "glum",
+      "threads": 1,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gaussian",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.0009749589989951346,
+          "fit_seconds": 0.007330118001846131,
+          "total_seconds": 0.008305077000841266
+        },
+        {
+          "prep_seconds": 0.0009708709985716268,
+          "fit_seconds": 0.007349704999796813,
+          "total_seconds": 0.00832057599836844
+        },
+        {
+          "prep_seconds": 0.0010214880021521822,
+          "fit_seconds": 0.007501912998122862,
+          "total_seconds": 0.008523401000275044
+        }
+      ],
+      "peak_process_rss_mib": 386.0,
+      "cold_fit_seconds": 0.011996050998277497,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 1,
+        "solver": "closed-form",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0009749589989951346,
+        "fit_seconds": 0.007349704999796813,
+        "total_seconds": 0.00832057599836844,
+        "predict_seconds": 0.004553820999717573
+      },
+      "predict_seconds": [
+        0.005165075002878439,
+        0.004553820999717573,
+        0.004541447000519838
+      ],
+      "status": "ok",
+      "job": "housing_gaussian-glum-1"
+    },
+    {
+      "case": "housing_gaussian",
+      "engine": "glum",
+      "threads": 16,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gaussian",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.0010168290027650073,
+          "fit_seconds": 0.007092900999850826,
+          "total_seconds": 0.008109730002615834
+        },
+        {
+          "prep_seconds": 0.0009848580011748709,
+          "fit_seconds": 0.0070472549996338785,
+          "total_seconds": 0.00803211300080875
+        },
+        {
+          "prep_seconds": 0.0009769030002644286,
+          "fit_seconds": 0.007026226001471514,
+          "total_seconds": 0.008003129001735942
+        }
+      ],
+      "peak_process_rss_mib": 385.66015625,
+      "cold_fit_seconds": 0.014922671998647274,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 1,
+        "solver": "closed-form",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0009848580011748709,
+        "fit_seconds": 0.0070472549996338785,
+        "total_seconds": 0.00803211300080875,
+        "predict_seconds": 0.004572295998514164
+      },
+      "predict_seconds": [
+        0.005163080000784248,
+        0.004572295998514164,
+        0.004517703000601614
+      ],
+      "status": "ok",
+      "job": "housing_gaussian-glum-16"
+    },
+    {
+      "case": "housing_gaussian",
+      "engine": "glum",
+      "threads": 32,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gaussian",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.0010212960005446803,
+          "fit_seconds": 0.04320664199985913,
+          "total_seconds": 0.04422793800040381
+        },
+        {
+          "prep_seconds": 0.000959810997301247,
+          "fit_seconds": 0.008745237999391975,
+          "total_seconds": 0.009705048996693222
+        },
+        {
+          "prep_seconds": 0.0009845370004768483,
+          "fit_seconds": 0.024810757000523154,
+          "total_seconds": 0.025795294001000002
+        }
+      ],
+      "peak_process_rss_mib": 450.65234375,
+      "cold_fit_seconds": 0.03681123699789168,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 1,
+        "solver": "closed-form",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0009845370004768483,
+        "fit_seconds": 0.024810757000523154,
+        "total_seconds": 0.025795294001000002,
+        "predict_seconds": 0.013158343997929478
+      },
+      "predict_seconds": [
+        0.013158343997929478,
+        0.015374374997918494,
+        0.009474743997998303
+      ],
+      "status": "ok",
+      "job": "housing_gaussian-glum-32"
+    },
+    {
+      "case": "housing_gaussian",
+      "engine": "glum",
+      "threads": 4,
+      "rows": 21613,
+      "parameters": 92,
+      "tables": 10,
+      "family": "gaussian",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "housing.parquet": "4829a0cd1b6138b78a0fb5333dc54729336b0198768159767d69caa6481f75f1"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.0009997759989346378,
+          "fit_seconds": 0.006944351000129245,
+          "total_seconds": 0.007944126999063883
+        },
+        {
+          "prep_seconds": 0.0009427279983356129,
+          "fit_seconds": 0.006771686003048671,
+          "total_seconds": 0.007714414001384284
+        },
+        {
+          "prep_seconds": 0.0009623650003049988,
+          "fit_seconds": 0.0064852140021685045,
+          "total_seconds": 0.007447579002473503
+        }
+      ],
+      "peak_process_rss_mib": 386.12890625,
+      "cold_fit_seconds": 0.011684253000566969,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 1,
+        "solver": "closed-form",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0009623650003049988,
+        "fit_seconds": 0.006771686003048671,
+        "total_seconds": 0.007714414001384284,
+        "predict_seconds": 0.004511461000220152
+      },
+      "predict_seconds": [
+        0.005169984000531258,
+        0.004511461000220152,
+        0.004428184001881164
+      ],
+      "status": "ok",
+      "job": "housing_gaussian-glum-4"
+    },
+    {
+      "case": "motor",
+      "engine": "avenue",
+      "threads": 1,
+      "rows": 678013,
+      "parameters": 79,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.005633677999867359,
+          "fit_seconds": 0.35708636900017154,
+          "total_seconds": 0.3627200470000389
+        },
+        {
+          "prep_seconds": 0.005454029000247829,
+          "fit_seconds": 0.35527590299898293,
+          "total_seconds": 0.36072993199923076
+        },
+        {
+          "prep_seconds": 0.005464509002194973,
+          "fit_seconds": 0.3579381950003153,
+          "total_seconds": 0.3634027040025103
+        }
+      ],
+      "peak_process_rss_mib": 587.48046875,
+      "cold_fit_seconds": 0.35768891499901656,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 5,
+        "max_gradient": 2.741290977208741e-12,
+        "solver": "global",
+        "gradient_tail": [
+          0.04235355158635232,
+          0.008998825146155302,
+          0.000139178839176005,
+          1.30021403385575e-07,
+          2.741290977208741e-12
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.005464509002194973,
+        "fit_seconds": 0.35708636900017154,
+        "total_seconds": 0.3627200470000389,
+        "predict_seconds": 1.1062763869995251
+      },
+      "predict_seconds": [
+        1.1047165849995508,
+        1.1062763869995251,
+        1.1134689360005723
+      ],
+      "status": "ok",
+      "job": "motor-avenue-1"
+    },
+    {
+      "case": "motor",
+      "engine": "avenue",
+      "threads": 16,
+      "rows": 678013,
+      "parameters": 79,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.005891424996661954,
+          "fit_seconds": 0.16119647799860104,
+          "total_seconds": 0.167087902995263
+        },
+        {
+          "prep_seconds": 0.005790314000478247,
+          "fit_seconds": 0.15931967800133862,
+          "total_seconds": 0.16510999200181686
+        },
+        {
+          "prep_seconds": 0.005388055000366876,
+          "fit_seconds": 0.16206407500067144,
+          "total_seconds": 0.1674521300010383
+        }
+      ],
+      "peak_process_rss_mib": 718.421875,
+      "cold_fit_seconds": 0.158253607001825,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 5,
+        "max_gradient": 2.7371282417213735e-12,
+        "solver": "global",
+        "gradient_tail": [
+          0.04235355158681675,
+          0.008998825146176205,
+          0.000139178839181387,
+          1.3002140074864098e-07,
+          2.7371282417213735e-12
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.005790314000478247,
+        "fit_seconds": 0.16119647799860104,
+        "total_seconds": 0.167087902995263,
+        "predict_seconds": 0.10304486099994392
+      },
+      "predict_seconds": [
+        0.10606031999850529,
+        0.10304486099994392,
+        0.09834493499874952
+      ],
+      "status": "ok",
+      "job": "motor-avenue-16"
+    },
+    {
+      "case": "motor",
+      "engine": "avenue",
+      "threads": 32,
+      "rows": 678013,
+      "parameters": 79,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.005527978999452898,
+          "fit_seconds": 0.16363334600100643,
+          "total_seconds": 0.16916132500045933
+        },
+        {
+          "prep_seconds": 0.005602588997135172,
+          "fit_seconds": 0.16302731199903064,
+          "total_seconds": 0.16862990099616582
+        },
+        {
+          "prep_seconds": 0.005306801998813171,
+          "fit_seconds": 0.1623539719985274,
+          "total_seconds": 0.16766077399734058
+        }
+      ],
+      "peak_process_rss_mib": 780.23046875,
+      "cold_fit_seconds": 0.16194184500272968,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 5,
+        "max_gradient": 2.7408459217344893e-12,
+        "solver": "global",
+        "gradient_tail": [
+          0.04235355158678993,
+          0.008998825146174465,
+          0.00013917883918012987,
+          1.3002140099466406e-07,
+          2.7408459217344893e-12
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.005527978999452898,
+        "fit_seconds": 0.16302731199903064,
+        "total_seconds": 0.16862990099616582,
+        "predict_seconds": 0.08054268900013994
+      },
+      "predict_seconds": [
+        0.08315821399810375,
+        0.0805027339993103,
+        0.08054268900013994
+      ],
+      "status": "ok",
+      "job": "motor-avenue-32"
+    },
+    {
+      "case": "motor",
+      "engine": "avenue",
+      "threads": 4,
+      "rows": 678013,
+      "parameters": 79,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.010100875999341952,
+          "fit_seconds": 0.1888532849989133,
+          "total_seconds": 0.19895416099825525
+        },
+        {
+          "prep_seconds": 0.005847411997820018,
+          "fit_seconds": 0.19543990099919029,
+          "total_seconds": 0.2012873129970103
+        },
+        {
+          "prep_seconds": 0.0055032220006978605,
+          "fit_seconds": 0.19451899400155526,
+          "total_seconds": 0.20002221600225312
+        }
+      ],
+      "peak_process_rss_mib": 629.67578125,
+      "cold_fit_seconds": 0.18966309299867135,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 5,
+        "max_gradient": 2.7420487005622955e-12,
+        "solver": "global",
+        "gradient_tail": [
+          0.04235355158604924,
+          0.008998825146149317,
+          0.00013917883917009905,
+          1.3002140680353824e-07,
+          2.7420487005622955e-12
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.005847411997820018,
+        "fit_seconds": 0.19451899400155526,
+        "total_seconds": 0.20002221600225312,
+        "predict_seconds": 0.29631560999769135
+      },
+      "predict_seconds": [
+        0.29631560999769135,
+        0.2960274760007451,
+        0.3018360150017543
+      ],
+      "status": "ok",
+      "job": "motor-avenue-4"
+    },
+    {
+      "case": "motor",
+      "engine": "glum",
+      "threads": 1,
+      "rows": 678013,
+      "parameters": 79,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.011554077002074337,
+          "fit_seconds": 0.5073009789994103,
+          "total_seconds": 0.5188550560014846
+        },
+        {
+          "prep_seconds": 0.011400326999137178,
+          "fit_seconds": 0.5056610249994264,
+          "total_seconds": 0.5170613519985636
+        },
+        {
+          "prep_seconds": 0.01132335299917031,
+          "fit_seconds": 0.5073679250017449,
+          "total_seconds": 0.5186912780009152
+        }
+      ],
+      "peak_process_rss_mib": 573.23828125,
+      "cold_fit_seconds": 0.5150769280007808,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 5,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.011400326999137178,
+        "fit_seconds": 0.5073009789994103,
+        "total_seconds": 0.5186912780009152,
+        "predict_seconds": 0.028084353001759155
+      },
+      "predict_seconds": [
+        0.02868888400189462,
+        0.028084353001759155,
+        0.027748218999477103
+      ],
+      "status": "ok",
+      "job": "motor-glum-1"
+    },
+    {
+      "case": "motor",
+      "engine": "glum",
+      "threads": 16,
+      "rows": 678013,
+      "parameters": 79,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.012254649001988582,
+          "fit_seconds": 0.2691657290015428,
+          "total_seconds": 0.28142037800353137
+        },
+        {
+          "prep_seconds": 0.012190908997581573,
+          "fit_seconds": 0.25205283499963116,
+          "total_seconds": 0.26424374399721273
+        },
+        {
+          "prep_seconds": 0.01208711300205323,
+          "fit_seconds": 0.2475647380015289,
+          "total_seconds": 0.2596518510035821
+        }
+      ],
+      "peak_process_rss_mib": 720.14453125,
+      "cold_fit_seconds": 0.31297286500193877,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 5,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.012190908997581573,
+        "fit_seconds": 0.25205283499963116,
+        "total_seconds": 0.26424374399721273,
+        "predict_seconds": 0.0282331329981389
+      },
+      "predict_seconds": [
+        0.0282331329981389,
+        0.035704980000446085,
+        0.027317695999954594
+      ],
+      "status": "ok",
+      "job": "motor-glum-16"
+    },
+    {
+      "case": "motor",
+      "engine": "glum",
+      "threads": 32,
+      "rows": 678013,
+      "parameters": 79,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.011724880001565907,
+          "fit_seconds": 2.0137160850026703,
+          "total_seconds": 2.025440965004236
+        },
+        {
+          "prep_seconds": 0.011558215002878569,
+          "fit_seconds": 2.0062452310012304,
+          "total_seconds": 2.017803446004109
+        },
+        {
+          "prep_seconds": 0.01210228100171662,
+          "fit_seconds": 1.9535169449991372,
+          "total_seconds": 1.9656192260008538
+        }
+      ],
+      "peak_process_rss_mib": 825.69140625,
+      "cold_fit_seconds": 2.2113785990004544,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 5,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.011724880001565907,
+        "fit_seconds": 2.0062452310012304,
+        "total_seconds": 2.017803446004109,
+        "predict_seconds": 0.10863209200033452
+      },
+      "predict_seconds": [
+        0.11309128499851795,
+        0.10658216400042875,
+        0.10863209200033452
+      ],
+      "status": "ok",
+      "job": "motor-glum-32"
+    },
+    {
+      "case": "motor",
+      "engine": "glum",
+      "threads": 4,
+      "rows": 678013,
+      "parameters": 79,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.011593462000746513,
+          "fit_seconds": 0.2668321380006091,
+          "total_seconds": 0.27842560000135563
+        },
+        {
+          "prep_seconds": 0.011469518001831602,
+          "fit_seconds": 0.2635516689988435,
+          "total_seconds": 0.2750211870006751
+        },
+        {
+          "prep_seconds": 0.011560148999706144,
+          "fit_seconds": 0.2649553159972129,
+          "total_seconds": 0.27651546499691904
+        }
+      ],
+      "peak_process_rss_mib": 607.1484375,
+      "cold_fit_seconds": 0.2822968229993421,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 5,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.011560148999706144,
+        "fit_seconds": 0.2649553159972129,
+        "total_seconds": 0.27651546499691904,
+        "predict_seconds": 0.025042835000931518
+      },
+      "predict_seconds": [
+        0.02555046300039976,
+        0.02488921500116703,
+        0.025042835000931518
+      ],
+      "status": "ok",
+      "job": "motor-glum-4"
+    },
+    {
+      "case": "motor_wide",
+      "engine": "avenue",
+      "threads": 1,
+      "rows": 678013,
+      "parameters": 270,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.0055906150009832345,
+          "fit_seconds": 1.0959738849996938,
+          "total_seconds": 1.101564500000677
+        },
+        {
+          "prep_seconds": 0.005766837999544805,
+          "fit_seconds": 1.1051058739976725,
+          "total_seconds": 1.1108727119972173
+        },
+        {
+          "prep_seconds": 0.0055799049987399485,
+          "fit_seconds": 1.0923044510018372,
+          "total_seconds": 1.097884356000577
+        }
+      ],
+      "peak_process_rss_mib": 590.953125,
+      "cold_fit_seconds": 1.0848369109990017,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 18,
+        "max_gradient": 8.625524595154825e-13,
+        "solver": "global",
+        "gradient_tail": [
+          4.667313083234363e-11,
+          1.717736985644954e-11,
+          6.324356404831577e-12,
+          2.3239719905342194e-12,
+          8.625524595154825e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.0055906150009832345,
+        "fit_seconds": 1.0959738849996938,
+        "total_seconds": 1.101564500000677,
+        "predict_seconds": 1.4228078319974884
+      },
+      "predict_seconds": [
+        1.4228078319974884,
+        1.4189354759982962,
+        1.4450335940018704
+      ],
+      "status": "ok",
+      "job": "motor_wide-avenue-1"
+    },
+    {
+      "case": "motor_wide",
+      "engine": "avenue",
+      "threads": 16,
+      "rows": 678013,
+      "parameters": 270,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.005497699999978067,
+          "fit_seconds": 0.4928745480028738,
+          "total_seconds": 0.49837224800285185
+        },
+        {
+          "prep_seconds": 0.005560777997743571,
+          "fit_seconds": 0.49798493499838514,
+          "total_seconds": 0.5035457129961287
+        },
+        {
+          "prep_seconds": 0.005914746998314513,
+          "fit_seconds": 0.4778477859981649,
+          "total_seconds": 0.4837625329964794
+        }
+      ],
+      "peak_process_rss_mib": 750.68359375,
+      "cold_fit_seconds": 0.4784778979992552,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 18,
+        "max_gradient": 8.602315963208428e-13,
+        "solver": "global",
+        "gradient_tail": [
+          4.6660521692385186e-11,
+          1.7167077008518542e-11,
+          6.3193672243228965e-12,
+          2.3291469214429043e-12,
+          8.602315963208428e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.005560777997743571,
+        "fit_seconds": 0.4928745480028738,
+        "total_seconds": 0.49837224800285185,
+        "predict_seconds": 0.1254418889984663
+      },
+      "predict_seconds": [
+        0.12586425699919346,
+        0.12494140399940079,
+        0.1254418889984663
+      ],
+      "status": "ok",
+      "job": "motor_wide-avenue-16"
+    },
+    {
+      "case": "motor_wide",
+      "engine": "avenue",
+      "threads": 32,
+      "rows": 678013,
+      "parameters": 270,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.005612657001620391,
+          "fit_seconds": 0.5083057519987051,
+          "total_seconds": 0.5139184090003255
+        },
+        {
+          "prep_seconds": 0.006077354002627544,
+          "fit_seconds": 0.503241460002755,
+          "total_seconds": 0.5093188140053826
+        },
+        {
+          "prep_seconds": 0.0055870690011943225,
+          "fit_seconds": 0.49987724799939315,
+          "total_seconds": 0.5054643170005875
+        }
+      ],
+      "peak_process_rss_mib": 828.30078125,
+      "cold_fit_seconds": 0.5049712869986251,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 18,
+        "max_gradient": 8.55202287924095e-13,
+        "solver": "global",
+        "gradient_tail": [
+          4.666090644821877e-11,
+          1.716346305193847e-11,
+          6.316811346285233e-12,
+          2.326398665488403e-12,
+          8.55202287924095e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.005612657001620391,
+        "fit_seconds": 0.503241460002755,
+        "total_seconds": 0.5093188140053826,
+        "predict_seconds": 0.095619652998721
+      },
+      "predict_seconds": [
+        0.09693123000033665,
+        0.095619652998721,
+        0.095547066997824
+      ],
+      "status": "ok",
+      "job": "motor_wide-avenue-32"
+    },
+    {
+      "case": "motor_wide",
+      "engine": "avenue",
+      "threads": 4,
+      "rows": 678013,
+      "parameters": 270,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-12,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.005921228999795858,
+          "fit_seconds": 0.5798367269999289,
+          "total_seconds": 0.5857579559997248
+        },
+        {
+          "prep_seconds": 0.005472722001286456,
+          "fit_seconds": 0.5703067540016491,
+          "total_seconds": 0.5757794760029356
+        },
+        {
+          "prep_seconds": 0.005401358001108747,
+          "fit_seconds": 0.5711586910001643,
+          "total_seconds": 0.576560049001273
+        }
+      ],
+      "peak_process_rss_mib": 637.19921875,
+      "cold_fit_seconds": 0.5755885670005227,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 18,
+        "max_gradient": 8.544740000961595e-13,
+        "solver": "global",
+        "gradient_tail": [
+          4.666751600378915e-11,
+          1.716972907551473e-11,
+          6.32230785819424e-12,
+          2.3218365606039596e-12,
+          8.544740000961595e-13
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.005472722001286456,
+        "fit_seconds": 0.5711586910001643,
+        "total_seconds": 0.576560049001273,
+        "predict_seconds": 0.3765890180002316
+      },
+      "predict_seconds": [
+        0.37569112300116103,
+        0.3787319539987948,
+        0.3765890180002316
+      ],
+      "status": "ok",
+      "job": "motor_wide-avenue-4"
+    },
+    {
+      "case": "motor_wide",
+      "engine": "glum",
+      "threads": 1,
+      "rows": 678013,
+      "parameters": 270,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.011371602999133756,
+          "fit_seconds": 1.6574136250019365,
+          "total_seconds": 1.6687852280010702
+        },
+        {
+          "prep_seconds": 0.011446173997683218,
+          "fit_seconds": 1.6616746629988484,
+          "total_seconds": 1.6731208369965316
+        },
+        {
+          "prep_seconds": 0.011362525998265482,
+          "fit_seconds": 1.6609445559988671,
+          "total_seconds": 1.6723070819971326
+        }
+      ],
+      "peak_process_rss_mib": 570.2890625,
+      "cold_fit_seconds": 1.6656619460009097,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 18,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.011371602999133756,
+        "fit_seconds": 1.6609445559988671,
+        "total_seconds": 1.6723070819971326,
+        "predict_seconds": 0.027809174000140047
+      },
+      "predict_seconds": [
+        0.02843633800148382,
+        0.02762010800142889,
+        0.027809174000140047
+      ],
+      "status": "ok",
+      "job": "motor_wide-glum-1"
+    },
+    {
+      "case": "motor_wide",
+      "engine": "glum",
+      "threads": 16,
+      "rows": 678013,
+      "parameters": 270,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.01235849500153563,
+          "fit_seconds": 1.9231241759989643,
+          "total_seconds": 1.9354826710005
+        },
+        {
+          "prep_seconds": 0.012469704997783992,
+          "fit_seconds": 1.9960816650018387,
+          "total_seconds": 2.0085513699996227
+        },
+        {
+          "prep_seconds": 0.01859654399959254,
+          "fit_seconds": 2.013360251999984,
+          "total_seconds": 2.0319567959995766
+        }
+      ],
+      "peak_process_rss_mib": 733.26171875,
+      "cold_fit_seconds": 2.0596938239978044,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 18,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.012469704997783992,
+        "fit_seconds": 1.9960816650018387,
+        "total_seconds": 2.0085513699996227,
+        "predict_seconds": 0.03211171099974308
+      },
+      "predict_seconds": [
+        0.033911927002918674,
+        0.03211171099974308,
+        0.026627283998095663
+      ],
+      "status": "ok",
+      "job": "motor_wide-glum-16"
+    },
+    {
+      "case": "motor_wide",
+      "engine": "glum",
+      "threads": 32,
+      "rows": 678013,
+      "parameters": 270,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.012111960000765976,
+          "fit_seconds": 5.592348336002033,
+          "total_seconds": 5.604460296002799
+        },
+        {
+          "prep_seconds": 0.011682489999657264,
+          "fit_seconds": 5.663923076997889,
+          "total_seconds": 5.675605566997547
+        },
+        {
+          "prep_seconds": 0.011797727998782648,
+          "fit_seconds": 5.504100550002477,
+          "total_seconds": 5.515898278001259
+        }
+      ],
+      "peak_process_rss_mib": 836.30078125,
+      "cold_fit_seconds": 5.183024218997161,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 18,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.011797727998782648,
+        "fit_seconds": 5.592348336002033,
+        "total_seconds": 5.604460296002799,
+        "predict_seconds": 0.12012797900024452
+      },
+      "predict_seconds": [
+        0.12012797900024452,
+        0.13046780600052443,
+        0.11796227400191128
+      ],
+      "status": "ok",
+      "job": "motor_wide-glum-32"
+    },
+    {
+      "case": "motor_wide",
+      "engine": "glum",
+      "threads": 4,
+      "rows": 678013,
+      "parameters": 270,
+      "tables": 9,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "claim_count_cap": 4,
+        "exposure_clip": [
+          0.001,
+          1.0
+        ]
+      },
+      "input_sha256": {
+        "motor.parquet": "c87b3e4d13a61816227aab4537f208873f4d4650591617563ddadd53977b2c5f"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.01150020600107382,
+          "fit_seconds": 1.0501851869994425,
+          "total_seconds": 1.0616853930005163
+        },
+        {
+          "prep_seconds": 0.011691636998875765,
+          "fit_seconds": 1.051147652000509,
+          "total_seconds": 1.0628392889993847
+        },
+        {
+          "prep_seconds": 0.011767900999984704,
+          "fit_seconds": 1.053177081001195,
+          "total_seconds": 1.0649449820011796
+        }
+      ],
+      "peak_process_rss_mib": 613.96875,
+      "cold_fit_seconds": 1.0477019820027635,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 18,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.011691636998875765,
+        "fit_seconds": 1.051147652000509,
+        "total_seconds": 1.0628392889993847,
+        "predict_seconds": 0.025272298000345472
+      },
+      "predict_seconds": [
+        0.0266571699976339,
+        0.025272298000345472,
+        0.024999864002893446
+      ],
+      "status": "ok",
+      "job": "motor_wide-glum-4"
+    },
+    {
+      "case": "taxi",
+      "engine": "avenue",
+      "threads": 1,
+      "rows": 2753989,
+      "parameters": 577,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-11,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "taxi.parquet": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.021945041000435594,
+          "fit_seconds": 15.919372871998348,
+          "total_seconds": 15.941317912998784
+        },
+        {
+          "prep_seconds": 0.022013900997990277,
+          "fit_seconds": 15.820021085000917,
+          "total_seconds": 15.842034985998907
+        },
+        {
+          "prep_seconds": 0.02211901899863733,
+          "fit_seconds": 15.88213175599958,
+          "total_seconds": 15.904250774998218
+        }
+      ],
+      "peak_process_rss_mib": 2034.89453125,
+      "cold_fit_seconds": 15.938738271001057,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 61,
+        "max_gradient": 9.895019775127545e-12,
+        "solver": "global",
+        "gradient_tail": [
+          3.0269228651563696e-11,
+          2.2887661905939773e-11,
+          1.730652706793865e-11,
+          1.3086048012483109e-11,
+          9.895019775127545e-12
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.022013900997990277,
+        "fit_seconds": 15.88213175599958,
+        "total_seconds": 15.904250774998218,
+        "predict_seconds": 7.226329663000797
+      },
+      "predict_seconds": [
+        7.217903267999645,
+        7.257342430999415,
+        7.226329663000797
+      ],
+      "status": "ok",
+      "job": "taxi-avenue-1"
+    },
+    {
+      "case": "taxi",
+      "engine": "avenue",
+      "threads": 16,
+      "rows": 2753989,
+      "parameters": 577,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-11,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "taxi.parquet": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.022112176000518957,
+          "fit_seconds": 9.407626072999847,
+          "total_seconds": 9.429738249000366
+        },
+        {
+          "prep_seconds": 0.02183259899902623,
+          "fit_seconds": 9.359176337999088,
+          "total_seconds": 9.381008936998114
+        },
+        {
+          "prep_seconds": 0.02198144900103216,
+          "fit_seconds": 9.26632243199856,
+          "total_seconds": 9.288303880999592
+        }
+      ],
+      "peak_process_rss_mib": 2320.52734375,
+      "cold_fit_seconds": 9.317244952002511,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 61,
+        "max_gradient": 9.89520998757318e-12,
+        "solver": "global",
+        "gradient_tail": [
+          3.02686527173272e-11,
+          2.288733098615591e-11,
+          1.7305754933740828e-11,
+          1.3085569166335768e-11,
+          9.89520998757318e-12
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.02198144900103216,
+        "fit_seconds": 9.359176337999088,
+        "total_seconds": 9.381008936998114,
+        "predict_seconds": 0.6249610489976476
+      },
+      "predict_seconds": [
+        0.6124819770011527,
+        0.6548702649997722,
+        0.6249610489976476
+      ],
+      "status": "ok",
+      "job": "taxi-avenue-16"
+    },
+    {
+      "case": "taxi",
+      "engine": "avenue",
+      "threads": 32,
+      "rows": 2753989,
+      "parameters": 577,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-11,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "taxi.parquet": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.022235658998397412,
+          "fit_seconds": 10.33299417499802,
+          "total_seconds": 10.355229833996418
+        },
+        {
+          "prep_seconds": 0.022931921997951576,
+          "fit_seconds": 10.330021924997709,
+          "total_seconds": 10.35295384699566
+        },
+        {
+          "prep_seconds": 0.022319416999380337,
+          "fit_seconds": 10.312662745000125,
+          "total_seconds": 10.334982161999505
+        }
+      ],
+      "peak_process_rss_mib": 2559.6484375,
+      "cold_fit_seconds": 10.273092464998626,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 61,
+        "max_gradient": 9.894917119308312e-12,
+        "solver": "global",
+        "gradient_tail": [
+          3.0269052864399105e-11,
+          2.2887930929212206e-11,
+          1.7307230891110798e-11,
+          1.3087100634012124e-11,
+          9.894917119308312e-12
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.022319416999380337,
+        "fit_seconds": 10.330021924997709,
+        "total_seconds": 10.35295384699566,
+        "predict_seconds": 0.5480147849993955
+      },
+      "predict_seconds": [
+        0.5480147849993955,
+        0.6047170180027024,
+        0.5439827679983864
+      ],
+      "status": "ok",
+      "job": "taxi-avenue-32"
+    },
+    {
+      "case": "taxi",
+      "engine": "avenue",
+      "threads": 4,
+      "rows": 2753989,
+      "parameters": 577,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-11,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "taxi.parquet": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.022162921999552054,
+          "fit_seconds": 9.700653063999198,
+          "total_seconds": 9.72281598599875
+        },
+        {
+          "prep_seconds": 0.022204991000762675,
+          "fit_seconds": 9.765217767999275,
+          "total_seconds": 9.787422759000037
+        },
+        {
+          "prep_seconds": 0.022114049999800045,
+          "fit_seconds": 9.703384083997662,
+          "total_seconds": 9.725498133997462
+        }
+      ],
+      "peak_process_rss_mib": 2117.81640625,
+      "cold_fit_seconds": 9.70452018099968,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 61,
+        "max_gradient": 9.894136294890514e-12,
+        "solver": "global",
+        "gradient_tail": [
+          3.0268343627717197e-11,
+          2.2886439449515863e-11,
+          1.730561336190005e-11,
+          1.3085454917901378e-11,
+          9.894136294890514e-12
+        ]
+      },
+      "median": {
+        "prep_seconds": 0.022162921999552054,
+        "fit_seconds": 9.703384083997662,
+        "total_seconds": 9.725498133997462,
+        "predict_seconds": 1.9782781719986815
+      },
+      "predict_seconds": [
+        1.9782781719986815,
+        1.9764809909975156,
+        2.0064882730002864
+      ],
+      "status": "ok",
+      "job": "taxi-avenue-4"
+    },
+    {
+      "case": "taxi",
+      "engine": "glum",
+      "threads": 1,
+      "rows": 2753989,
+      "parameters": 577,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-11,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "taxi.parquet": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 1,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 1,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 1,
+      "runs": [
+        {
+          "prep_seconds": 0.05303314000047976,
+          "fit_seconds": 3.435667815996567,
+          "total_seconds": 3.4887009559970465
+        },
+        {
+          "prep_seconds": 0.05192065099981846,
+          "fit_seconds": 3.4285657559994434,
+          "total_seconds": 3.480486406999262
+        },
+        {
+          "prep_seconds": 0.05377904700071667,
+          "fit_seconds": 3.427121963999525,
+          "total_seconds": 3.480901011000242
+        }
+      ],
+      "peak_process_rss_mib": 2075.50390625,
+      "cold_fit_seconds": 3.466930566002702,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 10,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.05303314000047976,
+        "fit_seconds": 3.4285657559994434,
+        "total_seconds": 3.480901011000242,
+        "predict_seconds": 0.10850360000040382
+      },
+      "predict_seconds": [
+        0.10764768400258617,
+        0.11161968800297473,
+        0.10850360000040382
+      ],
+      "status": "ok",
+      "job": "taxi-glum-1"
+    },
+    {
+      "case": "taxi",
+      "engine": "glum",
+      "threads": 16,
+      "rows": 2753989,
+      "parameters": 577,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-11,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "taxi.parquet": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 16,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 16,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        }
+      ],
+      "polars_threads": 16,
+      "runs": [
+        {
+          "prep_seconds": 0.05519547999938368,
+          "fit_seconds": 2.9384246290028386,
+          "total_seconds": 2.9936201090022223
+        },
+        {
+          "prep_seconds": 0.056846073999622604,
+          "fit_seconds": 2.98279435600125,
+          "total_seconds": 3.0396404300008726
+        },
+        {
+          "prep_seconds": 0.05676944900187664,
+          "fit_seconds": 2.9394595110024966,
+          "total_seconds": 2.996228960004373
+        }
+      ],
+      "peak_process_rss_mib": 2226.4765625,
+      "cold_fit_seconds": 2.9204722409995156,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 10,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.05676944900187664,
+        "fit_seconds": 2.9394595110024966,
+        "total_seconds": 2.996228960004373,
+        "predict_seconds": 0.10740877399803139
+      },
+      "predict_seconds": [
+        0.10740877399803139,
+        0.11638258300081361,
+        0.10496327999862842
+      ],
+      "status": "ok",
+      "job": "taxi-glum-16"
+    },
+    {
+      "case": "taxi",
+      "engine": "glum",
+      "threads": 32,
+      "rows": 2753989,
+      "parameters": 577,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-11,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "taxi.parquet": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 0.06000574399877223,
+          "fit_seconds": 5.258425077998254,
+          "total_seconds": 5.318430821997026
+        },
+        {
+          "prep_seconds": 0.0588569669998833,
+          "fit_seconds": 5.16218055599893,
+          "total_seconds": 5.221037522998813
+        },
+        {
+          "prep_seconds": 0.06216699200012954,
+          "fit_seconds": 4.818062976002693,
+          "total_seconds": 4.880229968002823
+        }
+      ],
+      "peak_process_rss_mib": 2447.95703125,
+      "cold_fit_seconds": 4.864899576998141,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 10,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.06000574399877223,
+        "fit_seconds": 5.16218055599893,
+        "total_seconds": 5.221037522998813,
+        "predict_seconds": 0.1816599630001292
+      },
+      "predict_seconds": [
+        0.19773394799995003,
+        0.1816599630001292,
+        0.14478975500242086
+      ],
+      "status": "ok",
+      "job": "taxi-glum-32"
+    },
+    {
+      "case": "taxi",
+      "engine": "glum",
+      "threads": 4,
+      "rows": 2753989,
+      "parameters": 577,
+      "tables": 10,
+      "family": "gamma",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-11,
+      "standard_errors": false,
+      "audit": {},
+      "input_sha256": {
+        "taxi.parquet": "c4d59da7bbc8abaeeeb1727947ee93d9891a71acb42854bd80db1571b2030510"
+      },
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 4,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 4,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 4,
+      "runs": [
+        {
+          "prep_seconds": 0.054141862001415575,
+          "fit_seconds": 2.609681414996885,
+          "total_seconds": 2.6638232769983006
+        },
+        {
+          "prep_seconds": 0.05336500700286706,
+          "fit_seconds": 2.6147899130010046,
+          "total_seconds": 2.6681549200038717
+        },
+        {
+          "prep_seconds": 0.0540876799968828,
+          "fit_seconds": 2.586601893999614,
+          "total_seconds": 2.6406895739964966
+        }
+      ],
+      "peak_process_rss_mib": 2146.38671875,
+      "cold_fit_seconds": 2.6254422790007084,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 10,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 0.0540876799968828,
+        "fit_seconds": 2.609681414996885,
+        "total_seconds": 2.6638232769983006,
+        "predict_seconds": 0.10169121700164396
+      },
+      "predict_seconds": [
+        0.10169121700164396,
+        0.10301278100087075,
+        0.10120054100116249
+      ],
+      "status": "ok",
+      "job": "taxi-glum-4"
+    }
+  ],
+  "agreement": [
+    {
+      "avenue_job": "census-avenue-1",
+      "glum_job": "census-glum-1",
+      "max_error_over_reference_rms": 1.6525791141728608e-08,
+      "max_relative_error": 0.9502132092633232,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "census-avenue-16",
+      "glum_job": "census-glum-16",
+      "max_error_over_reference_rms": 1.6525788197376812e-08,
+      "max_relative_error": 0.9502132008345812,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "census-avenue-32",
+      "glum_job": "census-glum-32",
+      "max_error_over_reference_rms": 1.6525798147354342e-08,
+      "max_relative_error": 0.9502132293181847,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "census-avenue-4",
+      "glum_job": "census-glum-4",
+      "max_error_over_reference_rms": 1.6525796269670213e-08,
+      "max_relative_error": 0.950213223942978,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "housing_gamma-avenue-1",
+      "glum_job": "housing_gamma-glum-1",
+      "max_error_over_reference_rms": 4.881070719513706e-09,
+      "max_relative_error": 1.3196851708868957e-08,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "housing_gamma-avenue-16",
+      "glum_job": "housing_gamma-glum-16",
+      "max_error_over_reference_rms": 4.881070719513704e-09,
+      "max_relative_error": 1.3196716642497342e-08,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "housing_gamma-avenue-32",
+      "glum_job": "housing_gamma-glum-32",
+      "max_error_over_reference_rms": 4.8810856929546265e-09,
+      "max_relative_error": 1.319679842016392e-08,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "housing_gamma-avenue-4",
+      "glum_job": "housing_gamma-glum-4",
+      "max_error_over_reference_rms": 4.881070719513699e-09,
+      "max_relative_error": 1.3196768291549918e-08,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "housing_gaussian-avenue-1",
+      "glum_job": "housing_gaussian-glum-1",
+      "max_error_over_reference_rms": 7.420798260885329e-10,
+      "max_relative_error": 3.2355035828777118e-09,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "housing_gaussian-avenue-16",
+      "glum_job": "housing_gaussian-glum-16",
+      "max_error_over_reference_rms": 4.0029375503069243e-10,
+      "max_relative_error": 1.7452999409807356e-09,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "housing_gaussian-avenue-32",
+      "glum_job": "housing_gaussian-glum-32",
+      "max_error_over_reference_rms": 3.432901347812216e-10,
+      "max_relative_error": 1.4967614265630632e-09,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "housing_gaussian-avenue-4",
+      "glum_job": "housing_gaussian-glum-4",
+      "max_error_over_reference_rms": 4.3867708894867235e-10,
+      "max_relative_error": 1.9126531152631794e-09,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "motor-avenue-1",
+      "glum_job": "motor-glum-1",
+      "max_error_over_reference_rms": 7.846715671996306e-12,
+      "max_relative_error": 1.7261895893904053e-12,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "motor-avenue-16",
+      "glum_job": "motor-glum-16",
+      "max_error_over_reference_rms": 8.656219098527635e-12,
+      "max_relative_error": 2.0074785562719563e-12,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "motor-avenue-32",
+      "glum_job": "motor-glum-32",
+      "max_error_over_reference_rms": 1.7549366029210785e-12,
+      "max_relative_error": 4.1014006131991053e-13,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "motor-avenue-4",
+      "glum_job": "motor-glum-4",
+      "max_error_over_reference_rms": 6.746368143812563e-12,
+      "max_relative_error": 1.6151431001606549e-12,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "motor_wide-avenue-1",
+      "glum_job": "motor_wide-glum-1",
+      "max_error_over_reference_rms": 5.997530818618174e-09,
+      "max_relative_error": 0.17317390754661016,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "motor_wide-avenue-16",
+      "glum_job": "motor_wide-glum-16",
+      "max_error_over_reference_rms": 6.97801329949988e-09,
+      "max_relative_error": 0.307546980984139,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "motor_wide-avenue-32",
+      "glum_job": "motor_wide-glum-32",
+      "max_error_over_reference_rms": 7.137579535338766e-09,
+      "max_relative_error": 0.32488739262866906,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "motor_wide-avenue-4",
+      "glum_job": "motor_wide-glum-4",
+      "max_error_over_reference_rms": 4.963158219808021e-09,
+      "max_relative_error": 0.22520340442654893,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "taxi-avenue-1",
+      "glum_job": "taxi-glum-1",
+      "max_error_over_reference_rms": 1.7111641901764824e-08,
+      "max_relative_error": 1.6514621860847979e-09,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "taxi-avenue-16",
+      "glum_job": "taxi-glum-16",
+      "max_error_over_reference_rms": 1.0950408244904193e-08,
+      "max_relative_error": 1.6517986952195123e-09,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "taxi-avenue-32",
+      "glum_job": "taxi-glum-32",
+      "max_error_over_reference_rms": 2.022151297955289e-08,
+      "max_relative_error": 1.651307517289962e-09,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "taxi-avenue-4",
+      "glum_job": "taxi-glum-4",
+      "max_error_over_reference_rms": 1.7342295396020102e-08,
+      "max_relative_error": 1.651309797419615e-09,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    }
+  ],
+  "errors": {},
+  "source_sha256": {
+    "studies/release_benchmarks.py": "c048301ad7b032b1771df24bfd8e60c44335a91ec75ccd9f90ba950747ea441d",
+    "scripts/bench_engines.py": "fe7c2f7a3ee7d41d3c80028b5e2cf1ff6f3d01b0ca37beac0659154c75b271cf",
+    "scripts/bench_fremtpl.py": "f9a436ef9173cef147da525ecdb8fac077d51a0ea06472431b5d7da9ee77d5ed",
+    "scripts/bench_glm.py": "34c478f216e9fb35537c9767dc0f7e9245772c9fd74a42d9c9af79fbd244f419",
+    "scripts/bench_housing.py": "0fed03318bd4400483f9b679b164ebdca3c115e5d2cec33c3f862a61fa26de35",
+    "scripts/bench_isolated.py": "e9ffd7d25130456c0ce5e698e1cd73bb81af69b2a7013bf9b80945a6008c2996",
+    "scripts/bench_large.py": "aa0e4247f1352c3419555c230647619e9eb18d82874d575fba9073f51b4390d2",
+    "scripts/bench_lgbm.py": "c148ca639e1a2b32784e54cebeb7c974eb23c82e589f6addaae9c81c4e77d98d",
+    "scripts/bench_memory.py": "39d9b6d7ef9884af80905b55f52d8b67f32cd0028fdedf4dc4ba3fa00dfe93dc",
+    "scripts/bench_penalty.py": "79b5ae2584e13baa67770652c088ff148eaaf2240dde628f7a2ed02f2f76fe77",
+    "scripts/bench_real.py": "32b5164a86dde257a5e9c0ae2bc99a06b9a05693bc24fd7432db25303e476265"
+  },
+  "memory_method": "Linux OS whole-process peak RSS through the first fit; includes interpreter, imported libraries, source-data loading, common preparation and engine preparation; excludes subsequent prediction/timing repeats",
+  "timing_method": "median of requested repeats after one full-size warmup; source loading and common banding excluded; engine preparation reported separately; sequential fresh processes",
+  "selected_sources": {
+    "motor-avenue-1": "/tmp/avenue-release-bench/real/motor-avenue-1",
+    "motor-glum-1": "/tmp/avenue-release-bench/real/motor-glum-1",
+    "motor-avenue-4": "/tmp/avenue-release-bench/real/motor-avenue-4",
+    "motor-glum-4": "/tmp/avenue-release-bench/real/motor-glum-4",
+    "motor-avenue-16": "/tmp/avenue-release-bench/real/motor-avenue-16",
+    "motor-glum-16": "/tmp/avenue-release-bench/real/motor-glum-16",
+    "motor-avenue-32": "/tmp/avenue-release-bench/real/motor-avenue-32",
+    "motor-glum-32": "/tmp/avenue-release-bench/real/motor-glum-32",
+    "motor_wide-avenue-1": "/tmp/avenue-release-bench/strict_real/motor_wide-avenue-1",
+    "motor_wide-glum-1": "/tmp/avenue-release-bench/real/motor_wide-glum-1",
+    "motor_wide-avenue-4": "/tmp/avenue-release-bench/strict_real/motor_wide-avenue-4",
+    "motor_wide-glum-4": "/tmp/avenue-release-bench/real/motor_wide-glum-4",
+    "motor_wide-avenue-16": "/tmp/avenue-release-bench/strict_real/motor_wide-avenue-16",
+    "motor_wide-glum-16": "/tmp/avenue-release-bench/real/motor_wide-glum-16",
+    "motor_wide-avenue-32": "/tmp/avenue-release-bench/strict_real/motor_wide-avenue-32",
+    "motor_wide-glum-32": "/tmp/avenue-release-bench/real/motor_wide-glum-32",
+    "taxi-avenue-1": "/tmp/avenue-release-bench/real/taxi-avenue-1",
+    "taxi-glum-1": "/tmp/avenue-release-bench/real/taxi-glum-1",
+    "taxi-avenue-4": "/tmp/avenue-release-bench/real/taxi-avenue-4",
+    "taxi-glum-4": "/tmp/avenue-release-bench/real/taxi-glum-4",
+    "taxi-avenue-16": "/tmp/avenue-release-bench/real/taxi-avenue-16",
+    "taxi-glum-16": "/tmp/avenue-release-bench/real/taxi-glum-16",
+    "taxi-avenue-32": "/tmp/avenue-release-bench/real/taxi-avenue-32",
+    "taxi-glum-32": "/tmp/avenue-release-bench/real/taxi-glum-32",
+    "census-avenue-1": "/tmp/avenue-release-bench/strict_real/census-avenue-1",
+    "census-glum-1": "/tmp/avenue-release-bench/real/census-glum-1",
+    "census-avenue-4": "/tmp/avenue-release-bench/strict_real/census-avenue-4",
+    "census-glum-4": "/tmp/avenue-release-bench/real/census-glum-4",
+    "census-avenue-16": "/tmp/avenue-release-bench/strict_real/census-avenue-16",
+    "census-glum-16": "/tmp/avenue-release-bench/real/census-glum-16",
+    "census-avenue-32": "/tmp/avenue-release-bench/strict_real/census-avenue-32",
+    "census-glum-32": "/tmp/avenue-release-bench/real/census-glum-32",
+    "housing_gamma-avenue-1": "/tmp/avenue-release-bench/strict_real/housing_gamma-avenue-1",
+    "housing_gamma-glum-1": "/tmp/avenue-release-bench/real/housing_gamma-glum-1",
+    "housing_gamma-avenue-4": "/tmp/avenue-release-bench/strict_real/housing_gamma-avenue-4",
+    "housing_gamma-glum-4": "/tmp/avenue-release-bench/real/housing_gamma-glum-4",
+    "housing_gamma-avenue-16": "/tmp/avenue-release-bench/strict_real/housing_gamma-avenue-16",
+    "housing_gamma-glum-16": "/tmp/avenue-release-bench/real/housing_gamma-glum-16",
+    "housing_gamma-avenue-32": "/tmp/avenue-release-bench/strict_real/housing_gamma-avenue-32",
+    "housing_gamma-glum-32": "/tmp/avenue-release-bench/real/housing_gamma-glum-32",
+    "housing_gaussian-avenue-1": "/tmp/avenue-release-bench/real/housing_gaussian-avenue-1",
+    "housing_gaussian-glum-1": "/tmp/avenue-release-bench/real/housing_gaussian-glum-1",
+    "housing_gaussian-avenue-4": "/tmp/avenue-release-bench/real/housing_gaussian-avenue-4",
+    "housing_gaussian-glum-4": "/tmp/avenue-release-bench/real/housing_gaussian-glum-4",
+    "housing_gaussian-avenue-16": "/tmp/avenue-release-bench/real/housing_gaussian-avenue-16",
+    "housing_gaussian-glum-16": "/tmp/avenue-release-bench/real/housing_gaussian-glum-16",
+    "housing_gaussian-avenue-32": "/tmp/avenue-release-bench/real/housing_gaussian-avenue-32",
+    "housing_gaussian-glum-32": "/tmp/avenue-release-bench/real/housing_gaussian-glum-32"
+  }
+}

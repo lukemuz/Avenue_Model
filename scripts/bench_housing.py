@@ -18,8 +18,8 @@ engines solve the *same* problem and the comparison measures solvers rather than
 * glum fits the ten drivers as raw numeric columns. Here they are banded, and both
   engines are given the banded design. Banding is what a rating plan does, and it is also
   the only way Avenue's tables and glum's one-hot columns describe the same model.
-* glum's housing problems carry `alpha = 0.001`. Avenue has no regularisation yet, so
-  both are fitted unpenalised.
+* glum's housing problems carry `alpha = 0.001`. This script compares unpenalized
+  fits in both engines; Avenue also supports ridge, lasso and elastic net.
 
 Usage:
     python scripts/bench_housing.py
