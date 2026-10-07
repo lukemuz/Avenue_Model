@@ -98,9 +98,9 @@ thread counts.
 | 20M rows, 501 parameters | Avenue global | Avenue table | glum |
 |---|---:|---:|---:|
 | 5 tables, 101 levels each | **2.97 s** | 3.11 s | 12.6 s |
+| 100 tables, 6 levels each | 70.5 s | **36.6 s** | 763 s |
 
-The 100-table comparison is still running; its complete result will be added before this PR is ready.
-
+Table descent is about **21× faster than glum** on the 100-table portfolio.
 The synthetic portfolios use independent categorical factors. The global solver
 provides the automatic fitting path for these structures; the table solver can be
 selected explicitly.

@@ -27,6 +27,7 @@ and [large.json](large.json).
 | 20M rows, 501 parameters | Avenue global: s / GiB | Avenue table: s / GiB | glum: s / GiB |
 |---|---:|---:|---:|
 | 5 tables, 101 levels each | 2.97 / 2.73 | 3.11 / 2.43 | 12.6 / 3.43 |
+| 100 tables, 6 levels each | 70.5 / 18.85 | 36.6 / 18.53 | 763 / 19.75 |
 
 ## Thread sensitivity
 
@@ -88,7 +89,9 @@ python studies/release_benchmarks.py --data-dir /tmp/avenue-data --output /tmp/a
 Combining creates links to existing worker outputs and records their source paths.
 It does not rerun a fit or select the fastest replicate. Later Avenue input directories
 take precedence for cases they contain. The two validated grids contain 48 and 18
-fits, respectively, with 33 prediction comparisons in total.
+engine/thread configurations, respectively, with 33 prediction comparisons in total.
+The large grid adds six configurations and four comparisons. All 37 selected
+comparisons pass; each configuration includes one warmup and three timed fits.
 
 The data sources are OpenML 41214 (motor frequency), 41215 (motor severity), 1590
 (census income), `house_sales` version 1, and NYC TLC yellow taxi trips for January

@@ -530,6 +530,107 @@
       ],
       "status": "ok",
       "job": "large_many-avenue_table-32"
+    },
+    {
+      "case": "large_many",
+      "engine": "glum",
+      "threads": 32,
+      "rows": 20000000,
+      "parameters": 501,
+      "tables": 100,
+      "family": "poisson",
+      "power": null,
+      "alpha": 0.0,
+      "l1_ratio": 0.0,
+      "tolerance": 1e-10,
+      "standard_errors": false,
+      "audit": {
+        "seed": 20260827,
+        "independent_synthetic_factors": true
+      },
+      "input_sha256": {},
+      "wheel_sha256": "32cafcc82f2091412856ca7d8d056467ccd6f6b7de4984aa29baf49795fee045",
+      "package_origin": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/avenue_model/__init__.py",
+      "versions": {
+        "avenue_model": "0.1.2",
+        "glum": "3.4.1",
+        "numpy": "2.5.3",
+        "scipy": "1.18.1",
+        "pandas": "3.0.6",
+        "polars": "1.31.0",
+        "tabmat": "4.2.1"
+      },
+      "python": "3.13.15",
+      "platform": "Linux-7.1.9-arch1-2-x86_64-with-glibc2.44",
+      "threadpools": [
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+          "version": "0.3.31.dev",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "blas",
+          "internal_api": "openblas",
+          "num_threads": 32,
+          "prefix": "libscipy_openblas",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+          "version": "0.3.34.106.0",
+          "threading_layer": "pthreads",
+          "architecture": "SkylakeX"
+        },
+        {
+          "user_api": "openmp",
+          "internal_api": "openmp",
+          "num_threads": 32,
+          "prefix": "libgomp",
+          "filepath": "/tmp/avenue-local-012-venv/lib/python3.13/site-packages/tabmat.libs/libgomp-e985bcbb.so.1.0.0",
+          "version": null
+        }
+      ],
+      "polars_threads": 32,
+      "runs": [
+        {
+          "prep_seconds": 7.6447642279999855,
+          "fit_seconds": 763.0409162539981,
+          "total_seconds": 770.6856804819981
+        },
+        {
+          "prep_seconds": 7.6899718349995965,
+          "fit_seconds": 763.4724108089977,
+          "total_seconds": 771.1623826439973
+        },
+        {
+          "prep_seconds": 7.6995383570028935,
+          "fit_seconds": 763.1962743359982,
+          "total_seconds": 770.8958126930011
+        }
+      ],
+      "peak_process_rss_mib": 20222.421875,
+      "cold_fit_seconds": 763.7398034590005,
+      "diagnostics": {
+        "converged": true,
+        "iterations": 5,
+        "solver": "irls-ls",
+        "warnings": []
+      },
+      "median": {
+        "prep_seconds": 7.6899718349995965,
+        "fit_seconds": 763.1962743359982,
+        "total_seconds": 770.8958126930011,
+        "predict_seconds": 6.863317741997889
+      },
+      "predict_seconds": [
+        6.863317741997889,
+        6.905244128996856,
+        6.803909182999632
+      ],
+      "status": "ok",
+      "job": "large_many-glum-32"
     }
   ],
   "agreement": [
@@ -548,6 +649,26 @@
       "glum_job": "large_few-glum-32",
       "max_error_over_reference_rms": 1.3867035086536762e-09,
       "max_relative_error": 1.0964533367512443e-10,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "large_many-avenue-32",
+      "glum_job": "large_many-glum-32",
+      "max_error_over_reference_rms": 5.099685761958976e-12,
+      "max_relative_error": 7.793948639621472e-13,
+      "prediction_failures": 0,
+      "atol": 1e-06,
+      "rtol": 2e-06,
+      "passed": true
+    },
+    {
+      "avenue_job": "large_many-avenue_table-32",
+      "glum_job": "large_many-glum-32",
+      "max_error_over_reference_rms": 6.398048193460332e-09,
+      "max_relative_error": 7.526339459499454e-10,
       "prediction_failures": 0,
       "atol": 1e-06,
       "rtol": 2e-06,
