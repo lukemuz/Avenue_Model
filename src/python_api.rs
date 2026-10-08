@@ -652,6 +652,46 @@ pub struct PyFittedModel {
 
 #[pymethods]
 impl PyFittedModel {
+    /// Re-estimate factors on the current tables and return a new fitted model.
+    ///
+    /// Keeps bands, levels, category encodings, fixed tables/rows and smooth or
+    /// monotonic terms. Uses the recorded target and exposure convention unless
+    /// overridden. Options default to GLMOptions(), not the previous fit's options.
+    /// Use with_response() first to remove a recorded exposure convention.
+    #[pyo3(signature = (df, target=None, options=None, *, exposure=None, exposure_role=None))]
+    fn refit(
+        &self,
+        df: PyDataFrame,
+        target: Option<&str>,
+        options: Option<crate::PyGLMOptions>,
+        exposure: Option<&str>,
+        exposure_role: Option<&str>,
+    ) -> PyResult<Self> {
+        let mut source = self.inner.clone();
+        if let Some(exposure) = exposure {
+            source.exposure = Some(exposure.to_string());
+        }
+        if let Some(role) = exposure_role {
+            source.exposure_role = Some(match role {
+                "weight" => ExposureRole::Weight,
+                "offset" => ExposureRole::Offset,
+                _ => return Err(value_error("exposure_role must be 'offset' or 'weight'")),
+            });
+            if source.exposure.is_none() {
+                return Err(value_error("exposure_role requires an exposure column"));
+            }
+        }
+        Ok(Self {
+            inner: source
+                .refit(
+                    &df.into(),
+                    target,
+                    options.map(|o| o.inner).unwrap_or_default(),
+                )
+                .map_err(value_error)?,
+        })
+    }
+
     /// The plan that produced this, or `None` for a model that was loaded, converted
     /// or composed rather than fitted from a plan.
     #[getter]
@@ -1305,6 +1345,198 @@ pub struct PyWorkbook {
 
 #[pymethods]
 impl PyWorkbook {
+    /// Import named ordinary rating tables, without writing a manifest by hand.
+    ///
+    /// Supply predictor columns plus Relativity (scale='relativity') or
+    /// Rating_Factor (scale='factor'). Strings and integers are categories;
+    /// floating columns are inclusive upper band bounds, ending at infinity.
+    /// base_value is the intercept on the declared scale, e.g. the base rate for
+    /// relativities. Names must be unique; 'intercept' is reserved.
+    /// For saved Avenue models use load_csv_dir/load_json to retain their metadata.
+    #[staticmethod]
+    #[pyo3(signature = (tables, *, family, base_value, scale="relativity", target=None, exposure=None, exposure_role="weight", tweedie_power=1.5))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_tables(
+        tables: &Bound<'_, PyDict>,
+        family: &str,
+        base_value: f64,
+        scale: &str,
+        target: Option<&str>,
+        exposure: Option<&str>,
+        exposure_role: &str,
+        tweedie_power: f64,
+    ) -> PyResult<Self> {
+        use crate::workbook::{Manifest, TableManifest};
+        let family = family.to_lowercase();
+        if !matches!(
+            family.as_str(),
+            "poisson"
+                | "gamma"
+                | "tweedie"
+                | "gaussian"
+                | "regression"
+                | "binomial"
+                | "binary"
+                | "logistic"
+        ) {
+            return Err(value_error("Unsupported GLM family"));
+        }
+        let link = match family.as_str() {
+            "poisson" | "gamma" | "tweedie" => "log",
+            "gaussian" | "regression" => "identity",
+            _ => "logit",
+        };
+        let scale = match scale {
+            "relativity" if link == "log" => Scale::Relativity,
+            "factor" => Scale::Factor,
+            _ => {
+                return Err(value_error(
+                    "Use scale='factor', or 'relativity' for a log-link family",
+                ))
+            }
+        };
+        if !matches!(exposure_role, "weight" | "offset") {
+            return Err(value_error("exposure_role must be 'weight' or 'offset'"));
+        }
+        if exposure.is_some() && target.is_none() {
+            return Err(value_error("Provide target when recording exposure"));
+        }
+        if !tweedie_power.is_finite() || !(1.0..=2.0).contains(&tweedie_power) {
+            return Err(value_error("tweedie_power must be between 1 and 2"));
+        }
+        let entry = |name: String| TableManifest {
+            name,
+            file: None,
+            is_offset: false,
+            locked_rows: Vec::new(),
+            variate: None,
+            monotonicity: None,
+            spline: None,
+        };
+        let mut entries = vec![entry("intercept".to_string())];
+        let mut frames =
+            vec![
+                DataFrame::new(vec![Series::new(scale.column().into(), [base_value]).into()])
+                    .map_err(value_error)?,
+            ];
+        let mut kinds = BTreeMap::new();
+        let mut labels: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (name, table) in tables.iter() {
+            let name: String = name.extract()?;
+            if name.is_empty() || name == "intercept" {
+                return Err(value_error(
+                    "Table names must be nonempty; 'intercept' is reserved",
+                ));
+            }
+            let mut frame: DataFrame = table.extract::<PyDataFrame>()?.into();
+            let other_factor = if scale == Scale::Relativity {
+                "Rating_Factor"
+            } else {
+                "Relativity"
+            };
+            if frame.column(other_factor).is_ok() {
+                return Err(value_error(format!("Table '{name}' contains '{other_factor}'; supply only the declared factor scale")));
+            }
+            let columns: Vec<String> = frame
+                .get_column_names()
+                .iter()
+                .map(|c| c.to_string())
+                .collect();
+            for column in columns {
+                if column == scale.column() {
+                    continue;
+                }
+                let series = frame.column(&column).map_err(value_error)?;
+                let kind = match series.dtype() {
+                    DataType::String => "string",
+                    dtype if dtype.is_integer() => "integer",
+                    DataType::Float32 | DataType::Float64 => "band",
+                    _ => return Err(value_error(format!("Unsupported dtype for predictor '{column}'; use strings/integers for categories or floats for bands"))),
+                };
+                if kinds
+                    .insert(column.clone(), kind)
+                    .is_some_and(|prior| prior != kind)
+                {
+                    return Err(value_error(format!(
+                        "Predictor '{column}' has inconsistent types across tables"
+                    )));
+                }
+                match kind {
+                    "string" => {
+                        if series
+                            .str()
+                            .map_err(value_error)?
+                            .into_iter()
+                            .flatten()
+                            .any(|s| s != s.trim())
+                        {
+                            return Err(value_error(format!("Predictor '{column}' has labels with surrounding whitespace; clean them before importing")));
+                        }
+                        labels.entry(column.clone()).or_default().extend(
+                            series
+                                .str()
+                                .map_err(value_error)?
+                                .into_iter()
+                                .flatten()
+                                .map(|s| s.trim().to_string()),
+                        );
+                    }
+                    _ => {
+                        let dtype = if kind == "integer" {
+                            DataType::Int32
+                        } else {
+                            DataType::Float64
+                        };
+                        let cast = series.strict_cast(&dtype).map_err(value_error)?;
+                        frame.with_column(cast).map_err(value_error)?;
+                    }
+                }
+            }
+            let factor = frame
+                .column(scale.column())
+                .map_err(value_error)?
+                .strict_cast(&DataType::Float64)
+                .map_err(value_error)?;
+            frame.with_column(factor).map_err(value_error)?;
+            entries.push(entry(name));
+            frames.push(frame);
+        }
+        let encodings = labels
+            .into_iter()
+            .map(|(column, mut values)| {
+                values.sort();
+                values.dedup();
+                (
+                    column,
+                    values
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, label)| (label, i as i32))
+                        .collect(),
+                )
+            })
+            .collect();
+        let book = Workbook {
+            manifest: Manifest {
+                format_version: 2,
+                avenue_version: env!("CARGO_PKG_VERSION").to_string(),
+                created: None,
+                family,
+                tweedie_power,
+                link: link.to_string(),
+                scale,
+                target: target.map(str::to_string),
+                exposure: exposure.map(str::to_string),
+                exposure_role: exposure.map(|_| exposure_role.to_string()),
+                tables: entries,
+                encodings,
+            },
+            tables: frames,
+        };
+        book.to_model().map_err(value_error)?;
+        Ok(Self { inner: book })
+    }
+
     /// Save as one self-contained JSON document.
     fn save_json(&self, path: &str) -> PyResult<()> {
         self.inner.save_json(path).map_err(value_error)

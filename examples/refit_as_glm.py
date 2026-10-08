@@ -7,8 +7,8 @@ boosting arrived at.
 
 There is a way around that which costs almost nothing. A converted model is a set of
 rating tables, and a rating table is a *shape*: which bands, which levels, which
-interactions. Hand those shapes to `Plan.given()` and the factors are re-estimated by
-the GLM engine. What comes out is an ordinary Poisson GLM — Wald standard errors, a
+interactions. Call `converted.refit()` and the factors are re-estimated by the GLM
+engine. What comes out is an ordinary Poisson GLM — Wald standard errors, a
 reference row at relativity 1.0, the same `report()` and `validate()` as any other
 fitted model — whose banding happened to be chosen by a booster rather than by hand.
 
@@ -90,21 +90,6 @@ def deviance(actual, predicted, exposure) -> float:
     return float(mean_poisson_deviance(actual, predicted, sample_weight=exposure))
 
 
-def shapes_of(converted, features: list[str]):
-    """The converted model's tables, reduced to the columns that define their shape.
-
-    `Rating_Factor` comes along because `given` wants a complete table; the factors in
-    it are then re-estimated and nothing of the booster's arithmetic survives into the
-    fitted model except which rows exist.
-    """
-    out = []
-    for table in converted.rating_tables():
-        columns = [c for c in table.columns if c in features]
-        if columns:
-            out.append(table.select(columns + ["Rating_Factor"]))
-    return out
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--splits", type=int, default=3)
@@ -157,17 +142,11 @@ def main() -> int:
         results.setdefault("GBM converted", []).append(
             score(converted.predict(frame_test).to_series(0).to_numpy()))
 
-        def plan_from_shapes():
-            plan = Plan.frequency("Exposure")
-            for index, table in enumerate(shapes_of(converted, features)):
-                plan = plan.given(f"t{index}", table)
-            return plan
-
-        refit = plan_from_shapes().fit(frame_train, "frequency")
+        refit = converted.refit(frame_train, "frequency", exposure="Exposure")
         results.setdefault("GLM refit", []).append(
             score(refit.predict(frame_test).to_series(0).to_numpy()))
 
-        ridge = plan_from_shapes().fit(frame_train, "frequency",
+        ridge = converted.refit(frame_train, "frequency", exposure="Exposure",
                                        options=GLMOptions(alpha=1e-6, l1_ratio=0.0))
         results.setdefault("GLM refit + ridge", []).append(
             score(ridge.predict(frame_test).to_series(0).to_numpy()))

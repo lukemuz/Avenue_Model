@@ -2294,6 +2294,74 @@ impl Plan {
 }
 
 impl FittedModel {
+    /// Estimate new factors on these exact tables, preserving encodings, locks,
+    /// offsets, band boundaries and smooth/monotonic metadata. The source is unchanged.
+    /// Unlike fitting the original Plan again, this never learns new bands or levels.
+    pub fn refit(
+        &self,
+        df: &DataFrame,
+        target: Option<&str>,
+        mut options: GLMOptions,
+    ) -> Result<Self, PolarsError> {
+        let target = target.or(self.target.as_deref()).ok_or_else(|| {
+            PolarsError::ComputeError(
+                "Refitting requires a target column; pass target or record it with with_response().".into(),
+            )
+        })?;
+        let mut result = self.clone();
+        // Preparation must follow the current tables and response metadata, not a
+        // historical specification which may contain data-dependent band rules.
+        result.plan = None;
+        if result.exposure.is_some() {
+            result.exposure_role.get_or_insert(ExposureRole::Weight);
+        }
+        let mut prepared = result.prepare(df)?;
+        let response = prepared
+            .df
+            .column(target)?
+            .strict_cast(&DataType::Float64)?;
+        let nonnegative = matches!(
+            self.family.to_lowercase().as_str(),
+            "poisson" | "gamma" | "tweedie" | "binary" | "binomial" | "logistic"
+        );
+        let binary = matches!(
+            self.family.to_lowercase().as_str(),
+            "binary" | "binomial" | "logistic"
+        );
+        if response
+            .f64()?
+            .into_iter()
+            .flatten()
+            .any(|v| (nonnegative && v < 0.0) || (binary && v > 1.0))
+        {
+            return Err(PolarsError::ComputeError(
+                format!(
+                    "Target '{target}' contains values outside the {} response domain",
+                    self.family
+                )
+                .into(),
+            ));
+        }
+        prepared.df.with_column(response)?;
+        options.objective = self.family.clone();
+        options.tweedie_power = self.tweedie_power;
+        let (model, diagnostics) = fit_glm_with_diagnostics(
+            &self.model,
+            &prepared.df,
+            target,
+            prepared.weight_col.as_deref(),
+            prepared.offset_col.as_deref(),
+            options,
+        )?;
+        result.model = model;
+        result.target = Some(target.to_string());
+        result.diagnostics = Some(diagnostics);
+        // Old data-dependent checks and edit findings are not evidence for this fit.
+        result.check = None;
+        result.notes.clear();
+        Ok(result)
+    }
+
     /// Wrap a model that was built elsewhere — loaded from a workbook, or converted
     /// from a tree ensemble — so it can be scored, measured, reported on and saved
     /// like any other.

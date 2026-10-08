@@ -3,10 +3,42 @@
 How a gradient booster becomes a set of rating tables, how to keep those tables small
 enough that someone will read them, and what it takes to turn the result into a GLM.
 
-The short version lives in the [README](../README.md#convert-a-booster); this is
+The short version lives in the [README](../README.md#from-boosting-to-editable-tables); this is
 the working detail. The method and the case studies behind it are in *GBMs as Factor
 Tables: Achieving Both Transparency and Interpretability Without Approximation*
 (Muzynoski, 2025), [PDF](https://avenue-analytics.com/research/avenue-analytics-methodology.pdf).
+
+### Start with a complete example
+
+Avenue Model provides the tuning, conversion, inspection, export and GLM refitting
+workflow. [avenue-lightgbm](https://github.com/lukemuz/avenue-lightgbm) is its training
+backend for interaction penalties that encourage fewer, simpler tables.
+
+Install the Avenue wheel with its `[tuning]` extra, then run
+[the introductory example](../examples/interpretable_boosting.py) from this repository:
+
+```sh
+python examples/interpretable_boosting.py --output /tmp/avenue-tables
+```
+
+The extra installs stock LightGBM; enabling the additional interaction penalties
+requires the Avenue backend separately. The example uses the installed backend and
+prints whether the penalties are enabled. It can run with stock LightGBM too.
+
+The example generates 1,200 synthetic annual policies and holds out 200 from training.
+Avenue searches five configurations using three-fold CV, balancing predictive loss
+against table count. It selects a configuration, trains on the full training set,
+and converts the resulting booster into tables. You will see the tuning summary,
+actual table sizes, sample table rows and predictions.
+
+`boosted_tables/` contains editable CSVs and conversion evidence. Reloading them
+preserves predictions, which the example checks. `refitted_glm/` uses the learned
+bands and interactions with newly fitted Poisson GLM coefficients. That optional
+refit produces a new model; exact booster equivalence applies to the conversion.
+The small search is for learning the workflow, not choosing a production model.
+
+For grouped validation, exposure weights, category labels and model comparisons,
+see the [full pricing study](../examples/booster_pricing_study.py).
 
 **Contents:** [Table size](#making-the-tables-small-enough-to-read) ·
 [Tuning](#tuning-for-interpretability) · [Category names](#naming-the-levels-behind-the-codes) ·
@@ -29,7 +61,8 @@ too large to review. Two quantities decide that, and neither is the tree count �
 Table *count* is the number of distinct feature combinations the ensemble uses. *Rows*
 are the cross product of every threshold along a path, so they grow much faster, and they
 are what decides whether anyone can read the result. Both are modelling choices rather
-than facts of the data, and `scripts/bench_lgbm.py` reproduces the table above.
+than facts of the data. These recorded examples illustrate how depth changes the
+size of the resulting tables.
 
 ```python
 from avenue_model import estimate_num_tables
@@ -161,15 +194,17 @@ identifies a single level.
 Conversion preserves the booster factors. Refitting estimates new GLM factors on
 the same table structure, with reference levels and inference for supported fits.
 
-A rating table is a *shape*: which bands, which levels, which interactions. Hand the
-converted shapes to `Plan.given()` and the factors are re-estimated by the GLM engine:
+The converted tables already define the model. Refit them directly; their bands,
+levels, interactions and category encodings are retained:
 
 ```python
-plan = Plan.frequency("Exposure")
-for i, table in enumerate(converted.rating_tables()):
-    plan = plan.given(f"t{i}", table)
-filed = plan.fit(train, "frequency")
+filed = converted.refit(train, "frequency", exposure="Exposure")
 ```
+
+Here `frequency` is claims divided by exposure; exposure supplies fitting weights.
+For claim counts use `target="claims", exposure="Exposure", exposure_role="offset"`.
+The original converted model is unchanged. The result carries new fitting diagnostics;
+conversion parity describes the original conversion, not this new statistical fit.
 
 What comes out is an ordinary Poisson GLM — Wald standard errors, a reference row at
 relativity 1.0, the same `report()` and `validate()` as any fitted model — whose banding

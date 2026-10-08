@@ -64,13 +64,11 @@ def run(output, data_path=None, refit_glm=False):
         raise RuntimeError('Baseline did not converge')
     models = {'glm': baseline, 'booster': model}
     if refit_glm:
-        plan = Plan.frequency('exposure')
-        for name, table in model.rating_tables_by_name().items():
-            columns = [c for c in table.columns if c in model.input_schema['predictors']]
-            if columns:
-                plan = plan.given(name, table.select(columns + ['Rating_Factor']))
         # Prespecified penalty; selecting it on the final holdout would leak.
-        refit = plan.fit(train, 'frequency', GLMOptions(alpha=1e-4, l1_ratio=0., max_iterations=500))
+        refit = model.refit(
+            train, 'frequency', GLMOptions(alpha=1e-4, l1_ratio=0., max_iterations=500),
+            exposure='exposure',
+        )
         if not refit.converged:
             raise RuntimeError('Refit did not converge')
         refit.to_workbook().save_csv_dir(str(output / 'refit'))
