@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from avenue_model import GLMOptions, Plan, Workbook, from_booster, resolve_lightgbm, tune_lgbm
+from avenue_model import GLMOptions, Workbook, from_booster, resolve_lightgbm, tune_lgbm
 
 
 def run(output):
@@ -65,12 +65,7 @@ def run(output):
 
     # 4. Optional: keep the learned bands/interactions, estimate new GLM coefficients.
     # This is a new statistical fit: its predictions can differ from the booster.
-    plan = Plan("poisson")
-    for name, table in model.rating_tables_by_name().items():
-        predictors = [column for column in table.columns if column in features]
-        if predictors:
-            plan = plan.given(name, table.select(predictors + ["Rating_Factor"]))
-    refit = plan.fit(train, "claims", GLMOptions(alpha=1e-4, l1_ratio=0.0, max_iterations=500))
+    refit = model.refit(train, "claims", GLMOptions(alpha=1e-4, l1_ratio=0.0, max_iterations=500))
     assert refit.converged, "GLM refit did not converge"
     refit.to_workbook().save_csv_dir(str(output / "refitted_glm"))
     print("GLM refit converged; saved boosted_tables/ and refitted_glm/ in", output)

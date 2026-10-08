@@ -4,6 +4,83 @@ Choose the structure you want to estimate. Avenue keeps those choices in the Pla
 
 [Interactions](#interactions) · [Monotonic bands](#monotonic-bands) · [Continuous splines](#continuous-splines)
 
+## Existing rating plans: import, refit or hold fixed
+
+An Avenue workbook already contains the tables and their metadata:
+
+```python
+from avenue_model import Plan, Workbook
+
+existing = Workbook.load_csv_dir("rating_plan").to_model()
+refitted = existing.refit(train)  # Uses its recorded target and exposure convention.
+```
+
+For a plan from another system, read its tables into Polars and import them once.
+Here the existing frequency is a base rate of 0.10 multiplied by regional relativities:
+
+```python
+import polars as pl
+
+book = Workbook.from_tables(
+    {"region": pl.DataFrame({
+        "region": ["north", "south"],
+        "Relativity": [1.0, 0.8],
+    })},
+    family="poisson",
+    base_value=0.10,
+    target="frequency",
+    exposure="exposure",
+)
+existing = book.to_model()
+book.save_csv_dir("imported_plan")
+
+# Re-estimate the factors, keeping the tables' levels, bands and interactions.
+refitted = existing.refit(train)
+
+# Or keep the entire existing plan fixed and estimate adjustments on top.
+adjusted = (
+    Plan.frequency("exposure")
+    .offset_model(existing)
+    .banded("age", breaks=[25., 50., 70.])
+    .fit(train, "frequency")
+)
+```
+
+Replace the example dataframe with `pl.read_csv("region.csv")` for your own table.
+Supply only predictor columns and the factor column. String and integer predictors
+are categories; floating predictors are **inclusive upper band bounds**, with an
+infinite final bound. Set CSV schema overrides explicitly when a numeric band could
+otherwise be read as an integer category. Multiple predictor columns define an
+interaction table. Category labels are encoded consistently across all supplied tables.
+
+`scale="relativity"` is the default for this import: `Relativity` contains positive
+multipliers and `base_value` is the base rate. With `scale="factor"`, use
+`Rating_Factor` and supply `base_value` on the link scale (log rate for Poisson,
+log odds for binomial, response units for Gaussian). Import creates the intercept;
+do not include an extra intercept table. Imported tables are checked before use.
+This importer handles ordinary step tables. Load saved Avenue workbooks directly
+to retain their locks, offsets, splines and other metadata.
+
+`refit` returns a new fitted model; the source is unchanged. It preserves the current
+tables, category encodings, locked rows, fixed offsets and smooth/monotonic metadata.
+It does not regenerate quantile bands or discover new levels. Supply `target` if it
+was not recorded, and pass `GLMOptions(...)` to choose regularization or other fitting
+options; omitted options use the normal defaults, not a prior fit's settings.
+
+For rates, `existing.refit(train, "frequency", exposure="exposure")` uses exposure
+weights. For counts, specify `exposure_role="offset"` so log exposure enters once.
+An existing recorded role is retained unless overridden. Use
+`existing.with_response("frequency").refit(train)` to remove a recorded exposure.
+Refits carry new diagnostics and inference where supported; workbook reloads retain
+scoring metadata, not the original fit's covariance.
+
+`offset_model` holds every prior factor, including its base rate, fixed. The new plan
+fits its own intercept for an overall rate-level adjustment, plus any new terms you
+add. Omitting `.banded(...)` above fits just that overall adjustment. Prior table
+names receive the default `prior.` prefix. The new `Plan` declares the response and
+exposure convention for the adjustment fit; its family must interpret the prior
+factors on the same link scale.
+
 ## Interactions
 
 ```python

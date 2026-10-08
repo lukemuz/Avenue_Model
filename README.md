@@ -68,6 +68,20 @@ exposure. Add age bands, interactions or smooth effects as your model grows.
 [The modeling guide](docs/modeling.md) covers these and fitting from an existing plan.
 [The scoring guide](docs/scoring.md) shows how to reload and edit the exported tables.
 
+Already have a rating plan? Load it and either refresh its factors or fit adjustments
+while holding it fixed:
+
+```python
+from avenue_model import Workbook
+
+existing = Workbook.load_csv_dir("rating_plan").to_model()
+refitted = existing.refit(train, "frequency")
+adjusted = Plan.frequency("exposure").offset_model(existing).fit(train, "frequency")
+```
+
+For tables from another system, use `Workbook.from_tables(...)`.
+[Import, refit and offset workflow](docs/modeling.md#existing-rating-plans-import-refit-or-hold-fixed).
+
 ## From boosting to editable tables
 
 Trees learn useful cut points and interactions. Avenue combines their contributions

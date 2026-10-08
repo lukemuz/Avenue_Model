@@ -194,15 +194,17 @@ identifies a single level.
 Conversion preserves the booster factors. Refitting estimates new GLM factors on
 the same table structure, with reference levels and inference for supported fits.
 
-A rating table is a *shape*: which bands, which levels, which interactions. Hand the
-converted shapes to `Plan.given()` and the factors are re-estimated by the GLM engine:
+The converted tables already define the model. Refit them directly; their bands,
+levels, interactions and category encodings are retained:
 
 ```python
-plan = Plan.frequency("Exposure")
-for i, table in enumerate(converted.rating_tables()):
-    plan = plan.given(f"t{i}", table)
-filed = plan.fit(train, "frequency")
+filed = converted.refit(train, "frequency", exposure="Exposure")
 ```
+
+Here `frequency` is claims divided by exposure; exposure supplies fitting weights.
+For claim counts use `target="claims", exposure="Exposure", exposure_role="offset"`.
+The original converted model is unchanged. The result carries new fitting diagnostics;
+conversion parity describes the original conversion, not this new statistical fit.
 
 What comes out is an ordinary Poisson GLM — Wald standard errors, a reference row at
 relativity 1.0, the same `report()` and `validate()` as any fitted model — whose banding

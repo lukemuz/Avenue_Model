@@ -1,13 +1,13 @@
 # Avenue user guides
 
 Start with the [README example](../README.md#try-it). The public workflow
-has three objects: `Plan` defines what to fit, `FittedModel` predicts and reports,
+has three objects: `Plan` defines what to fit, `FittedModel` predicts, refits and reports,
 and `Workbook` stores editable tables.
 
 | Guide | Covers |
 |---|---|
 | [Installation and development](installation.md) | Release wheels, source builds and publishing |
-| [Model specification](modeling.md) | Interactions, monotonic bands and continuous splines |
+| [Model specification](modeling.md) | Existing plan import/refit/offset workflows, interactions and smooth effects |
 | [Scoring and model review](scoring.md) | Exposure conventions, pandas input, band bounds and quote explanations |
 | [Statistical inference](inference.md) | Coefficient intervals, HC0, clustered covariance and whole-term tests |
 | [LightGBM as rating tables](lightgbm.md) | Sparsity penalties, tuning, exact conversion and GLM refitting |
